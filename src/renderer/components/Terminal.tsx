@@ -14,6 +14,15 @@ const THEME = {
   brightBlack: '#5f665f', brightRed: '#c9877c', brightGreen: '#93b296', brightYellow: '#c0a581', brightBlue: '#8aadad', brightMagenta: '#bba5b1', brightCyan: '#93b296', brightWhite: '#c3c8c0',
 };
 
+const fontOptions = () => {
+  const s = settings();
+  return {
+    fontFamily: `'${s['font.family']}', 'ARX F1', ui-monospace, Menlo, Consolas, monospace`,
+    fontSize: s['terminal.font_size'] ?? 12.5, lineHeight: s['terminal.line_height'] ?? 1.25,
+    fontWeight: String(s['terminal.font_weight'] ?? 400) as any, fontWeightBold: String(s['terminal.font_weight_bold'] ?? 700) as any,
+  };
+};
+
 export default function TerminalPane() {
   let host!: HTMLDivElement;
   const [sessions, setSessions] = createSignal<Session[]>([]);
@@ -34,7 +43,7 @@ export default function TerminalPane() {
     const el = document.createElement('div');
     el.style.height = '100%';
     host.appendChild(el);
-    const term = new XTerm({ fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--mono'), fontSize: settings()['terminal.font_size'] ?? 12.5, lineHeight: 1.25, theme: THEME, cursorBlink: false, allowProposedApi: false, scrollback: 10000 });
+    const term = new XTerm({ ...fontOptions(), theme: THEME, cursorBlink: false, allowProposedApi: false, scrollback: 10000 });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
@@ -70,7 +79,7 @@ export default function TerminalPane() {
       : ` cd '${dir.replace(/'/g, `'\\''`)}'\r`;
   createEffect(on(root, (r) => { if (r) for (const s of sessions()) api.pty.write(s.id, cdCommand(s.name, r)); }, { defer: true }));
   createEffect(on(terminalOpen, (o) => { if (o) queueMicrotask(fitAll); }, { defer: true }));
-  createEffect(on(() => settings()['terminal.font_size'], (fs) => { for (const s of sessions()) s.term.options.fontSize = fs; fitAll(); }, { defer: true }));
+  createEffect(on(() => JSON.stringify(fontOptions()), () => { const o = fontOptions(); for (const s of sessions()) Object.assign(s.term.options, o); fitAll(); }, { defer: true }));
 
   return (
     <div class="term" style={{ height: '100%' }}>

@@ -17,7 +17,7 @@
   --err: #b8766b; --warn: #ab9070; --info: #739696; --accent: #ad9b6f; --link: #7fa3a3; --sel: rgba(115, 150, 150, .26);
   --mono: 'ARX F1', ui-monospace, Menlo, Consolas, monospace;
   --ui: 'Selawik', -apple-system, 'Segoe UI', system-ui, sans-serif;
-  --code-size: 13px; --code-lh: 1.6; --code-ls: 0px; --preview-scale: .9;
+  --code-size: 13px; --code-lh: 1.6; --code-ls: 0px; --code-weight: 400; --preview-scale: .9;
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--ui); font-weight: 300; }
@@ -77,7 +77,7 @@ input, select { font: inherit; color: var(--bright); }
 .code { flex: 1; min-height: 0; }
 .cm-editor { height: 100%; background: var(--bg); color: var(--fg); font-family: var(--mono); }
 .cm-editor.cm-focused { outline: none; }
-.cm-scroller { font-family: var(--mono) !important; font-size: var(--code-size); line-height: var(--code-lh); letter-spacing: var(--code-ls); }
+.cm-scroller { font-family: var(--mono) !important; font-size: var(--code-size); line-height: var(--code-lh); letter-spacing: var(--code-ls); font-weight: var(--code-weight); }
 .cm-gutters { background: var(--bg) !important; border: 0 !important; color: var(--gut) !important; }
 .cm-lineNumbers .cm-gutterElement { padding: 0 14px 0 10px !important; min-width: 44px; }
 .cm-activeLineGutter { background: transparent !important; color: #6a716a !important; }
@@ -189,6 +189,8 @@ input, select { font: inherit; color: var(--bright); }
 .choices { display: flex; gap: 16px; margin-top: 6px; font: 300 15px var(--ui); }
 .choices button { color: #3f453f; }
 .choices button.on { color: var(--bright); }
+.choices.weights { flex-wrap: wrap; gap: 4px 14px; }
+.choices.weights button.synth { font-style: normal; opacity: .6; }
 .problem { background: #1f1a18; color: #c9a49c; padding: 10px 14px; font: 300 13.5px/1.5 var(--ui); margin-bottom: 18px; max-width: 900px; }
 
 /* flow */

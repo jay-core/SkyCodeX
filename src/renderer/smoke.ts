@@ -104,6 +104,20 @@ export async function runSmoke() {
     (famCtl.querySelector('.combo input') as HTMLInputElement).blur();
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     const pageBtn = (n: string) => ([...document.querySelectorAll('.set .pv button')] as HTMLButtonElement[]).find((x) => x.textContent === n)!;
+    // weights: the bundled code font lists its six real weights; picking one restyles the editor
+    await until(() => document.querySelectorAll('.set .weights button').length > 0, 3000);
+    const wBtns = [...document.querySelectorAll('.set .ctl')].find((c) => c.querySelector('.lab')?.textContent?.startsWith('code weight'))!.querySelectorAll('.weights button');
+    report.codeWeights = [...wBtns].map((x) => x.textContent);
+    ([...wBtns].find((x) => x.textContent === 'light') as HTMLButtonElement).click();
+    await sleep(400);
+    report.editorWeight = getComputedStyle(document.querySelector('.cm-scroller')!).fontWeight;
+    await api.smoke.capture('4g-settings-weight');
+    await api.settings.set('font.weight', 400);
+    const rowH = () => (document.querySelector('.xterm-rows > div') as HTMLElement | null)?.getBoundingClientRect().height ?? 0;
+    const h0 = rowH();
+    await api.settings.set('terminal.line_height', 1.8); await sleep(400);
+    report.terminalRowHeight = [+h0.toFixed(1), +rowH().toFixed(1)];
+    await api.settings.set('terminal.line_height', 1.25);
     pageBtn('clangd').click(); await sleep(300);
     await api.smoke.capture('4e-settings-clangd');
     pageBtn('terminal').click(); await sleep(300);

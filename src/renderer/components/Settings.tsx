@@ -1,8 +1,8 @@
-import { For, Show, createSignal, createEffect, on, onMount, onCleanup } from 'solid-js';
+import { For, Show, createSignal, createEffect, createResource, on, onMount, onCleanup } from 'solid-js';
 import { SETTINGS, SettingDef } from '../../shared/settings-schema';
 import { api } from '../lib/api';
 import { settings, problems, setSettingsOpen, openFile, info, flash, applySettings } from '../lib/store';
-import { installedFonts, FontFamily } from '../lib/fonts';
+import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
 
 const PAGES: { name: string; sections: string[] }[] = [
   { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion'] },
@@ -13,7 +13,10 @@ const PAGES: { name: string; sections: string[] }[] = [
   { name: 'memory', sections: ['memory'] },
 ];
 const sectionOf = (k: string) => k.slice(0, k.lastIndexOf('.'));
-const NAMES: Record<string, string> = { 'font.family': 'code font', 'font.ui.family': 'interface font', 'font.preview.scale': 'preview text scale' };
+const NAMES: Record<string, string> = {
+  'font.family': 'code font', 'font.ui.family': 'interface font', 'font.preview.scale': 'preview text scale', 'font.weight': 'code weight',
+  'terminal.font_weight': 'terminal weight', 'terminal.font_weight_bold': 'terminal bold weight',
+};
 const label = (d: SettingDef) => {
   if (NAMES[d.key]) return NAMES[d.key];
   const sec = sectionOf(d.key).replace(/^font\.?/, (m) => (m ? 'font ' : '')).replace('.', ' ');
@@ -84,14 +87,14 @@ const shellOpts = async (): Promise<Opt[]> => [
   ...((await api.sys.shells()) as string[]).map((p) => ({ value: p, label: p })),
 ];
 
-const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
+const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);   // 0.05 steps keep two places
 
 /** Slider with a live value while dragging, plus a box to type the number; large ranges get the box only. */
 function NumberCtl(props: { d: SettingDef }) {
   const d = props.d;
   const range = (d.max ?? 0) - (d.min ?? 0);
   const slider = d.max !== undefined && range <= 200;
-  const step = range <= 10 ? 0.1 : range <= 80 ? 0.5 : 1;
+  const step = range <= 3 ? 0.05 : range <= 10 ? 0.1 : range <= 80 ? 0.5 : 1;
   const [live, setLive] = createSignal<number | null>(null);
   const [drag, setDrag] = createSignal(false);
   const [draft, setDraft] = createSignal<string | null>(null);
@@ -127,6 +130,28 @@ function NumberCtl(props: { d: SettingDef }) {
   );
 }
 
+/** The weights the chosen font really has, each shown in itself; any other saved value is kept as a choice. */
+function WeightCtl(props: { d: SettingDef; family: () => string }) {
+  const [ws] = createResource(props.family, weightsOf);
+  const cur = () => Number(settings()[props.d.key]);
+  const list = () => {
+    const real = ws() ?? [];
+    const all = real.length ? real : [100, 200, 300, 400, 500, 600, 700, 800, 900];
+    return all.includes(cur()) ? all : [...all, cur()].sort((a, b) => a - b);
+  };
+  return (
+    <>
+      <div class="choices weights">
+        <For each={list()}>{(w) => (
+          <button classList={{ on: cur() === w, synth: !!ws()?.length && !ws()!.includes(w) }} style={{ 'font-family': `"${props.family().replace(/"/g, '')}", var(--mono)`, 'font-weight': w }}
+            title={`${w}`} onClick={() => set(props.d.key, w)}>{WEIGHT_NAMES[w] ?? w}</button>
+        )}</For>
+      </div>
+      <div class="doc">{ws.loading ? 'reading the font…' : ws()?.length ? `${props.family()} has ${ws()!.length} weight${ws()!.length > 1 ? 's' : ''} · ${props.d.doc}` : `${props.d.doc} · this font's weights couldn't be read, the nearest is drawn`}</div>
+    </>
+  );
+}
+
 function Control(props: { d: SettingDef }) {
   const v = () => settings()[props.d.key];
   const d = props.d;
@@ -143,6 +168,7 @@ function Control(props: { d: SettingDef }) {
     </div>
   );
   if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{x}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{d.doc}</div></Show></>);
+  if (/(^font|_font)\.?weight|font_weight/.test(d.key)) return wrap(<><Lab /><WeightCtl d={d} family={() => String(settings()['font.family'])} /></>);
   if (d.type === 'number') return wrap(<><Lab /><NumberCtl d={d} /><div class="doc">{d.doc}</div></>);
   if (d.key === 'font.family' || d.key === 'font.ui.family') return wrap(<>
     <Lab /><Combo value={String(v())} load={fontOpts(d.key === 'font.family')} onPick={(x) => set(d.key, x)} font hint="installed fonts couldn't be listed — type a font name" />

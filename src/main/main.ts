@@ -24,9 +24,16 @@ app.setPath('sessionData', path.join(data.dir, 'state', 'chromium'));
 app.setPath('logs', path.join(data.dir, 'logs'));
 app.setPath('crashDumps', path.join(data.dir, 'logs', 'crashes'));
 
+// ---------- smoke mode: scripted run that captures screenshots, used for verification ----------
+const smokeIdx = process.argv.indexOf('--smoke');
+const smoke = smokeIdx > 0 ? path.resolve(process.argv[smokeIdx + 1] ?? '') : null;
+// a smoke run keeps its session and unsaved buffers apart, so it never replaces the user's own
+const STATE = smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
+if (smoke) { fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true }); }
+
 const SETTINGS_FILE = path.join(data.dir, 'settings.toml');
-const BUFFERS = path.join(data.dir, 'state', 'buffers');
-const SESSION = path.join(data.dir, 'state', 'session.json');
+const BUFFERS = path.join(STATE, 'buffers');
+const SESSION = path.join(STATE, 'session.json');
 const TOOLS = path.join(app.isPackaged ? path.dirname(data.dir) : appRoot, 'tools');
 if (!fs.existsSync(SETTINGS_FILE)) atomicWrite(SETTINGS_FILE, defaultFileText());
 
@@ -39,9 +46,6 @@ const log = (line: string) => {
   try { fs.appendFileSync(path.join(data.dir, 'logs', 'lithograph.log'), `${new Date().toISOString()} ${line.trimEnd()}\n`); } catch { /* logging never breaks the app */ }
 };
 
-// ---------- smoke mode: scripted run that captures screenshots, used for verification ----------
-const smokeIdx = process.argv.indexOf('--smoke');
-const smoke = smokeIdx > 0 ? path.resolve(process.argv[smokeIdx + 1] ?? '') : null;
 
 let win: BrowserWindow | null = null;
 const send = (ch: string, ...args: unknown[]) => { if (win && !win.isDestroyed()) win.webContents.send(ch, ...args); };

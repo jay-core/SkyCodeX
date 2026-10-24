@@ -38,6 +38,7 @@ export function applySettings(s: Settings, p: Problem[]) {
   r.setProperty('--code-size', `${s['font.size']}px`);
   r.setProperty('--code-lh', String(s['font.line_height']));
   r.setProperty('--code-ls', `${s['font.letter_spacing']}px`);
+  r.setProperty('--code-weight', String(s['font.weight']));
   r.setProperty('--preview-scale', String(s['font.preview.scale']));
   r.setProperty('--mono', `'${s['font.family']}', 'ARX F1', ui-monospace, Menlo, Consolas, monospace`);
   r.setProperty('--ui', `'${s['font.ui.family']}', 'Selawik', -apple-system, 'Segoe UI', system-ui, sans-serif`);
