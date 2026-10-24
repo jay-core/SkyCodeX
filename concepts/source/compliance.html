@@ -1,0 +1,568 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lithograph concepts</title>
+<style>
+:root{
+  --bg:#00240A; --side:#001C08; --term:#001506; --pop:#00300E; --card:#002A0C; --prev:#001F09; --line:#0A3A18;
+  --fg:#d9dcd6; --dim:#6b7d70; --gut:#3f5a46; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b8766b; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#050906;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace; --ui:-apple-system,system-ui,"Segoe UI",sans-serif;
+}
+html,body{margin:0;background:var(--stage)}
+*{box-sizing:border-box}
+.frame{width:1440px;height:900px;padding:24px 28px 26px;display:flex;flex-direction:column;gap:14px;font-family:var(--ui);color:var(--fg);
+  background:radial-gradient(1200px 700px at 30% 20%,#0a1a0e 0%,#050906 70%)}
+.ttl{display:flex;align-items:baseline;gap:14px;height:30px;flex:none}
+.ttl .no{font:600 12px var(--mono);color:var(--kw);letter-spacing:.12em}
+.ttl h1{margin:0;font:600 22px var(--ui);letter-spacing:-.01em}
+.ttl p{margin:0;color:#8d9a8f;font-size:14px}
+.ttl .brand{margin-left:auto;font:600 11px var(--ui);letter-spacing:.2em;color:#2f4d38}
+.stage{flex:1;min-height:0;position:relative;display:flex;gap:20px}
+.notes{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:12px;height:96px;flex:none}
+.note{background:#09120b;border:1px solid #12251a;border-radius:9px;padding:9px 12px;font-size:12.2px;line-height:1.4;color:#a9b4a8;overflow:hidden}
+.big .code{font-size:14px;line-height:24px}
+.big .ln .g{width:50px}
+.note b{color:var(--fg);font-weight:600}
+.pin{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--fn);color:#00240A;font:700 10px var(--ui);
+  vertical-align:1px;margin:0 6px 0 4px;box-shadow:0 0 0 3px rgba(216,186,123,.2);flex:none;font-style:normal;text-decoration:none;line-height:1}
+.note .pin{margin:0 6px 0 0}
+.label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
+.col{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* window */
+.win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
+.hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
+.crumb{display:flex;align-items:center;white-space:nowrap}
+.crumb .dir{color:var(--dim)} .crumb .file{color:var(--fg)} .crumb .sep{margin:0 8px;color:var(--gut)} .crumb .fnn{color:var(--fn);font-family:var(--mono);font-size:11.5px}
+.crumb .mod{width:6px;height:6px;border-radius:50%;background:var(--ty);margin-left:8px;display:inline-block}
+.hdr .right{margin-left:auto;display:flex;gap:16px;align-items:center;font:11px var(--mono);white-space:nowrap}
+.hdr .ok{color:var(--ty)} .hdr .wa{color:var(--warn)} .hdr .er{color:var(--err)}
+.dots{display:flex;gap:6px;margin-right:12px}
+.dots i{width:8px;height:8px;border-radius:50%;display:block;background:#173a22}
+.dots.on i:nth-child(1){background:#b8766b}.dots.on i:nth-child(2){background:#ab9070}.dots.on i:nth-child(3){background:#7f9e82}
+.wctl{display:flex;margin:0 -12px 0 14px;height:29px}
+.wctl span{width:32px;display:grid;place-items:center;color:var(--dim);font-size:11px}
+.wctl span.hov{background:#b9584b;color:#efeae2}
+.body{flex:1;min-height:0;display:grid}
+.pane{min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--line);position:relative;display:flex;flex-direction:column}
+.pane:last-child{border-right:0}
+.pane.files{background:var(--side)}
+.pane.prev{background:var(--prev)}
+.ph{height:26px;flex:none;display:flex;align-items:center;padding:0 10px;font:600 10px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);gap:6px;white-space:nowrap}
+.ph .grow{flex:1}
+.chip{white-space:nowrap;font:500 10.5px var(--ui);padding:2px 7px;border-radius:9px;border:1px solid #17432a;color:var(--dim);text-transform:none;letter-spacing:0}
+.chip.on{color:var(--fg);background:rgba(119,165,165,.14);border-color:rgba(119,165,165,.45)}
+.pbody{flex:1;min-height:0;position:relative;overflow:hidden}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
+.links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
+
+/* code */
+.code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
+.ln{display:flex;position:relative}
+.ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
+.ln.act{background:rgba(119,165,165,.075)}
+.ln.act .g{color:var(--kw)}
+.ln .t{flex:1;min-width:0}
+.ln.dimmed .t{opacity:.36}
+.k{color:var(--kw)} .f{color:var(--fn)} .y{color:var(--ty)} .v{color:var(--var)} .p{color:var(--par);font-style:italic} .s{color:var(--str)}
+.n{color:var(--var)} .cm{color:var(--dim);font-style:italic} .pp{color:var(--kw)} .ns{color:var(--fg)} .mac{color:var(--kw)}
+.e{text-decoration:underline wavy var(--err) 1px;text-underline-offset:4px}
+.w{text-decoration:underline dotted var(--warn) 2px;text-underline-offset:4px}
+.i{text-decoration:underline dotted var(--kw) 2px;text-underline-offset:4px}
+.cur{display:inline-block;width:2px;height:16px;background:var(--kw);vertical-align:-3px;margin:0 -1px;box-shadow:0 0 6px rgba(119,165,165,.7)}
+.sel{background:rgba(119,165,165,.33)}
+.occ{background:rgba(119,165,165,.22);border-radius:2px}
+.u{text-decoration:underline var(--kw) 1px;text-underline-offset:4px}
+.hint{font:500 10.5px var(--ui);color:#86a28d;background:rgba(119,165,165,.12);border-radius:4px;padding:1px 5px;margin:0 3px 0 1px;font-style:normal}
+.eol{font:italic 11.5px var(--ui);margin-left:24px;opacity:.85}
+.eol.er{color:var(--err)} .eol.wa{color:var(--warn)} .eol.in{color:var(--kw)}
+.tag{font:500 9.5px var(--ui);padding:0 5px;border-radius:3px;border:1px solid currentColor;opacity:.8;margin-left:6px;font-style:normal}
+.ln.hitl{background:rgba(119,165,165,.16)}
+.ln.del{background:rgba(217,121,105,.12)} .ln.add{background:rgba(134,185,138,.12)}
+.ln.del .g,.ln.add .g{font-weight:600}
+.ln.del .g{color:var(--err)} .ln.add .g{color:var(--ty)}
+.ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
+.gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
+
+/* cards */
+.cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
+.card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
+.card-h{display:flex;align-items:center;gap:7px;padding:4px 9px;height:26px;font:11.5px var(--mono);border-bottom:1px solid var(--line);background:rgba(0,0,0,.14);white-space:nowrap}
+.card.collapsed .card-h{border-bottom:0}
+.card-h .nm{color:var(--fn)}
+.card-h .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.card-h .sw{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim)}
+.card .code{font-size:11.5px;line-height:18px;padding:4px 0}
+.card .ln .g{width:34px;padding-right:10px}
+.badge{font:500 10px var(--ui);padding:1px 7px;border-radius:9px;background:rgba(119,165,165,.15);color:var(--kw)}
+.badge.warm{background:rgba(212,165,116,.14);color:var(--str)}
+.badge.pink{background:rgba(200,168,184,.14);color:var(--var)}
+.rows{padding:4px 0;font:11.5px var(--mono)}
+.row{display:flex;gap:8px;padding:3px 10px;color:#b7c0b5;white-space:nowrap}
+.row .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.row.on{background:rgba(119,165,165,.12);color:var(--fg)}
+.cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
+
+/* tree */
+.tree{font:12px var(--ui);padding:2px 0}
+.ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
+.ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
+.ti.act{background:rgba(119,165,165,.16);color:var(--fg);box-shadow:inset 2px 0 var(--kw)}
+.ti.mod .nm{color:var(--kw)} .ti.dim .nm{color:var(--dim)} .ti.new .nm{color:var(--ty)}
+.ti .fds{margin-left:auto;display:flex;gap:3px}
+.ti .fd{width:7px;height:7px;border-radius:50%}
+
+/* terminal */
+.term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
+.tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
+.tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
+.tt .grow{flex:1}
+.term .code{font-size:12px;line-height:18px;padding:2px 2px}
+.okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
+
+/* floating */
+.pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
+.kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
+.toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
+.ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
+.ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
+/* Lithograph: charcoal, borderless, low contrast */
+:root{
+  --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
+  --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#0b0c0b;
+}
+.frame{background:radial-gradient(1200px 700px at 30% 20%,#151715 0%,#0b0c0b 70%)}
+.ttl p{color:#6d746c}
+.ttl .brand{color:#2b2f2b}
+.win{box-shadow:0 30px 80px rgba(0,0,0,.65);border-radius:9px}
+.hdr{background:var(--bg);border-bottom:0;color:#4f564f}
+.crumb .file{color:#8b9189} .crumb .sep{color:#33372f}
+.pane{border-right:0}
+.pane.files{background:#141514}
+.ph{color:#454b45;font-weight:500}
+.chip{border:0;padding:2px 3px;color:#454b45}
+.chip.on{background:none;color:#8b9189}
+.ln.act{background:rgba(255,255,255,.022)}
+.ln.act .g{color:#6a716a}
+.cur{box-shadow:none;width:2px;background:#6f8f8f}
+.card{border:0;border-radius:6px;background:var(--card)}
+.card.focus{border:0;box-shadow:inset 2px 0 #4e6a6a;background:#1d1e1d}
+.card-h{border:0;background:none;height:22px;padding:7px 10px 0;font-size:10.5px}
+.card-h .nm{color:#727971}
+.card-h .loc{color:#3f453f}
+.card-h .sw{width:5px;height:5px}
+.card .code{padding:2px 0 6px}
+.badge{background:none;color:#5f665f;padding:0}
+.badge.warm,.badge.pink{background:none}
+.term{border-top:0}
+.tt .on{box-shadow:none;color:#8b9189}
+.pop{border:0;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.note{background:#0f100f;border:0;color:#7b8279}
+.note b{color:#a3a8a0}
+.dots i{background:#262826}
+.ti{color:#777e76}
+.ti.act{background:rgba(255,255,255,.035);box-shadow:none;color:#a3a8a0}
+.kbd{border:0;background:#242624;color:#8b9189}
+.pin{background:#8c7d5a;color:#141514;box-shadow:none}
+.hint{background:rgba(255,255,255,.04);color:#5f665f}
+.label{color:#4f564f}
+.e{text-decoration-color:#9a655c}
+.occ{background:rgba(115,150,150,.16)}
+.occw{background:rgba(173,155,111,.2);border-radius:2px}
+.ln.noise .t{opacity:.2}
+.ln.chg{box-shadow:inset 2px 0 #4e6a6a}
+.toast{border:0}
+.ln.hitl{background:rgba(115,150,150,.07)}
+/* Metro: typography is the chrome */
+.win{border-radius:0}
+.hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
+.pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
+.pv .on{color:#a3a8a0} .pv .off{color:#313531} .pv .fn{font:300 15px var(--ui);color:#7d6f50;margin-left:-12px}
+.hdr .right{font:300 11.5px var(--ui);color:#3f453f;gap:18px;align-self:flex-start;margin-top:12px}
+.dots,.wctl{display:none}
+.card,.note,.pop,.toast,.kbd,.chip{border-radius:0}
+.ph{font:300 15px var(--ui);text-transform:lowercase;letter-spacing:0;height:36px;color:#4f564f;padding:0 14px}
+.ttl h1{font-weight:300;font-size:32px;text-transform:lowercase;letter-spacing:-.01em}
+.ttl p{font-weight:300}
+.pin{border-radius:0}
+.cards{padding:2px 10px 10px 22px;gap:10px}
+.tt{font:300 13px var(--ui);text-transform:lowercase;height:30px}
+.term .code{font-size:12px}
+.metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
+.big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkl.ttf');font-weight:300}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksl.ttf');font-weight:350}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawk.ttf');font-weight:400}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksb.ttf');font-weight:600}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkb.ttf');font-weight:700}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-ExtraLight.otf');font-weight:200}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Light.otf');font-weight:300}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Regular.otf');font-weight:400}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Medium.otf');font-weight:500}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-SemiBold.otf');font-weight:600}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Bold.otf');font-weight:700}
+:root{--mono:'ARX F1',ui-monospace,monospace;--ui:'Selawik',-apple-system,sans-serif}
+html,body{overflow:hidden;background:#171817;color:var(--fg)}
+.card .code{font-size:11px;line-height:17.5px}
+.code{font-size:12.5px}
+</style></head>
+<body><div id="root"></div>
+<script>
+window.onerror=(m,s,l,c)=>{window.__err=m+' @'+l+':'+c;};
+const R=String.raw;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sp=(c,t)=>`<span class="${c}">${esc(t)}</span>`;
+const KW=new Set(`auto bool break case char class const constexpr continue default delete do double else enum explicit extern false float for if inline int long namespace new noexcept nullptr operator private protected public return short signed sizeof static static_assert struct switch template this throw true try typedef typename union unsigned using virtual void volatile while override final size_t uint8_t uint16_t uint32_t uint64_t int64_t`.split(/\s+/));
+const NS=new Set(['std','tiny']);
+const TYPES=new Set(['string_view','string','vector','optional','span','function','sv']);
+
+function hlCpp(s,o,after){
+  const inc=s.match(/^(\s*#\s*(?:include|pragma))(.*)$/); if(inc) return sp('pp',inc[1])+sp(/include/.test(inc[1])?'s':'pp',inc[2]);
+  const re=/(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\w.]*)|([A-Za-z_]\w*)/g;
+  let out='',last=0,m;
+  while((m=re.exec(s))){out+=esc(s.slice(last,m.index));last=re.lastIndex;const t=m[0];
+    if(m[1])out+=sp('cm',t);else if(m[2])out+=sp('s',t);else if(m[3])out+=sp('n',t);
+    else{const rest=s.slice(last)+after;let c;
+      if(KW.has(t))c='k';
+      else if(o.params&&o.params.includes(t))c='p';
+      else if(/^[A-Z][A-Z0-9_]+$/.test(t))c='mac';
+      else if(/^\s*\(/.test(rest))c='f';
+      else if(NS.has(t))c='ns';
+      else if(/^[A-Z]/.test(t)||TYPES.has(t))c='y';
+      else c='v';
+      out+=sp(c,t);}}
+  return out+esc(s.slice(last));}
+function hlTomlVal(v){
+  const m=v.match(/^("(?:[^"\\]|\\.)*"|[^#]*?)(\s*)(#.*)?$/);if(!m)return esc(v);
+  const val=m[1];let o;
+  if(/^"/.test(val))o=sp('s',val);else if(/^(true|false)$/.test(val.trim()))o=sp('k',val);else if(/^[\d.\-]+$/.test(val.trim()))o=sp('n',val);else o=esc(val);
+  return o+esc(m[2]||'')+(m[3]?sp('cm',m[3]):'');}
+function hlToml(s){let m;
+  if(/^\s*#/.test(s))return sp('cm',s);
+  if((m=s.match(/^(\s*)(\[[^\]]+\])(.*)$/))){const r=m[3],i=r.indexOf('#');return esc(m[1])+sp('y',m[2])+(i<0?esc(r):esc(r.slice(0,i))+sp('cm',r.slice(i)));}
+  if((m=s.match(/^(\s*)([\w.]+)(\s*=\s*)(.*)$/)))return esc(m[1])+sp('f',m[2])+esc(m[3])+hlTomlVal(m[4]);
+  if(/^\d+$/.test(s.trim()))return sp('n',s);
+  return esc(s);}
+const REG=/^(r[a-d]x|e[a-d]x|r[sd]i|e[sd]i|r[sb]p|e[sb]p|r\d+d?|xmm\d+|[a-d]l)$/;
+function hlAsm(s){const ci=s.indexOf(';');const code=ci<0?s:s.slice(0,ci),cm=ci<0?'':s.slice(ci);
+  if(/^\S/.test(code))return sp('f',code)+(cm?sp('cm',cm):'');
+  let first=true;
+  const out=code.replace(/[A-Za-z_.][\w.]*|\d+|[^\w.]+/g,t=>{
+    if(/^[^\w.]+$/.test(t))return esc(t);
+    if(first&&/^[a-z]/.test(t)){first=false;return sp('k',t);}
+    if(REG.test(t))return sp('v',t); if(/^\d/.test(t))return sp('n',t); if(/^\./.test(t))return sp('f',t);
+    if(/^(dword|qword|ptr|byte|word)$/.test(t))return sp('cm',t); return esc(t);});
+  return out+(cm?sp('cm',cm):'');}
+function hlTerm(s){const m=s.match(/^(\S+) (❯) (.*)$/);if(m)return sp('k',m[1])+' '+sp('y',m[2])+' '+esc(m[3]);return esc(s);}
+function hl(s,o,after=''){const L=o.lang||'cpp';
+  if(L==='cpp')return hlCpp(s,o,after);if(L==='toml')return hlToml(s);if(L==='asm')return hlAsm(s);if(L==='term')return hlTerm(s);return esc(s);}
+
+const MK=/«([^|»]*)\|([^»]*)»/g;
+function wrap(spec,inner,o,after){
+  const [k,...a]=spec.split(':');
+  switch(k){
+    case 'cur': return '<span class="cur"></span>';
+    case 'pin': return `<span class="pin">${a[0]}</span>`;
+    case 'hint': return `<span class="hint">${esc(inner)}</span>`;
+    case 'raw': return o.raw[a[0]];
+    case 'c': return `<span class="call f" data-call="${a[0]}">${esc(inner)}</span>`;
+    default:{const id=[k,...a].find(x=>x.startsWith('#'));const cls=[k,...a].filter(x=>!x.startsWith('#')).join(' ');
+      return `<span class="${cls}"${id?` id="${id.slice(1)}"`:''}>${hl(inner,o,after)}</span>`;}
+  }}
+function line(s,o){let out='',last=0;const ms=[...s.matchAll(MK)];
+  ms.forEach(m=>{const after=s.slice(m.index+m[0].length).replace(MK,'$2');
+    out+=hl(s.slice(last,m.index),o,m[2]+after);out+=wrap(m[1],m[2],o,after);last=m.index+m[0].length;});
+  return out+hl(s.slice(last),o,'');}
+function code(src,o={}){
+  const L=src.replace(/^\n/,'').replace(/\n\s*$/,'').split('\n');const st=o.start||1;
+  return `<div class="code">`+L.map((s,i)=>{const n=st+i;const cls=['ln'];
+    if(o.active===n)cls.push('act');
+    if(o.dim&&!(n>=o.dim[0]&&n<=o.dim[1]))cls.push('dimmed');
+    if(o.lcls&&o.lcls[n])cls.push(o.lcls[n]);
+    const num=o.nums?o.nums[i]:n;
+    const g=o.nog?'':`<span class="g">${o.gut&&o.gut[n]?o.gut[n]:''}${num}</span>`;
+    return `<div class="${cls.join(' ')}" data-n="${n}">${g}<span class="t">${line(s,o)||' '}${o.eol&&o.eol[n]?o.eol[n]:''}</span></div>`;}).join('')+`</div>`;}
+const eol=(cls,t,tag)=>`<span class="eol ${cls}">${esc(t)}${tag?`<span class="tag">${tag}</span>`:''}</span>`;
+
+function tree(spec){return '<div class="tree">'+spec.replace(/^\n/,'').trimEnd().split('\n').map(l=>{
+  const ind=l.match(/^ */)[0].length/2;const [name,...fl]=l.trim().split('|');const dir=name.endsWith('/');
+  const fds=fl.filter(f=>f.startsWith('dot=')).map(f=>`<i class="fd" style="background:${f.slice(4)}"></i>`).join('');
+  const cls=fl.filter(f=>!f.startsWith('dot=')&&!f.startsWith('note=')).join(' ');const nt=fl.find(f=>f.startsWith('note='));
+  return `<div class="ti ${cls}" style="padding-left:${10+ind*13}px"><span class="ic">${dir?(cls.includes('open')?'▾':'▸'):''}</span><span class="nm">${esc(name)}</span>${nt?`<span class="dm" style="margin-left:8px;font-size:11px">${nt.slice(5)}</span>`:''}${fds?`<span class="fds">${fds}</span>`:''}</div>`;}).join('')+'</div>';}
+
+function crumb(dir,file,fn,mod){return `<span class="crumb"><span class="dir">${dir}</span><span class="file">${file}</span>${mod?'<i class="mod"></i>':''}${fn?fn.map(f=>`<span class="sep">›</span><span class="fnn">${f}</span>`).join(''):''}</span>`;}
+const RIGHT=(pos='45:42',w=0,e=0,extra='')=>`${extra}<span>${pos}</span><span class="ok">● clangd</span><span class="wa">⚠ ${w}</span><span class="er">✕ ${e}</span>`;
+function win(o){
+  const ctl=o.os==='win'?`<span class="wctl"><span>─</span><span>▢</span><span class="${o.hovx?'hov':''}">✕</span></span>`:o.os==='linux'?`<span class="wctl"><span class="${o.hovx?'hov':''}">✕</span></span>`:'';
+  const dots=o.os==='win'||o.os==='linux'?'':`<span class="dots ${o.dotsOn?'on':''}"><i></i><i></i><i></i></span>`;
+  return `<div class="win ${o.cls||''}" style="${o.style||''}">${o.nohdr?'':`<div class="hdr">${dots}${o.crumb}<span class="right">${o.right??RIGHT()}</span>${ctl}</div>`}
+  <div class="body" style="grid-template-columns:${o.cols}">${o.panes.join('')}</div>
+  ${o.term?`<div class="term" style="height:${o.termH||130}px">${o.term}</div>`:''}<svg class="links"></svg>${o.over||''}</div>`;}
+const pane=(cls,inner,head)=>`<div class="pane ${cls}">${head?`<div class="ph">${head}</div>`:''}<div class="pbody">${inner}</div></div>`;
+function card(name,loc,src,o={}){return `<div class="card ${o.focus?'focus':''} ${o.cls||''}" data-card="${o.id||name}" ${o.color?`data-color="${o.color}"`:''}>
+  <div class="card-h"><span class="sw"></span><span class="nm">${o.title||name}</span>${o.badge||''}<span class="loc">${loc}</span></div>
+  ${o.pre||''}${src?code(src,o.c||{}):''}${o.extra||''}</div>`;}
+const cards=(...c)=>`<div class="cards">${c.join('')}</div>`;
+const term=(tabs,src,o={})=>`<div class="tt">${tabs}</div><div style="padding:0 10px">${code(src,{lang:'term',nog:true,...o})}</div>`;
+const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</span><span class="grow"></span><span>⌃\` toggle · drag edge to resize</span>`;
+function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
+  <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
+
+/* ---------- shared sample project ---------- */
+const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
+const MAIN=R`void Server::start() {
+    socket_.listen(port_);
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}
+
+// Handles one client request end-to-end.
+Response Server::handle(const Request& req) {«pin:2|»
+    auto headers = «c:parse_headers|parse_headers»(req.raw);
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    Response res = handler(req, headers);«cur|»
+    «c:send_response|send_response»(socket_, res);
+    return res;
+}
+
+Server::~Server() {
+    socket_.close();
+}
+
+} // namespace tiny`;
+const C_PARSE=R`Headers parse_headers(std::string_view raw) {
+    Headers out;
+    for (auto line : «c:split|split»(raw, "\r\n")) {
+        auto colon = line.find(':');
+        if (colon == npos) continue;
+        out.emplace(«c:trim|trim»(line.substr(0, colon)),
+                    «c:trim|trim»(line.substr(colon + 1)));«cur|»
+    }
+    return out;
+}`;
+const C_ROUTE=R`Handler route(sv path, const Routes& routes) {
+    for (const auto& r : routes)
+        if (match_path(r.pattern, path))
+            return r.handler;
+    return not_found;
+}`;
+const C_SEND=R`void send_response(Socket& s, const Response& r) {
+    auto bytes = r.serialize();
+    write_all(s, bytes.data(), bytes.size());
+}`;
+const C_SPLIT=R`Parts split(sv s, sv delim) {
+    Parts out;
+    size_t at = 0, nx;
+    while ((nx = s.find(delim, at)) != npos) {
+        out.push_back(s.substr(at, nx - at));
+        at = nx + delim.size();
+    }
+    out.push_back(s.substr(at));
+    return out;
+}`;
+const C_TRIM=R`sv trim(sv s) {
+    while (!s.empty() && «c:is_space|is_space»(s.front()))
+        s.remove_prefix(1);
+    while (!s.empty() && «c:is_space|is_space»(s.back()))
+        s.remove_suffix(1);«cur|»
+    return s;
+}`;
+const TREE_MAIN=R`
+tinyhttp/|open
+  src/|open
+    http/|open
+      headers.cpp|dot=#ad9b6f
+      headers.hpp
+    net/|open
+      io.cpp|dot=#a8929e
+      socket.cpp
+    util/|open
+      strings.cpp|dot=#739696|dot=#ab9070
+    router.cpp|dot=#7f9e82
+    server.cpp|act|mod
+    server.hpp
+  tests/
+  CMakeLists.txt
+  compile_commands.json|dim`;
+const P1HEAD=(n,extra='')=>`Preview 1<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${n}</span>${extra}<span class="grow"></span><span class="chip on">project</span><span class="chip">std</span><span class="chip">system</span>`;
+const P2HEAD=(of,extra='')=>`Preview 2<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${of}</span>${extra}`;
+const mainCards=(focusParse)=>cards(
+  card('parse_headers','http/headers.cpp:12',C_PARSE,{focus:focusParse,c:{start:12,params:['raw'],active:focusParse?18:0}}),
+  card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),
+  card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
+
+try{
+/* ---------- flow · do-178c · aadl · stills — driven by seek(t) ---------- */
+const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
+const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const scene=(id,hdr,right,body)=>`<div id="${id}" class="scn" style="position:absolute;inset:0;background:#171817;display:flex;flex-direction:column"><div class="hdr">${hdr}<span class="right" id="${id}-st">${right}</span></div><div style="flex:1;position:relative;min-height:0">${body}</div></div>`;
+
+/* ---- flow data ---- */
+const n=(name,c=[],o={})=>({name,c,...o}),L=(lab,c)=>({loop:lab,c}),P='#ad9b6f';
+const LANES=[{title:'main · tinyhttp',x:40,y:92,colW:188,root:n('main',[n('Config::load',[L('×16 · known keys',[n('read_env')])]),n('Server::start',[L('until !running_',[n('Socket::accept'),n('Server::handle',[n('parse_headers',[L('×n · header lines',[n('split'),n('trim')])]),n('Response::bad_request',[],{cond:'if headers.empty()'}),n('route',[L('×n · routes',[n('match_path')])]),n('handler',[],{ind:'⇢ 3 targets'}),n('send_response',[L('until all bytes sent',[n('write_all')])])])])]),n('Server::stop')])},
+  {title:'thread · metrics flusher',x:1000,y:92,colW:120,root:n('Metrics::run',[L('every 1 s · until stop',[n('Metrics::flush',[n('write_file')]),n('sleep_for')])])},
+  {title:'signal · SIGINT',x:1000,y:300,colW:120,root:n('on_sigint',[n('Server::stop',[],{ref:true})])}];
+const RH=26,nodes=[],loops=[],edges=[];
+function lay(lane){let row=0;const walk=(nd,d,parent)=>{
+  if(nd.loop){const y0=lane.y+row*RH;const me={kind:'loop',lab:nd.loop,x:lane.x+d*lane.colW,y:y0,d,parent};nodes.push(me);row++;if(parent)edges.push([parent,me]);const first=nodes.length;
+    nd.c.forEach(ch=>walk(ch,d,null));const kids=nodes.slice(first).filter(k=>k.d===d);loops.push({x:me.x-12,y0:y0+4,y1:kids.length?kids[kids.length-1].y:y0,me});kids.forEach(k=>k.inLoop=me);return me;}
+  const me={kind:'fn',name:nd.name,x:lane.x+d*lane.colW,y:lane.y+row*RH,d,cond:nd.cond,ind:nd.ind,ref:nd.ref,root:d===0,path:['main','Server::start','Server::handle','parse_headers'].includes(nd.name)&&lane.title.startsWith('main')};
+  nodes.push(me);row++;if(parent)edges.push([parent,me,nd.cond]);nd.c.forEach(ch=>walk(ch,d+1,me));return me;};
+  walk(lane.root,0,null);}
+LANES.forEach(lay);
+const UNREACHED=[['tools/bench.cpp','belongs to target bench'],['legacy/cgi.cpp','no callers'],['Router::dump','only called from tests'],['plugins.cpp · load_plugin','called through a pointer we couldn’t resolve']];
+const flowBody=`${LANES.map(l=>`<div style="position:absolute;left:${l.x}px;top:${l.y-30}px;font:300 13px var(--ui);color:#454b45">${l.title}</div>`).join('')}
+  ${nodes.map((d,i)=>d.kind==='loop'?`<div class="fn lp" data-i="${i}" style="position:absolute;left:${d.x}px;top:${d.y-10}px;font:300 13px var(--ui);color:#5f8a8a;white-space:nowrap"><span class="lpi">↻</span> <span class="lpl">${d.lab}</span></div>`
+   :`<div class="fn" data-i="${i}" style="position:absolute;left:${d.x}px;top:${d.y-10}px;white-space:nowrap;font:${d.root?'300 17px var(--ui)':'13px var(--mono)'};line-height:20px"><span class="nm">${d.ref?'→ ':''}${d.name}${d.ref?' ↑':''}</span>${d.cond?`<span style="font:300 12px var(--ui);color:#5f665f;margin-left:10px">${d.cond}</span>`:''}${d.ind?`<span style="font:300 12px var(--ui);color:#7a6f8a;margin-left:10px">${d.ind}</span>`:''}</div>`).join('')}
+  <div id="shelf" style="position:absolute;left:1000px;top:420px;width:400px"><div style="font:300 13px var(--ui);color:#454b45;margin-bottom:10px">not reached from any entry point</div>
+   ${UNREACHED.map(([f,why])=>`<div class="ur" style="margin-bottom:9px"><div style="font:12.5px var(--mono);color:#7b8279">${f}</div><div style="font:300 12px var(--ui);color:#454b45">${why}</div></div>`).join('')}</div>
+  <div id="here" style="position:absolute;left:1000px;top:640px;font:300 13px/1.6 var(--ui);color:#ad9b6f;opacity:0">you are here<br><span style="font:12.5px var(--mono);color:#c9b98f">main › Server::start › Server::handle › parse_headers</span></div>
+  <svg id="fsvg" width="1440" height="844" style="position:absolute;left:0;top:0;overflow:visible"></svg>`;
+
+/* ---- do-178c ---- */
+const COV=R`bool Router::allowed(const Request& r, const Rule& rule) {
+    if («id:dec|rule.enabled && (r.is_admin || rule.public_access)»)
+        return true;
+    if (r.method == Method::Options)
+        return true;
+    return false;
+}`;
+const covMap={30:1,31:1,32:1,33:1,34:0,35:1,36:1};
+const covGut={};Object.entries(covMap).forEach(([l,c])=>covGut[l]=`<i class="cv" style="position:absolute;left:4px;top:3px;width:4px;height:14px;background:${c?'#5f8a6a':'#a8685e'}"></i>`);
+const mc=[['T1','1','1','–','true','router_test.cpp:12'],['T2','0','–','–','false','router_test.cpp:20'],['T3','1','0','0','false','router_test.cpp:27'],['T4','1','0','1','true','missing']];
+const doBody=`<div style="position:absolute;left:30px;top:6px;display:flex;gap:22px;font:300 15px var(--ui)"><span style="color:#a3a8a0">coverage</span><span style="color:#3a3f3a">trace</span><span style="color:#3a3f3a">coupling</span></div>
+ <div style="position:absolute;left:30px;top:44px;width:760px">${code(COV,{start:30,active:31,params:['r','rule'],gut:covGut})}
+  <div style="font:300 13px var(--ui);color:#4f564f;margin:18px 0 8px">MC/DC · line 31 · conditions A = rule.enabled, B = r.is_admin, C = rule.public_access</div>
+  <div style="display:grid;grid-template-columns:50px 44px 44px 44px 70px 1fr;font:13px/1.9 var(--mono);color:#8b9189">${['test','A','B','C','result','from'].map(h=>`<span style="font:300 12px var(--ui);color:#454b45">${h}</span>`).join('')}
+   ${mc.map((r,i)=>r.map((c,j)=>`<span class="mrow r${i}" style="${i===3?'color:#c9a26a;':''}${j===5?'font:300 12.5px var(--ui);'+(i===3?'':'color:#5f7f7f;'):''}">${c}</span>`).join('')).join('')}</div>
+  <div class="mrow r4" style="margin-top:10px;font:300 14px/1.6 var(--ui);color:#c9a26a;background:#1f1d17;padding:10px 14px">C has no independence pair yet. Add a test with <span style="font-family:var(--mono)">A = 1, B = 0, C = 1</span> → expected <span style="font-family:var(--mono)">true</span>; with T3 it shows C alone changes the outcome.</div></div>
+ <div style="position:absolute;left:830px;top:44px;right:30px">
+  <div style="font:300 13px var(--ui);color:#4f564f;margin-bottom:8px">router.cpp · coverage</div>
+  ${[['statement','92 %','#7f9e82'],['decision','88 %','#7f9e82'],['MC/DC','2 of 3 conditions','#c9a26a']].map(([a,b,c])=>`<div class="tr0" style="display:flex;font:300 15px/2 var(--ui)"><span style="color:#8b9189">${a}</span><span style="margin-left:auto;color:${c}">${b}</span></div>`).join('')}
+  <div style="font:300 12px var(--ui);color:#3f453f;margin:2px 0 22px">level A needs all three at 100 %</div>
+  <div style="font:300 13px var(--ui);color:#4f564f;margin-bottom:8px">traceability</div>
+  ${[['HLR-104','reject non-admin writes','Router::allowed :31','3 tests','#7f9e82'],['HLR-105','allow CORS preflight','Router::allowed :33','no test','#c9a26a'],['—','no requirement','Router::dump','untraced','#a8685e']].map(([id,d,f,tst,c])=>`<div class="tr1" style="padding:8px 0;border-top:1px solid #222422"><div style="display:flex;font:300 14px var(--ui)"><span style="color:#a3a8a0;width:84px">${id}</span><span style="color:#7b8279">${d}</span><span style="margin-left:auto;color:${c}">${tst}</span></div><div style="font:12px var(--mono);color:#5f7f7f;margin-left:84px">${f}</div></div>`).join('')}</div>`;
+
+/* ---- aadl ---- */
+const AADL=`package tinyhttp_arch
+public
+  process tinyhttp
+    features
+      requests : in event data port Request;
+  end tinyhttp;
+
+  process implementation tinyhttp.impl
+    subcomponents
+      server  : thread server_loop;
+      metrics : thread metrics_flush;
+      store   : data metrics_store;
+    connections
+      c1 : port requests -> server.req;
+      c2 : data access store -> metrics.store;
+  end tinyhttp.impl;
+
+  thread metrics_flush
+    properties
+      Dispatch_Protocol => Periodic;
+      Period => 1000 ms;
+      Source_Name => "Metrics::flush";
+  end metrics_flush;
+end tinyhttp_arch;`;
+const AK=new Set('package public process end features in out event data port implementation subcomponents connections thread properties access'.split(' '));
+const hlA=s=>s.replace(/"[^"]*"|\b\d+\b|[A-Za-z_][\w.]*|=>|->|[^\w"]+/g,t=>t.startsWith('"')?sp('s',t):/^\d/.test(t)?sp('n',t):AK.has(t)?sp('k',t):/^[A-Z]\w*$/.test(t)&&t.includes('_')?sp('y',t):(t==='=>'||t==='->')?sp('cm',t):esc(t));
+const aadlText=`<div style="font:12.5px/20px var(--mono);color:#9ea39b;white-space:pre">${AADL.split('\n').map((l,i)=>`<div class="al" style="display:flex"><span style="width:40px;text-align:right;padding-right:14px;color:#373b37">${i+1}</span><span>${hlA(l)||' '}</span></div>`).join('')}</div>`;
+const box=(id,x,y,w,h,title,sub,link,o={})=>`<div id="${id}" class="ab" style="position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;border:${o.data?'1px dashed':'1.5px solid'} ${o.col||'#4f564f'};padding:8px 10px"><div style="font:300 15px var(--ui);color:#a3a8a0">${title}</div><div style="font:300 12px var(--ui);color:#5f665f">${sub}</div><div style="font:11.5px var(--mono);color:#5f7f7f;margin-top:4px">${link}</div></div>`;
+const aadlBody=`<div style="position:absolute;left:30px;top:8px;width:600px">${aadlText}</div>
+ <div style="position:absolute;left:660px;top:8px;right:30px;bottom:0">
+  <div id="proc" class="ab" style="position:absolute;left:30px;top:20px;width:690px;height:470px;border:1.5px solid #3a3f3a"><div style="font:300 18px var(--ui);color:#8b9189;padding:8px 12px">process tinyhttp.impl</div></div>
+  <div class="ab" id="portp" style="position:absolute;left:20px;top:120px;width:0;height:0;border-left:14px solid #739696;border-top:9px solid transparent;border-bottom:9px solid transparent"></div><div class="ab" id="portl" style="position:absolute;left:-60px;top:146px;font:300 12.5px var(--ui);color:#739696">requests</div>
+  ${box('th1',120,90,230,86,'thread server_loop','sporadic · per request','↔ Server::start  server.cpp:30')}
+  ${box('th2',420,90,250,86,'thread metrics_flush','periodic · 1000 ms','↔ Metrics::flush  metrics.cpp:44')}
+  ${box('dt1',270,290,220,74,'data metrics_store','shared · guarded by mutex','↔ Metrics::counters_',{data:true})}
+  <svg id="asvg" width="760" height="520" style="position:absolute;left:0;top:0;overflow:visible"></svg>
+  <div id="warn" style="position:absolute;left:30px;top:520px;width:690px;background:#1f1d17;padding:12px 16px;font:300 14px/1.6 var(--ui);color:#c9a26a">Model and code disagree: <span style="font-family:var(--mono)">Period => 1000 ms</span>, but <span style="font-family:var(--mono)">Metrics::run</span> sleeps <span style="font-family:var(--mono)">2 s</span> (metrics.cpp:51). Update the model or the code.</div>
+  <div id="draft" style="position:absolute;left:30px;top:640px;font:300 12.5px var(--ui);color:#3f453f">draft generated from the code · review before use · open in OSATE ›</div></div>`;
+
+const stills=[['../terminal-press/t3-memory.png'],['../terminal-press/t4-misra.png']];
+document.getElementById('root').innerHTML=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none;background:#171817">
+ ${scene('s1',PV('flow',['atlas','book','server.cpp']),'scanning…',flowBody)}
+ ${scene('s2',PV('do-178c',['misra','memory','flow']),'router.cpp · tests from ctest run #8',doBody)}
+ ${scene('s3',PV('aadl',['do-178c','misra','flow']),'draft from code · review needed',aadlBody)}
+ ${stills.map(([s],i)=>`<img class="scn" id="s${4+i}" src="${s}" style="position:absolute;inset:0;width:100%;height:100%">`).join('')}
+ <div id="s6" class="scn" style="position:absolute;inset:0;background:#171817;display:grid;place-content:center;text-align:center"><div style="font:300 84px var(--ui);color:#a3a8a0;letter-spacing:-.02em">lithograph</div><div style="font:300 18px var(--ui);color:#5f665f;margin-top:6px">portable · offline · C and C++</div></div>
+ <div id="opening" style="position:absolute;inset:0;background:#171817;display:grid;place-content:center;font:300 40px var(--ui);color:#8b9189">opening tinyhttp/</div>
+ <div id="grad" style="position:absolute;left:0;right:0;bottom:0;height:140px;background:linear-gradient(rgba(23,24,23,0),rgba(23,24,23,.94));z-index:50"></div>
+ <div id="cap" style="position:absolute;left:40px;bottom:30px;max-width:900px;z-index:60;font:300 17px var(--ui);color:#7b8279"></div></div>`;
+
+/* ---- precompute flow geometry ---- */
+const FN=$$('#s1 .fn'),W0=$('#fsvg').getBoundingClientRect();
+nodes.forEach((d,i)=>{const r=FN[i].getBoundingClientRect();d.r=r.right-W0.left;d.l=r.left-W0.left;d.cy=r.top+r.height/2-W0.top;});
+const order=nodes.map((d,i)=>i);
+const edgeD=edges.map(([p,c])=>{const x1=p.l+Math.min(p.r-p.l,(p.root?60:0)+ (p.r-p.l))+8,y1=p.cy,x2=c.l-8,y2=c.cy;const sx=p.l+12,sy=p.cy+9;
+  return `M${sx} ${sy} L${sx} ${y2-6} Q${sx} ${y2} ${sx+6} ${y2} L${x2} ${y2}`;});
+const loopD=loops.map(lp=>{const k=nodes.filter(d=>d.inLoop===lp.me);const yb=k.length?k[k.length-1].cy:lp.me.cy;return `M${lp.x+6} ${lp.me.cy+8} L${lp.x} ${lp.me.cy+8} L${lp.x} ${yb+6} L${lp.x+6} ${yb+6}`;});
+
+function flowAt(t){
+  const st=$('#s1-st');const idx=Math.round(lerp(0,42,clamp((t-2.0)/3.0)));
+  st.textContent=t<2?'scanning…':t<5?`indexing ${idx} / 42 files`:t<6.4?'loop counts…':'ready · 3 entry points · 4 unreached';
+  const here=clamp((t-8.2)/0.5);
+  let svg='';
+  nodes.forEach((d,i)=>{const el=FN[i];const rough=clamp((t-0.7-i*0.03)/0.4),prec=clamp((t-2.0-i*0.1)/0.45);
+    el.style.opacity=rough*(0.35+0.65*prec)*(here&&!d.path&&d.kind==='fn'?1-0.45*here:1);
+    const nm=el.querySelector('.nm');if(nm){const base=d.root?'#a3a8a0':'#ad9b6f';nm.style.color=d.path&&here?'#e2cf9c':prec>0.5?base:'#5f665f';}
+    if(d.kind==='loop'){const lab=el.querySelector('.lpl');lab.style.opacity=t<5.0+i*0.02?0.25:clamp((t-5.0-i*0.02)/0.3)*0.75+0.25;if(t<5.0)lab.textContent='…';else lab.textContent=d.lab;}
+    el.style.transform=`translateX(${(1-expo(rough))*12}px)`;});
+  edges.forEach(([p,c,cond],k)=>{const ci=nodes.indexOf(c);const rough=clamp((t-0.75-ci*0.03)/0.4),prec=clamp((t-2.05-ci*0.1)/0.45);const onPath=p.path&&c.path&&here;
+    svg+=`<path d="${edgeD[k]}" fill="none" stroke="${onPath?'#c9b98f':prec>0.5?'#4a524a':'#343834'}" stroke-width="${onPath?1.6:1.1}" stroke-dasharray="${cond||prec<0.5?'3 4':'0'}" opacity="${rough}"/>`;});
+  loops.forEach((lp,k)=>{const o=clamp((t-4.2-k*0.12)/0.4);svg+=`<path d="${loopD[k]}" fill="none" stroke="#4e7070" stroke-width="1.3" opacity="${o}"/>`;});
+  $('#fsvg').innerHTML=svg;
+  $$('#shelf, #shelf .ur').forEach((e,k)=>{const p=clamp((t-6.5-k*0.12)/0.5);e.style.opacity=k?p:Math.min(1,p*2);e.style.transform=`translateX(${(1-expo(p))*40}px)`;});
+  $('#here').style.opacity=here;
+}
+function doAt(t){const u=t-12;
+  $$('#s2 .cv').forEach((e,k)=>{e.style.opacity=clamp((u-0.9-k*0.09)/0.25);});
+  for(let i=0;i<5;i++)$$(`#s2 .r${i}`).forEach(e=>{const p=clamp((u-2.0-i*0.35)/0.4);e.style.opacity=p;});
+  const pulse=u>4.0?0.6+0.4*Math.cos((u-4.0)*5):1;$$('#s2 .r3').forEach(e=>e.style.opacity=clamp((u-3.05)/0.4)*pulse);
+  $$('#s2 .tr0').forEach((e,k)=>e.style.opacity=clamp((u-1.2-k*0.15)/0.4));
+  $$('#s2 .tr1').forEach((e,k)=>{const p=clamp((u-4.6-k*0.25)/0.5);e.style.opacity=p;e.style.transform=`translateX(${(1-expo(p))*40}px)`;});}
+function aadlAt(t){const u=t-19.5;
+  $$('#s3 .al').forEach((e,k)=>e.style.opacity=clamp((u-0.6-k*0.06)/0.3));
+  const bx=[['proc',1.4],['portp',2.0],['portl',2.0],['th1',2.2],['th2',2.45],['dt1',2.7]];
+  bx.forEach(([id,s])=>{const p=clamp((u-s)/0.45),e=$('#'+id);e.style.opacity=p;e.style.transform=`scale(${0.97+0.03*expo(p)})`;});
+  const A=$('#s3').getBoundingClientRect(),sv=$('#asvg').getBoundingClientRect();const R=id=>{const r=$('#'+id).getBoundingClientRect();return {l:r.left-sv.left,r:r.right-sv.left,t:r.top-sv.top,b:r.bottom-sv.top,cx:(r.left+r.right)/2-sv.left,cy:(r.top+r.bottom)/2-sv.top};};
+  const p1=clamp((u-3.1)/0.6),p2=clamp((u-3.5)/0.6),p3=clamp((u-3.8)/0.6);const th1=R('th1'),th2=R('th2'),dt=R('dt1'),pp=R('portp');
+  const line=(d,len,p,col,dash)=>`<path d="${d}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="${dash?'5 4':len}" stroke-dashoffset="${dash?0:len*(1-expo(p))}" opacity="${dash?p:1}"/>`;
+  $('#asvg').innerHTML=line(`M${pp.r} ${pp.cy} L${th1.l} ${pp.cy}`,140,p1,'#739696')+line(`M${dt.cx-40} ${dt.t} L${th1.cx} ${th1.b}`,200,p2,'#7f9e82',true)+line(`M${dt.cx+40} ${dt.t} L${th2.cx} ${th2.b}`,200,p3,'#7f9e82',true)
+    +`<text x="${(pp.r+th1.l)/2-10}" y="${pp.cy-8}" fill="#739696" font-size="12" font-weight="300" font-family="Selawik" opacity="${p1}">c1</text>`;
+  const w=clamp((u-4.6)/0.5);$('#warn').style.opacity=w;$('#warn').style.transform=`translateX(${(1-expo(w))*40}px)`;$('#draft').style.opacity=clamp((u-5.2)/0.4);
+  const t2=clamp((u-4.6)/0.4);$('#th2').style.borderColor=t2>0?`rgba(201,162,106,${t2})`:'#4f564f';}
+
+const SCN=[['s1',0,12],['s2',12,19.5],['s3',19.5,27],['s4',27,30],['s5',30,33],['s6',33,36]];
+const CAPS=[[0.6,4.2,'flow — opens with the folder: a rough tree in a second, then it firms up as indexing runs'],[4.2,8.1,'loops show how often they run — ×16, ×n, until a condition · conditions dashed, indirect calls marked'],[8.1,12,'you are here: the path from main to your cursor · code no entry point reaches, listed with the likely reason'],
+  [12,15.8,'do-178c — statement, decision and MC/DC coverage, right in the code'],[15.8,19.5,'a missing MC/DC pair comes with the test that would close it · requirements traced to code and tests'],
+  [19.5,23.2,'aadl — a draft architecture model generated from the code, linked back to it'],[23.2,27,'model and code are checked against each other'],
+  [27,30,'memory — RAM and flash budgets, largest first, with the cause of any overflow'],[30,33,'misra — precise findings, long before certification'],[33,40,'']];
+window.TOTAL=36;
+function turn(el,deg,op){el.style.transformOrigin='left center';el.style.transform=`perspective(1600px) rotateY(${deg}deg)`;el.style.opacity=op;}
+window.seek=function(t){
+  const op=$('#opening');op.style.opacity=t<0.4?1:1-clamp((t-0.4)/0.3);
+  SCN.forEach(([id,a,b],k)=>{const el=$('#'+id);
+    if(t>=a&&t<b){const p=k?clamp((t-a-0.12)/0.6):1;turn(el,70*(1-expo(p)),Math.min(1,p*1.5));el.style.zIndex=2;}
+    else if(t>=b&&t<b+0.36){const p=inC(clamp((t-b)/0.34));turn(el,-70*p,1-p);el.style.zIndex=1;}
+    else{el.style.opacity=0;}});
+  if(t<12.4)flowAt(t);if(t>=11.9&&t<19.9)doAt(Math.max(t,12));if(t>=19.4&&t<27.4)aadlAt(Math.max(t,19.5));
+  const c=CAPS.find(([a,b])=>t>=a&&t<b)||[0,0,''],cap=$('#cap');cap.textContent=c[2];cap.style.opacity=Math.min(clamp((t-c[0]-0.15)/0.35),clamp((c[1]-t)/0.3));cap.style.transform=`translateX(${(1-expo(clamp((t-c[0]-0.15)/0.6)))*40}px)`;
+  $('#grad').style.opacity=t<33?1:0;
+};
+seek(0);
+
+}catch(e){window.__err=e.message+" | "+e.stack;}
+</script></body></html>

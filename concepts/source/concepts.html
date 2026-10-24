@@ -1,0 +1,919 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Moss concepts</title>
+<style>
+:root{
+  --bg:#00240A; --side:#001C08; --term:#001506; --pop:#00300E; --card:#002A0C; --prev:#001F09; --line:#0A3A18;
+  --fg:#d9dcd6; --dim:#6b7d70; --gut:#3f5a46; --kw:#77a5a5; --fn:#d8ba7b; --ty:#86b98a; --var:#c8a8b8; --par:#d97969; --str:#d4a574;
+  --err:#d97969; --warn:#d4a574; --stage:#050906;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace; --ui:-apple-system,system-ui,"Segoe UI",sans-serif;
+}
+html,body{margin:0;background:var(--stage)}
+*{box-sizing:border-box}
+.frame{width:1440px;height:900px;padding:24px 28px 26px;display:flex;flex-direction:column;gap:14px;font-family:var(--ui);color:var(--fg);
+  background:radial-gradient(1200px 700px at 30% 20%,#0a1a0e 0%,#050906 70%)}
+.ttl{display:flex;align-items:baseline;gap:14px;height:30px;flex:none}
+.ttl .no{font:600 12px var(--mono);color:var(--kw);letter-spacing:.12em}
+.ttl h1{margin:0;font:600 22px var(--ui);letter-spacing:-.01em}
+.ttl p{margin:0;color:#8d9a8f;font-size:14px}
+.ttl .brand{margin-left:auto;font:600 11px var(--ui);letter-spacing:.2em;color:#2f4d38}
+.stage{flex:1;min-height:0;position:relative;display:flex;gap:20px}
+.notes{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:12px;height:96px;flex:none}
+.note{background:#09120b;border:1px solid #12251a;border-radius:9px;padding:9px 12px;font-size:12.2px;line-height:1.4;color:#a9b4a8;overflow:hidden}
+.big .code{font-size:14px;line-height:24px}
+.big .ln .g{width:50px}
+.note b{color:var(--fg);font-weight:600}
+.pin{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--fn);color:#00240A;font:700 10px var(--ui);
+  vertical-align:1px;margin:0 6px 0 4px;box-shadow:0 0 0 3px rgba(216,186,123,.2);flex:none;font-style:normal;text-decoration:none;line-height:1}
+.note .pin{margin:0 6px 0 0}
+.label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
+.col{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* window */
+.win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
+.hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
+.crumb{display:flex;align-items:center;white-space:nowrap}
+.crumb .dir{color:var(--dim)} .crumb .file{color:var(--fg)} .crumb .sep{margin:0 8px;color:var(--gut)} .crumb .fnn{color:var(--fn);font-family:var(--mono);font-size:11.5px}
+.crumb .mod{width:6px;height:6px;border-radius:50%;background:var(--ty);margin-left:8px;display:inline-block}
+.hdr .right{margin-left:auto;display:flex;gap:16px;align-items:center;font:11px var(--mono);white-space:nowrap}
+.hdr .ok{color:var(--ty)} .hdr .wa{color:var(--warn)} .hdr .er{color:var(--err)}
+.dots{display:flex;gap:6px;margin-right:12px}
+.dots i{width:8px;height:8px;border-radius:50%;display:block;background:#173a22}
+.dots.on i:nth-child(1){background:#d97969}.dots.on i:nth-child(2){background:#d4a574}.dots.on i:nth-child(3){background:#86b98a}
+.wctl{display:flex;margin:0 -12px 0 14px;height:29px}
+.wctl span{width:32px;display:grid;place-items:center;color:var(--dim);font-size:11px}
+.wctl span.hov{background:#b9584b;color:#efeae2}
+.body{flex:1;min-height:0;display:grid}
+.pane{min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--line);position:relative;display:flex;flex-direction:column}
+.pane:last-child{border-right:0}
+.pane.files{background:var(--side)}
+.pane.prev{background:var(--prev)}
+.ph{height:26px;flex:none;display:flex;align-items:center;padding:0 10px;font:600 10px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);gap:6px;white-space:nowrap}
+.ph .grow{flex:1}
+.chip{white-space:nowrap;font:500 10.5px var(--ui);padding:2px 7px;border-radius:9px;border:1px solid #17432a;color:var(--dim);text-transform:none;letter-spacing:0}
+.chip.on{color:var(--fg);background:rgba(119,165,165,.14);border-color:rgba(119,165,165,.45)}
+.pbody{flex:1;min-height:0;position:relative;overflow:hidden}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
+.links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
+
+/* code */
+.code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
+.ln{display:flex;position:relative}
+.ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
+.ln.act{background:rgba(119,165,165,.075)}
+.ln.act .g{color:var(--kw)}
+.ln .t{flex:1;min-width:0}
+.ln.dimmed .t{opacity:.36}
+.k{color:var(--kw)} .f{color:var(--fn)} .y{color:var(--ty)} .v{color:var(--var)} .p{color:var(--par);font-style:italic} .s{color:var(--str)}
+.n{color:var(--var)} .cm{color:var(--dim);font-style:italic} .pp{color:var(--kw)} .ns{color:var(--fg)} .mac{color:var(--kw)}
+.e{text-decoration:underline wavy var(--err) 1px;text-underline-offset:4px}
+.w{text-decoration:underline dotted var(--warn) 2px;text-underline-offset:4px}
+.i{text-decoration:underline dotted var(--kw) 2px;text-underline-offset:4px}
+.cur{display:inline-block;width:2px;height:16px;background:var(--kw);vertical-align:-3px;margin:0 -1px;box-shadow:0 0 6px rgba(119,165,165,.7)}
+.sel{background:rgba(119,165,165,.33)}
+.occ{background:rgba(119,165,165,.22);border-radius:2px}
+.u{text-decoration:underline var(--kw) 1px;text-underline-offset:4px}
+.hint{font:500 10.5px var(--ui);color:#86a28d;background:rgba(119,165,165,.12);border-radius:4px;padding:1px 5px;margin:0 3px 0 1px;font-style:normal}
+.eol{font:italic 11.5px var(--ui);margin-left:24px;opacity:.85}
+.eol.er{color:var(--err)} .eol.wa{color:var(--warn)} .eol.in{color:var(--kw)}
+.tag{font:500 9.5px var(--ui);padding:0 5px;border-radius:3px;border:1px solid currentColor;opacity:.8;margin-left:6px;font-style:normal}
+.ln.hitl{background:rgba(119,165,165,.16)}
+.ln.del{background:rgba(217,121,105,.12)} .ln.add{background:rgba(134,185,138,.12)}
+.ln.del .g,.ln.add .g{font-weight:600}
+.ln.del .g{color:var(--err)} .ln.add .g{color:var(--ty)}
+.ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
+.gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
+
+/* cards */
+.cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
+.card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
+.card-h{display:flex;align-items:center;gap:7px;padding:4px 9px;height:26px;font:11.5px var(--mono);border-bottom:1px solid var(--line);background:rgba(0,0,0,.14);white-space:nowrap}
+.card.collapsed .card-h{border-bottom:0}
+.card-h .nm{color:var(--fn)}
+.card-h .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.card-h .sw{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim)}
+.card .code{font-size:11.5px;line-height:18px;padding:4px 0}
+.card .ln .g{width:34px;padding-right:10px}
+.badge{font:500 10px var(--ui);padding:1px 7px;border-radius:9px;background:rgba(119,165,165,.15);color:var(--kw)}
+.badge.warm{background:rgba(212,165,116,.14);color:var(--str)}
+.badge.pink{background:rgba(200,168,184,.14);color:var(--var)}
+.rows{padding:4px 0;font:11.5px var(--mono)}
+.row{display:flex;gap:8px;padding:3px 10px;color:#b7c0b5;white-space:nowrap}
+.row .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.row.on{background:rgba(119,165,165,.12);color:var(--fg)}
+.cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
+
+/* tree */
+.tree{font:12px var(--ui);padding:2px 0}
+.ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
+.ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
+.ti.act{background:rgba(119,165,165,.16);color:var(--fg);box-shadow:inset 2px 0 var(--kw)}
+.ti.mod .nm{color:var(--kw)} .ti.dim .nm{color:var(--dim)} .ti.new .nm{color:var(--ty)}
+.ti .fds{margin-left:auto;display:flex;gap:3px}
+.ti .fd{width:7px;height:7px;border-radius:50%}
+
+/* terminal */
+.term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
+.tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
+.tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
+.tt .grow{flex:1}
+.term .code{font-size:12px;line-height:18px;padding:2px 2px}
+.okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
+
+/* floating */
+.pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
+.kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
+.toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
+.ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
+.ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
+</style></head>
+<body><div id="root"></div>
+<script>
+window.onerror=(m,s,l,c)=>{window.__err=m+' @'+l+':'+c;};
+const R=String.raw;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sp=(c,t)=>`<span class="${c}">${esc(t)}</span>`;
+const KW=new Set(`auto bool break case char class const constexpr continue default delete do double else enum explicit extern false float for if inline int long namespace new noexcept nullptr operator private protected public return short signed sizeof static static_assert struct switch template this throw true try typedef typename union unsigned using virtual void volatile while override final size_t uint8_t uint16_t uint32_t uint64_t int64_t`.split(/\s+/));
+const NS=new Set(['std','tiny']);
+const TYPES=new Set(['string_view','string','vector','optional','span','function','sv']);
+
+function hlCpp(s,o,after){
+  const inc=s.match(/^(\s*#\s*(?:include|pragma))(.*)$/); if(inc) return sp('pp',inc[1])+sp(/include/.test(inc[1])?'s':'pp',inc[2]);
+  const re=/(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\w.]*)|([A-Za-z_]\w*)/g;
+  let out='',last=0,m;
+  while((m=re.exec(s))){out+=esc(s.slice(last,m.index));last=re.lastIndex;const t=m[0];
+    if(m[1])out+=sp('cm',t);else if(m[2])out+=sp('s',t);else if(m[3])out+=sp('n',t);
+    else{const rest=s.slice(last)+after;let c;
+      if(KW.has(t))c='k';
+      else if(o.params&&o.params.includes(t))c='p';
+      else if(/^[A-Z][A-Z0-9_]+$/.test(t))c='mac';
+      else if(/^\s*\(/.test(rest))c='f';
+      else if(NS.has(t))c='ns';
+      else if(/^[A-Z]/.test(t)||TYPES.has(t))c='y';
+      else c='v';
+      out+=sp(c,t);}}
+  return out+esc(s.slice(last));}
+function hlTomlVal(v){
+  const m=v.match(/^("(?:[^"\\]|\\.)*"|[^#]*?)(\s*)(#.*)?$/);if(!m)return esc(v);
+  const val=m[1];let o;
+  if(/^"/.test(val))o=sp('s',val);else if(/^(true|false)$/.test(val.trim()))o=sp('k',val);else if(/^[\d.\-]+$/.test(val.trim()))o=sp('n',val);else o=esc(val);
+  return o+esc(m[2]||'')+(m[3]?sp('cm',m[3]):'');}
+function hlToml(s){let m;
+  if(/^\s*#/.test(s))return sp('cm',s);
+  if((m=s.match(/^(\s*)(\[[^\]]+\])(.*)$/))){const r=m[3],i=r.indexOf('#');return esc(m[1])+sp('y',m[2])+(i<0?esc(r):esc(r.slice(0,i))+sp('cm',r.slice(i)));}
+  if((m=s.match(/^(\s*)([\w.]+)(\s*=\s*)(.*)$/)))return esc(m[1])+sp('f',m[2])+esc(m[3])+hlTomlVal(m[4]);
+  if(/^\d+$/.test(s.trim()))return sp('n',s);
+  return esc(s);}
+const REG=/^(r[a-d]x|e[a-d]x|r[sd]i|e[sd]i|r[sb]p|e[sb]p|r\d+d?|xmm\d+|[a-d]l)$/;
+function hlAsm(s){const ci=s.indexOf(';');const code=ci<0?s:s.slice(0,ci),cm=ci<0?'':s.slice(ci);
+  if(/^\S/.test(code))return sp('f',code)+(cm?sp('cm',cm):'');
+  let first=true;
+  const out=code.replace(/[A-Za-z_.][\w.]*|\d+|[^\w.]+/g,t=>{
+    if(/^[^\w.]+$/.test(t))return esc(t);
+    if(first&&/^[a-z]/.test(t)){first=false;return sp('k',t);}
+    if(REG.test(t))return sp('v',t); if(/^\d/.test(t))return sp('n',t); if(/^\./.test(t))return sp('f',t);
+    if(/^(dword|qword|ptr|byte|word)$/.test(t))return sp('cm',t); return esc(t);});
+  return out+(cm?sp('cm',cm):'');}
+function hlTerm(s){const m=s.match(/^(\S+) (❯) (.*)$/);if(m)return sp('k',m[1])+' '+sp('y',m[2])+' '+esc(m[3]);return esc(s);}
+function hl(s,o,after=''){const L=o.lang||'cpp';
+  if(L==='cpp')return hlCpp(s,o,after);if(L==='toml')return hlToml(s);if(L==='asm')return hlAsm(s);if(L==='term')return hlTerm(s);return esc(s);}
+
+const MK=/«([^|»]*)\|([^»]*)»/g;
+function wrap(spec,inner,o,after){
+  const [k,...a]=spec.split(':');
+  switch(k){
+    case 'cur': return '<span class="cur"></span>';
+    case 'pin': return `<span class="pin">${a[0]}</span>`;
+    case 'hint': return `<span class="hint">${esc(inner)}</span>`;
+    case 'raw': return o.raw[a[0]];
+    case 'c': return `<span class="call f" data-call="${a[0]}">${esc(inner)}</span>`;
+    default:{const id=[k,...a].find(x=>x.startsWith('#'));const cls=[k,...a].filter(x=>!x.startsWith('#')).join(' ');
+      return `<span class="${cls}"${id?` id="${id.slice(1)}"`:''}>${hl(inner,o,after)}</span>`;}
+  }}
+function line(s,o){let out='',last=0;const ms=[...s.matchAll(MK)];
+  ms.forEach(m=>{const after=s.slice(m.index+m[0].length).replace(MK,'$2');
+    out+=hl(s.slice(last,m.index),o,m[2]+after);out+=wrap(m[1],m[2],o,after);last=m.index+m[0].length;});
+  return out+hl(s.slice(last),o,'');}
+function code(src,o={}){
+  const L=src.replace(/^\n/,'').replace(/\n\s*$/,'').split('\n');const st=o.start||1;
+  return `<div class="code">`+L.map((s,i)=>{const n=st+i;const cls=['ln'];
+    if(o.active===n)cls.push('act');
+    if(o.dim&&!(n>=o.dim[0]&&n<=o.dim[1]))cls.push('dimmed');
+    if(o.lcls&&o.lcls[n])cls.push(o.lcls[n]);
+    const num=o.nums?o.nums[i]:n;
+    const g=o.nog?'':`<span class="g">${o.gut&&o.gut[n]?o.gut[n]:''}${num}</span>`;
+    return `<div class="${cls.join(' ')}" data-n="${n}">${g}<span class="t">${line(s,o)||' '}${o.eol&&o.eol[n]?o.eol[n]:''}</span></div>`;}).join('')+`</div>`;}
+const eol=(cls,t,tag)=>`<span class="eol ${cls}">${esc(t)}${tag?`<span class="tag">${tag}</span>`:''}</span>`;
+
+function tree(spec){return '<div class="tree">'+spec.replace(/^\n/,'').trimEnd().split('\n').map(l=>{
+  const ind=l.match(/^ */)[0].length/2;const [name,...fl]=l.trim().split('|');const dir=name.endsWith('/');
+  const fds=fl.filter(f=>f.startsWith('dot=')).map(f=>`<i class="fd" style="background:${f.slice(4)}"></i>`).join('');
+  const cls=fl.filter(f=>!f.startsWith('dot=')&&!f.startsWith('note=')).join(' ');const nt=fl.find(f=>f.startsWith('note='));
+  return `<div class="ti ${cls}" style="padding-left:${10+ind*13}px"><span class="ic">${dir?(cls.includes('open')?'▾':'▸'):''}</span><span class="nm">${esc(name)}</span>${nt?`<span class="dm" style="margin-left:8px;font-size:11px">${nt.slice(5)}</span>`:''}${fds?`<span class="fds">${fds}</span>`:''}</div>`;}).join('')+'</div>';}
+
+function crumb(dir,file,fn,mod){return `<span class="crumb"><span class="dir">${dir}</span><span class="file">${file}</span>${mod?'<i class="mod"></i>':''}${fn?fn.map(f=>`<span class="sep">›</span><span class="fnn">${f}</span>`).join(''):''}</span>`;}
+const RIGHT=(pos='45:42',w=0,e=0,extra='')=>`${extra}<span>${pos}</span><span class="ok">● clangd</span><span class="wa">⚠ ${w}</span><span class="er">✕ ${e}</span>`;
+function win(o){
+  const ctl=o.os==='win'?`<span class="wctl"><span>─</span><span>▢</span><span class="${o.hovx?'hov':''}">✕</span></span>`:o.os==='linux'?`<span class="wctl"><span class="${o.hovx?'hov':''}">✕</span></span>`:'';
+  const dots=o.os==='win'||o.os==='linux'?'':`<span class="dots ${o.dotsOn?'on':''}"><i></i><i></i><i></i></span>`;
+  return `<div class="win ${o.cls||''}" style="${o.style||''}">${o.nohdr?'':`<div class="hdr">${dots}${o.crumb}<span class="right">${o.right??RIGHT()}</span>${ctl}</div>`}
+  <div class="body" style="grid-template-columns:${o.cols}">${o.panes.join('')}</div>
+  ${o.term?`<div class="term" style="height:${o.termH||130}px">${o.term}</div>`:''}<svg class="links"></svg>${o.over||''}</div>`;}
+const pane=(cls,inner,head)=>`<div class="pane ${cls}">${head?`<div class="ph">${head}</div>`:''}<div class="pbody">${inner}</div></div>`;
+function card(name,loc,src,o={}){return `<div class="card ${o.focus?'focus':''} ${o.cls||''}" data-card="${o.id||name}" ${o.color?`data-color="${o.color}"`:''}>
+  <div class="card-h"><span class="sw"></span><span class="nm">${o.title||name}</span>${o.badge||''}<span class="loc">${loc}</span></div>
+  ${o.pre||''}${src?code(src,o.c||{}):''}${o.extra||''}</div>`;}
+const cards=(...c)=>`<div class="cards">${c.join('')}</div>`;
+const term=(tabs,src,o={})=>`<div class="tt">${tabs}</div><div style="padding:0 10px">${code(src,{lang:'term',nog:true,...o})}</div>`;
+const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</span><span class="grow"></span><span>⌃\` toggle · drag edge to resize</span>`;
+function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">MOSS · CONCEPT</span></div>
+  <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
+
+/* ---------- shared sample project ---------- */
+const PAL=['#d8ba7b','#86b98a','#c8a8b8','#77a5a5','#d4a574','#d97969'];
+const MAIN=R`void Server::start() {
+    socket_.listen(port_);
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}
+
+// Handles one client request end-to-end.
+Response Server::handle(const Request& req) {«pin:2|»
+    auto headers = «c:parse_headers|parse_headers»(req.raw);
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    Response res = handler(req, headers);«cur|»
+    «c:send_response|send_response»(socket_, res);
+    return res;
+}
+
+Server::~Server() {
+    socket_.close();
+}
+
+} // namespace tiny`;
+const C_PARSE=R`Headers parse_headers(std::string_view raw) {
+    Headers out;
+    for (auto line : «c:split|split»(raw, "\r\n")) {
+        auto colon = line.find(':');
+        if (colon == npos) continue;
+        out.emplace(«c:trim|trim»(line.substr(0, colon)),
+                    «c:trim|trim»(line.substr(colon + 1)));«cur|»
+    }
+    return out;
+}`;
+const C_ROUTE=R`Handler route(sv path, const Routes& routes) {
+    for (const auto& r : routes)
+        if (match_path(r.pattern, path))
+            return r.handler;
+    return not_found;
+}`;
+const C_SEND=R`void send_response(Socket& s, const Response& r) {
+    auto bytes = r.serialize();
+    write_all(s, bytes.data(), bytes.size());
+}`;
+const C_SPLIT=R`Parts split(sv s, sv delim) {
+    Parts out;
+    size_t at = 0, nx;
+    while ((nx = s.find(delim, at)) != npos) {
+        out.push_back(s.substr(at, nx - at));
+        at = nx + delim.size();
+    }
+    out.push_back(s.substr(at));
+    return out;
+}`;
+const C_TRIM=R`sv trim(sv s) {
+    while (!s.empty() && «c:is_space|is_space»(s.front()))
+        s.remove_prefix(1);
+    while (!s.empty() && «c:is_space|is_space»(s.back()))
+        s.remove_suffix(1);«cur|»
+    return s;
+}`;
+const TREE_MAIN=R`
+tinyhttp/|open
+  src/|open
+    http/|open
+      headers.cpp|dot=#d8ba7b
+      headers.hpp
+    net/|open
+      io.cpp|dot=#c8a8b8
+      socket.cpp
+    util/|open
+      strings.cpp|dot=#77a5a5|dot=#d4a574
+    router.cpp|dot=#86b98a
+    server.cpp|act|mod
+    server.hpp
+  tests/
+  CMakeLists.txt
+  compile_commands.json|dim`;
+const P1HEAD=(n,extra='')=>`Preview 1<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${n}</span>${extra}<span class="grow"></span><span class="chip on">project</span><span class="chip">std</span><span class="chip">system</span>`;
+const P2HEAD=(of,extra='')=>`Preview 2<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${of}</span>${extra}`;
+const mainCards=(focusParse)=>cards(
+  card('parse_headers','http/headers.cpp:12',C_PARSE,{focus:focusParse,c:{start:12,params:['raw'],active:focusParse?18:0}}),
+  card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),
+  card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
+
+/* ---------- frames ---------- */
+const F={};
+
+F['01-overview']=()=>frame('01','The whole editor at a glance','Code on the left, two preview levels, files on the far right, terminal below.',
+  win({crumb:crumb('src/','server.cpp',['Server::handle'],true)+'<span class="pin">1</span>',cols:'1.15fr 1fr 1fr 190px',termH:118,
+    panes:[pane('',code(MAIN,{start:30,active:45,params:['req']})),
+      pane('prev',mainCards(true),P1HEAD('3 calls','<span class="pin">3</span>')),
+      pane('prev',cards(card('split','util/strings.cpp:8',C_SPLIT,{c:{start:8,params:['s','delim']}}),card('trim','util/strings.cpp:27',C_TRIM.replace('«cur|»','').replace(/«c:is_space\|is_space»/g,'is_space'),{c:{start:27,params:['s']}})),P2HEAD('inside parse_headers','<span class="pin">4</span>')),
+      pane('files',tree(TREE_MAIN),'tinyhttp<span class="grow"></span><span class="pin">5</span>')],
+    term:term(TABS()+'<span class="pin">6</span>',R`~/code/tinyhttp ❯ cmake --build build
+[3/3] Linking CXX executable tinyhttp
+~/code/tinyhttp ❯ ./build/tinyhttp --port 8080
+«okc|listening on :8080»
+~/code/tinyhttp ❯ «cur|»`)}),
+  [[1,'<b>Header line</b> — path › function, position, clangd status, problems. Replaces title bar, tabs and status bar.'],
+   [2,'<b>Code pane</b> — C/C++ editing driven by clangd. Cursor is inside <i>Server::handle</i>.'],
+   [3,'<b>Preview 1</b> — a card for every function called in the current function, linked by coloured lines.'],
+   [4,'<b>Preview 2</b> — one level deeper, for the card that holds the preview cursor.'],
+   [5,'<b>Files</b> — far right. Dots show which files the previewed functions live in.'],
+   [6,'<b>Terminal</b> — your real shell. Every divider is draggable and remembered.']]);
+
+F['02-os']=()=>{
+  const lines=R`Response Server::handle(const Request& req) {
+    auto headers = parse_headers(req.raw);
+    if (headers.empty()) {`;
+  const crop=(label,o)=>`<div class="col" style="flex:none"><div class="label">${label}</div><div style="zoom:1.3;display:flex;height:128px">${win({crumb:crumb('src/','server.cpp',['Server::handle']),cols:'1fr',panes:[pane('',code(lines,{start:39,params:['req']}))],...o})}</div></div>`;
+  const rows=[['Modifier key','⌘ Cmd','Ctrl','Ctrl'],['Go to definition','⌘-click','Ctrl-click','Ctrl-click'],['Window buttons','native traffic lights, shrunk','native frame: snap layouts, Aero resize','follows desktop layout (GNOME / KDE)'],
+    ['Display','Retina','per-monitor DPI','X11 + Wayland, fractional scale'],['Default shell','$SHELL (zsh)','PowerShell 7 → Windows PowerShell','$SHELL (bash)'],['Terminal backend','pty','ConPTY','pty'],
+    ['Default font','SF Mono → Menlo','Cascadia Mono → Consolas','DejaVu / Noto Sans Mono'],['clangd','bundled · or Xcode / Homebrew','bundled · or LLVM / VS install','bundled · or distro package'],
+    ['Compiler (run, ASM)','clang (Xcode CLT)','clang-cl · MSVC cl · MinGW g++','gcc · clang'],['Paths','case-insensitive aware','\\ and /, long paths > 260','case-sensitive'],
+    ['Line endings','kept as found','kept as found (CRLF safe)','kept as found'],['Executable','Moss.app','moss.exe','Moss.AppImage']];
+  const table=`<div class="col" style="width:560px;flex:none"><div class="label">Platform conventions — decided per OS, never by guesswork</div>
+   <div style="background:#09120b;border:1px solid #12251a;border-radius:10px;overflow:hidden;font-size:12px">
+   <div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;background:#0c1a10;color:var(--kw);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase">${['','macOS','Windows','Linux'].map(h=>`<div style="padding:8px 10px">${h}</div>`).join('')}</div>
+   ${rows.map((r,i)=>`<div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr;border-top:1px solid #12251a;${i%2?'background:#0a150d':''}">${r.map((c,j)=>`<div style="padding:7px 10px;line-height:1.35;color:${j?'#c3cbc1':'#7d8c80'}">${esc(c)}</div>`).join('')}</div>`).join('')}
+   </div></div>`;
+  return frame('02','One window design, three native behaviours','Same layout everywhere; the window edge and keys follow each OS.',
+   `<div class="col" style="flex:1;gap:22px">${crop('macOS — buttons fade in when the pointer reaches the corner',{os:'mac',dotsOn:true})}${crop('Windows — tiny native buttons, snap layouts on maximise hover',{os:'win',hovx:true})}${crop('Linux (GNOME shown) — reads the desktop button layout',{os:'linux'})}</div>${table}`,
+   [[1,'<b>Electron shell</b> with a bundled Chromium: pixel-identical rendering on all three, no system webview differences.'],
+    [2,'<b>Minimal by default</b>, <code>window.chrome = "native"</code> for the full OS title bar.'],
+    [3,'<b>Keys follow the OS</b>: one keymap file, written once with <i>Mod</i> = ⌘ or Ctrl.'],
+    [4,'<b>Nothing to install</b>: same folder layout on every OS — see concept 09.']]);};
+
+F['03-preview']=()=>{
+  const small=win({crumb:crumb('src/','server.cpp',[]),right:RIGHT('37:1'),cols:'1fr 0.9fr',panes:[
+     pane('',code(MAIN.replace('«cur|»','').replace('«pin:2|»','').replace(/«c:\w+\|(\w+)»/g,'$1').replace('\n\n//','\n«cur|»\n//'),{start:30,active:37,params:['req']})),
+     pane('prev','<div class="empty">Cursor is outside any function<br>— nothing to preview.<br><br><span style="color:#2f4a37">Pane keeps its width,<br>so your code never jumps.</span></div>','Preview 1<span class="pin">5</span>')]});
+  return frame('03','Preview pane — scoped to the function you are in','Move the cursor into a body (mouse or keys) and its calls appear; step out and the pane clears.',
+  `${win({crumb:crumb('src/','server.cpp',['Server::handle']),cols:'1.15fr 1fr 0.6fr 190px',
+    panes:[pane('',code(MAIN.replace('«cur|»','«cur|»«pin:1|»').replace('«pin:2|»',''),{start:30,active:45,params:['req'],dim:[39,48]})),
+      pane('prev',cards(card('parse_headers','http/headers.cpp:12',C_PARSE.replace('«cur|»',''),{badge:'<span class="pin">3</span>',c:{start:12,params:['raw']}}),card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}})),P1HEAD('3 calls · <span style="color:var(--fn)">in call order</span>','<span class="pin">2</span>').replace('<span class="grow"></span>','<span class="grow"></span><span class="pin">4</span>')),
+      pane('prev','<div class="cnote" style="padding:20px 14px;color:#3c5a45;text-align:center">Click into a card<br>to go one level deeper</div>','Preview 2'),
+      pane('files',tree(TREE_MAIN.split('\n').slice(0,14).join('\n')),'tinyhttp')]})}
+   <div class="col" style="position:absolute;right:14px;bottom:14px;width:540px;z-index:20"><div class="label" style="background:#050906;align-self:flex-start;padding:4px 8px;border-radius:6px;margin-bottom:6px">Same file, cursor between functions</div><div style="display:flex;height:290px;box-shadow:0 0 0 6px #050906,0 18px 40px rgba(0,0,0,.6);border-radius:10px">${small}</div></div>`,
+  [[1,'<b>Cursor inside a function</b> → its body is the scope. Here: <i>Server::handle</i>. Updates ~100 ms after the cursor settles.'],
+   [2,'<b>Every call gets a card</b> in call order, joined by a line in the card’s colour. Lines follow scrolling.'],
+   [3,'<b>Cards are real editors</b> — own cursor, own scroll, ⌘/Ctrl-click to go to definition.'],
+   [4,'<b>Filter chips</b> — standard-library and system-header calls hidden by default.'],
+   [5,'<b>Outside any function</b> the pane empties but keeps its width.']]);};
+
+F['04-stack']=()=>{
+  const C_ISSPACE=R`constexpr bool is_space(char c) noexcept {
+    return c == ' ' || c == '\t' ||
+           c == '\r' || c == '\n';
+}`;
+  const trail=`<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);font:11.5px var(--mono);background:rgba(0,0,0,.12)"><span class="dm">↖</span><span class="dm">Server::handle</span><span style="color:var(--gut)">›</span><span class="f">parse_headers</span><span class="pin">1</span><span style="margin-left:auto;font:11px var(--ui)" class="dm"><span class="kbd">⌥/Alt ←</span> surface</span></div>`;
+  const keys=`<div class="pop" style="left:22px;bottom:22px;padding:12px 14px;font-size:12px;line-height:2"><div style="font:600 10px var(--ui);letter-spacing:.1em;color:var(--dim);margin-bottom:2px">PREVIEW KEYS</div>
+   <div><span class="kbd">⌥/Alt →</span> dive: card becomes the main editor <span class="pin">2</span></div><div><span class="kbd">⌥/Alt ←</span> surface back up</div><div><span class="kbd">⌥/Alt ↓ ↑</span> next / previous card</div><div><span class="kbd">⌘/Ctrl ⇧ click</span> open in main pane</div></div>`;
+  return frame('04','Stacked previews, and diving down a call chain','Preview 2 shows the calls of whichever Preview 1 card holds the preview cursor.',
+   win({crumb:crumb('src/http/','headers.cpp',['parse_headers']),right:RIGHT('17:30'),cols:'1.15fr 1fr 1fr 190px',
+    panes:[pane('',trail+code(C_PARSE.replace('«cur|»','').replace('«c:split|split»(raw, "\\r\\n")) {','«c:split|split»(raw, "\\r\\n")) {«cur|»').replace('(colon + 1)));','(colon + 1)));«pin:3|»'),{start:12,active:14,params:['raw']}),'')
+      .replace('<div class="ph"></div>',''),
+      pane('prev',cards(card('split','util/strings.cpp:8',C_SPLIT,{c:{start:8,params:['s','delim']}}),card('trim','util/strings.cpp:27',C_TRIM,{focus:true,c:{start:27,params:['s'],active:31}})),P1HEAD('2 calls')),
+      pane('prev',cards(card('is_space','util/chars.hpp:5',C_ISSPACE,{c:{start:5,params:['c']}}))+`<div class="cnote" style="padding:2px 18px;color:#4f6b57">2 std calls hidden — remove_prefix, remove_suffix <span class="pin">5</span></div>`,P2HEAD('inside trim','<span class="pin">4</span>')),
+      pane('files',tree(TREE_MAIN.replace('server.cpp|act|mod','server.cpp|mod').replace('headers.cpp|dot=#d8ba7b','headers.cpp|act').replace('strings.cpp|dot=#77a5a5|dot=#d4a574','strings.cpp|dot=#d8ba7b|dot=#86b98a')),'tinyhttp')],over:keys}),
+  [[1,'<b>Trail</b> shows where you dove from. ⌥/Alt ← surfaces.'],
+   [2,'<b>Dive</b> — the focused card becomes the main editor; everything shifts up a level.'],
+   [3,'<b>Called twice → one card, two lines.</b> <i>trim</i> appears once.'],
+   [4,'<b>Preview 2 follows the preview cursor</b> — it sits in <i>trim</i>, so <i>is_space</i> shows.'],
+   [5,'<b>Hidden calls are listed faintly</b>; click to show them. Max two levels, by design.']]);};
+
+F['05-edge']=()=>{
+  const SRC=R`void Router::dispatch(Request& req, int depth) {
+    «c:LOG_DEBUG|LOG_DEBUG»("dispatch %s", req.path);
+    auto& h = handlers_[req.method];
+    h->«c:handle|handle»(req);
+    «c:on_done|on_done_»(req);
+    if (req.redirect && depth < 3)
+        «c:dispatch|dispatch»(req, depth + 1);
+    «c:more|audit»(req);
+    «c:more|notify»(req);
+    «c:more|metrics»(req);«cur|»
+}`;
+  const LOGX=R`do {
+    if (log_level() <= Level::Debug)
+        log_write(__FILE__, __LINE__,
+                  "dispatch %s", req.path);
+} while (0)`;
+  return frame('05','Preview edge cases, handled up front','Macros, virtual calls, function objects, recursion and very busy functions.',
+   win({crumb:crumb('src/','router.cpp',['Router::dispatch']),right:RIGHT('29:18'),cols:'1.05fr 1.3fr 0.45fr 190px',
+    panes:[pane('',code(SRC,{start:20,active:29,params:['req','depth']})),
+      pane('prev',cards(
+        card('LOG_DEBUG','log.hpp:9',LOGX,{badge:'<span class="badge warm">macro · expanded</span><span class="pin">1</span>',c:{nog:false,start:1,params:['req']}}),
+        card('handle','',R`void StaticHandler::handle(Request& req) {
+    serve_file(root_ / req.path.substr(1));
+}`,{title:'Handler::handle',badge:'<span class="badge">virtual · 3 overrides</span><span class="pin">2</span>',
+          pre:`<div class="rows"><div class="row on">● StaticHandler::handle<span class="loc">static.cpp:14</span></div><div class="row">○ ApiHandler::handle<span class="loc">api.cpp:40</span></div><div class="row">○ ProxyHandler::handle<span class="loc">proxy.cpp:22</span></div></div>`,c:{start:14,params:['req']}}),
+        card('on_done','',null,{title:'on_done_',badge:'<span class="badge pink">std::function</span><span class="pin">3</span>',
+          extra:`<div class="cnote" style="padding-bottom:0">Target is chosen at runtime. Assigned in:</div><div class="rows"><div class="row">→ log_request<span class="loc">Router::Router · router.cpp:12</span></div><div class="row">→ (lambda)<span class="loc">Router::set_hook · router.cpp:64</span></div></div>`}),
+        card('dispatch','router.cpp:20',null,{cls:'collapsed',title:'Router::dispatch',badge:'<span class="badge warm">↻ recursive — this function</span><span class="pin">4</span>'}),
+        card('more','cap: 5 cards',null,{title:'+3 more',badge:'<span class="pin">5</span>',extra:'<div class="cnote">audit · notify · metrics — click to show</div>'})
+      ),P1HEAD('8 calls','<span class="pin">6</span>').replace('<span class="chip">system</span>','<span class="chip">system</span><span class="chip on">macros</span>')),
+      pane('prev','<div class="empty">Click into a card<br>to go deeper</div>','Preview 2'),
+      pane('files',tree(R`
+tinyhttp/|open
+  src/|open
+    handlers/|open
+      api.cpp
+      proxy.cpp
+      static.cpp|dot=#86b98a
+    log.hpp|dot=#d8ba7b
+    router.cpp|act
+    server.cpp`),'tinyhttp')]}),
+  [[1,'<b>Macros</b> — the card shows the expansion.'],
+   [2,'<b>Virtual calls</b> — every override, pick one to read.'],
+   [3,'<b>Function pointers / std::function</b> — where the target gets assigned.'],
+   [4,'<b>Recursion</b> — a ↻ badge, never an endless chain.'],
+   [5,'<b>Busy functions</b> — capped (12 by default), “+N more” for the rest.'],
+   [6,'<b>Filter chips</b> — project / std / system headers / macros.']]);};
+
+F['06-intel']=()=>{
+  const left=R`Handler route(sv path, const Routes& routes) {
+    for (const auto& r : routes) {
+        if (match_path(r.pattern, path))
+            return r.handler;
+    }
+    log_miss(path, routes.«#ac|si»«cur|»
+    return not_found;
+}`;
+  const ac=`<div class="pop" data-at="ac" data-dx="-170" data-dy="4" style="width:470px;display:flex;overflow:hidden">
+   <div style="flex:1;padding:4px 0;font:12px var(--mono)">${[['size','() const','size_type',true],['resize','(size_type n)','void'],['shrink_to_fit','()','void'],['assign','(size_type n, const T& v)','void']].map(([n,a,t,on])=>{
+     const hi=n.replace(/^s/,'<b style="color:var(--kw)">s</b>').replace(/i/,'<b style="color:var(--kw)">i</b>');
+     return `<div style="display:flex;gap:8px;padding:4px 10px;${on?'background:rgba(119,165,165,.22)':''}"><span style="color:var(--fn)">ƒ</span><span>${hi}<span class="dm">${esc(a)}</span></span><span class="dm" style="margin-left:auto">${t}</span></div>`;}).join('')}</div>
+   <div style="width:170px;border-left:1px solid #1f4d2c;padding:8px 10px;font:11.5px/1.5 var(--ui);color:#a9b4a8"><span style="font-family:var(--mono);color:var(--fg)">size() const noexcept</span><br>Returns the number of elements in the container.</div></div>
+   <div class="pop" data-at="ac" data-dx="-180" data-dy="-54" data-side="above" style="padding:6px 10px;font:12px var(--mono)"><span class="k">void</span> <span class="f">log_miss</span>(<span class="y">sv</span> <span class="p">path</span>, <b style="color:var(--fg);border-bottom:1px solid var(--kw)"><span class="k">size_t</span> <span class="p">tried</span></b>)<span class="dm" style="font-family:var(--ui);margin-left:10px">2 / 2</span></div>`;
+  const right=R`Response Server::handle(const Request& req) {
+    auto«hint|: Headers» headers = parse_headers(«hint|raw:»req.raw);
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto«hint|: Handler» handler = «u:#hov|route»(«hint|path:»req.path, «hint|routes:»routes_);
+    Response res = handler(req, headers);
+    send_response(«hint|s:»socket_, «hint|r:»res);
+    return res;
+}`;
+  const hov=`<div class="pop" data-at="hov" data-dx="-20" data-dy="6" style="width:420px;overflow:hidden"><div style="padding:9px 12px;font:12px var(--mono);border-bottom:1px solid #1f4d2c"><span class="y">Handler</span> <span class="f">route</span>(<span class="y">sv</span> <span class="p">path</span>, <span class="k">const</span> <span class="y">Routes</span>&amp; <span class="p">routes</span>)</div>
+   <div style="padding:8px 12px;font:12px/1.5 var(--ui);color:#a9b4a8">Finds the first handler whose pattern matches <i>path</i>. Returns <span style="font-family:var(--mono)">not_found</span> otherwise.</div>
+   <div style="padding:6px 12px;font:11px var(--ui);color:var(--dim);background:rgba(0,0,0,.15)">router.cpp:31 · <span class="kbd">⌘/Ctrl</span>click open · <span class="kbd">⌘/Ctrl ⇧</span>click open in main pane</div></div>
+   <div class="pop" style="right:16px;bottom:16px;padding:9px 12px;font-size:12px;line-height:1.9"><div><span class="kbd">⌥/Alt</span> held — types and parameter names shown <span class="pin">4</span></div><div><span class="kbd">⌘/Ctrl</span> held — anything jumpable is underlined <span class="pin">3</span></div></div>`;
+  return frame('06','Code intelligence from clangd','Completion, signature help, hover, go to definition — and hints that appear only while you hold a key.',
+   `<div class="col" style="flex:1"><div class="label"><span class="pin">1</span>Autocomplete + <span class="pin">2</span>signature help</div><div style="display:flex;flex:1">${win({crumb:crumb('src/','router.cpp',['route'],true),right:RIGHT('36:28'),cols:'1fr',panes:[pane('',code(left,{start:31,active:36,params:['path','routes']}))],over:ac})}</div></div>
+    <div class="col" style="flex:1.25"><div class="label">Hover with ⌘/Ctrl → go to definition · hold ⌥/Alt → inlay hints</div><div style="display:flex;flex:1">${win({crumb:crumb('src/','server.cpp',['Server::handle']),right:RIGHT('44:30'),cols:'1fr',panes:[pane('',code(right,{start:39,active:44,params:['req']}))],over:hov})}</div></div>`,
+  [[1,'<b>Completion</b> — clangd results, fuzzy matched, docs alongside. Tab / ⏎ accepts.'],
+   [2,'<b>Signature help</b> — shows which argument you are typing.'],
+   [3,'<b>⌘/Ctrl-click</b> — go to definition; ⌘/Ctrl+← jumps back. Works in preview cards too.'],
+   [4,'<b>Hold to reveal</b> — deduced types and parameter names, gone when you let go.'],
+   [0,'<b>Also:</b> rename (F2), references (⇧F12), header ⇄ source (⌥/Alt O), clang-format on save.']]);};
+
+F['07-diag']=()=>{
+  const SRC=R`Response Server::handle(const Request& req) {
+    auto headers = parse_headers(req.raw);
+    int «w|retries» = config_.retries;
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = route(req.path, routes_);
+    Response res = handler(req, «e:#fx|headrs»);«cur|»
+    for (int i = 0; «w|i < res.body.size()»; ++i)
+        checksum_ ^= res.body[i];
+    if (session_ == «i|NULL») open_session();
+    send_response(socket_, res);
+    return res;
+}`;
+  const fx=`<div class="pop" data-at="fx" data-dx="-10" data-dy="6" style="width:330px;padding:4px 0;font-size:12px">
+   <div style="padding:4px 12px 6px;font:600 10px var(--ui);letter-spacing:.1em;color:var(--dim)">FIXES <span class="kbd" style="margin-left:6px">⌘/Ctrl .</span><span class="pin">3</span></div>
+   <div style="padding:5px 12px;background:rgba(119,165,165,.22);display:flex"><span style="color:var(--ty);margin-right:8px">✦</span>Change <span style="font-family:var(--mono);margin:0 4px" class="e">headrs</span> to <span style="font-family:var(--mono);margin:0 4px" class="v">headers</span><span class="dm" style="margin-left:auto">⏎</span></div>
+   <div style="padding:5px 12px 5px 29px;color:#a9b4a8">Ignore this warning on this line</div>
+   <div style="padding:5px 12px 5px 29px;color:#a9b4a8">Show clang’s full message</div></div>
+   <div class="ruler" id="rul"></div>`;
+  return frame('07','Errors, warnings and fixes — and one-key build & run','Wavy = error, dotted = warning. The message sits dimmed at the end of the line.',
+   win({crumb:crumb('src/','server.cpp',['Server::handle'],true),right:RIGHT('46:39',2,1),cols:'2fr 1fr 190px',termH:156,
+    panes:[pane('',code(SRC,{start:39,active:46,params:['req'],eol:{
+       41:eol('wa',"unused variable 'retries'"),
+       46:eol('er',"undeclared identifier 'headrs' — did you mean 'headers'?")+'<span class="pin">1</span>',
+       47:eol('wa','comparing signed and unsigned'),
+       49:eol('in','use nullptr','clang-tidy')+'<span class="pin">4</span>'}})),
+      pane('prev',cards(card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}})),P1HEAD('3 calls')),
+      pane('files',tree(TREE_MAIN.replace('server.cpp|act|mod','server.cpp|act|mod|dot=#d97969')),'tinyhttp')],over:fx,
+    term:term(`<span class="on">zsh</span><span>Problems 4</span><span class="pin">5</span><span class="grow"></span><span><span class="kbd">⌘/Ctrl R</span> build &amp; run current target</span>`,R`~/code/tinyhttp ❯ moss run · cmake --build build --target tinyhttp
+«tlink|src/server.cpp:46:33»«er|: error:» use of undeclared identifier 'headrs'; did you mean 'headers'?
+   46 |     Response res = handler(req, headrs);
+      |                                 «er|^~~~~~»
+«dm|1 error · click a path to jump · the same error is already squiggled in the editor»`)}),
+  [[1,'<b>Live diagnostics</b> from clang as you type; message ghosted at line end (toggle).'],
+   [2,'<b>Overview ruler</b> — marks on the code pane’s right edge; files with errors get a red dot.'],
+   [3,'<b>⌘/Ctrl .</b> — clang’s own fix-its, applied in one key.'],
+   [4,'<b>clang-tidy</b> results show their check name.'],
+   [5,'<b>⌘/Ctrl R</b> builds & runs; compiler paths in the terminal are clickable.']]);};
+
+F['08-analyzer']=()=>{
+  const step=(n,t,c='var(--warn)')=>`<span class="eol" style="color:${c};font-style:normal;margin-left:26px"><span class="astep" style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1.5px solid ${c};font:700 10px var(--ui);margin-right:8px;background:var(--bg)">${n}</span>${t}</span>`;
+  const SRC=R`Session* Server::find_session(int id) {
+    Session* s = nullptr;
+    for (auto& entry : sessions_) {
+        if (entry.id == id) {
+            s = &entry;
+            break;
+        }
+    }
+    if (id < 0)
+        log_bad_id(id);
+    return «e|s->touch()»;«cur|»
+}`;
+  const prob=`<div style="padding:4px 14px;font:12px/1.75 var(--ui);overflow:hidden">
+   <div class="dm" style="font:600 10px var(--ui);letter-spacing:.1em">DEEP ANALYSIS <span style="font-weight:500;letter-spacing:0">· clang --analyze · on save · 0.8 s</span> <span class="pin">3</span></div>
+   <div><span class="er">✕</span> <span class="tlink">session.cpp:30</span>&nbsp; Dereference of null pointer 's' <span class="dm">[core.NullDereference] · 4 steps, drawn in editor</span></div>
+   <div><span class="wa">⚠</span> <span class="tlink">cache.cpp:88</span>&nbsp; Potential leak of memory pointed to by 'buf' <span class="dm">[unix.Malloc]</span></div>
+   <div class="dm" style="font:600 10px var(--ui);letter-spacing:.1em;margin-top:2px">CLANG-TIDY <span style="font-weight:500;letter-spacing:0">· live, inside clangd · .clang-tidy</span> <span class="pin">2</span> &nbsp; &nbsp; COMPILER <span style="font-weight:500;letter-spacing:0">· live</span> <span class="pin">1</span></div>
+   <div><span class="wa">⚠</span> <span class="tlink">server.cpp:49</span>&nbsp; use nullptr <span class="dm">[modernize-use-nullptr]</span> &nbsp; &nbsp; <span class="okc">✓</span> no compiler errors</div></div>`;
+  return frame('08','Built-in static analysis, in three layers','Fast checks while you type; a deep path-sensitive pass on save. The bug’s path is drawn on the code.',
+   win({crumb:crumb('src/','session.cpp',['Server::find_session']),right:RIGHT('30:23',2,1),cols:'1.75fr 1fr 190px',termH:150,
+    panes:[pane('',code(SRC,{start:20,active:30,params:['id'],eol:{21:step(1,"'s' starts as null"),27:step(2,'Assuming no entry has this id — loop ends'),28:step(3,"Assuming 'id' ≥ 0"),30:step(4,"Null pointer 's' is dereferenced",'var(--err)')+'<span class="pin">4</span>'}})),
+      pane('prev',cards(card('log_bad_id','log.cpp:40',R`void log_bad_id(int id) {
+    log_write(Level::Warn, "bad id %d", id);
+}`,{c:{start:40,params:['id']}}),card('touch','session.cpp:8',R`Session* Session::touch() {
+    last_seen_ = Clock::now();
+    return this;
+}`,{title:'Session::touch',c:{start:8}})),P1HEAD('2 calls')),
+      pane('files',tree(R`
+tinyhttp/|open
+  src/|open
+    cache.cpp|dot=#d4a574
+    log.cpp
+    server.cpp
+    session.cpp|act|dot=#d97969
+  .clang-tidy|note=checks`),'tinyhttp')],
+    term:`<div class="tt"><span>zsh</span><span class="on">Problems 3</span><span class="grow"></span><span>Run deep analysis now <span class="kbd">⌘/Ctrl ⇧ A</span></span></div>${prob}`}),
+  [[1,'<b>Compiler</b> — errors and warnings, live.'],
+   [2,'<b>clang-tidy</b> — built into clangd, live. Configure with a normal <i>.clang-tidy</i> file.'],
+   [3,'<b>Deep analysis</b> — Clang Static Analyzer on save or on demand: null derefs, leaks, use-after-free, uninitialised reads.'],
+   [4,'<b>Bug path</b> — numbered steps joined by the preview pane’s line system.'],
+   [0,'<b>Optional:</b> cppcheck results merged in when it’s found on PATH.']]);};
+
+F['09-portable']=()=>{
+  const S=R`# Moss settings — save to apply. Delete a line to get its default back.
+# Every option is listed here with its default value.
+
+[font]
+family         = "JetBrains Mono"   # any installed font
+size           = «e:n|135»                # pt
+letter_spacing = 0.2                # px
+line_height    = 1.6                # × size
+ligatures      = false
+
+[font.preview]                      # preview panes inherit, then override
+scale          = 0.9
+
+[theme]
+name           = "eye-comfort-green"   # a file in data/themes/
+evening_warmth = "auto"                # off | auto | "19:00-07:00"
+
+[window]
+chrome         = "minimal"             # minimal | native
+
+[clangd]
+path           = "auto"                # bundled, or any clangd on disk`;
+  const fold=`<div class="col" style="width:520px;flex:none"><div class="label">The whole app is one folder <span class="pin">1</span></div>
+   <div style="background:#09120b;border:1px solid #12251a;border-radius:10px;padding:16px 18px;font:12.5px/1.95 var(--mono);white-space:pre;color:#c3cbc1">${[
+    ['<span class="y">Moss/</span>','anywhere — Desktop, USB stick, ~/tools'],
+    ['├─ <span class="f">moss.exe · Moss.app · Moss.AppImage</span>','one per OS'],
+    ['├─ <span class="y">data/</span>','created on first run'],
+    ['│  ├─ <span class="v">settings.toml</span>','every option, commented'],
+    ['│  ├─ <span class="v">keys.toml</span>','keybindings'],
+    ['│  ├─ <span class="y">themes/</span>',''],
+    ['│  │  ├─ eye-comfort-green.toml',''],
+    ['│  │  └─ dark-eye-comfort-custom.toml','your .vsix, imported'],
+    ['│  ├─ <span class="y">state/</span>','layout, open files, history'],
+    ['│  ├─ <span class="y">notes/</span>','margin notes'],
+    ['│  └─ <span class="y">logs/</span>',''],
+    ['└─ <span class="y">tools/clangd/</span>','bundled, per OS']].map(([a,b])=>`${a}${b?`<span style="position:absolute;left:330px;font:11.5px var(--ui);color:#6f8574">${b}</span>`:''}`).map(x=>`<div style="position:relative">${x}</div>`).join('')}</div>
+   <div class="note" style="height:auto;margin-top:14px;font-size:12.5px"><b>When the folder can’t be written</b> (Program Files, a read-only drive, or macOS running a downloaded app from a quarantine copy) Moss says so once and offers: move the folder, or use the OS app-data folder instead. <span class="pin">5</span></div></div>`;
+  return frame('09','Portable by design — and settings in one plain file','No installer, no registry, no hidden folders. Copy the folder and you’ve copied your whole setup.',
+   fold+win({crumb:crumb('data/','settings.toml',[],true),right:RIGHT('6:22',0,1),cols:'1fr 210px',
+    panes:[pane('',code(S,{lang:'toml',start:1,active:6,eol:{6:eol('er','must be 6–72 · using 13.5')+'<span class="pin">3</span>'}})),
+     pane('files',tree(R`
+Moss/|open
+  data/|open
+    settings.toml|act
+    keys.toml
+    themes/|open
+      eye-comfort-green.toml
+      dark-eye-comfort….toml
+    state/
+    notes/
+    logs/
+  tools/
+  moss.exe`),'Moss')],
+    over:`<div class="toast"><b>settings.toml reloaded</b> <span class="pin">4</span><br><span class="dm">1 problem — line 6: font.size 135 is out of range, kept 13.5. Everything else applied.</span></div>`}),
+  [[1,'<b>One folder</b>, <i>data/</i> beside the executable (on macOS: beside Moss.app, so the app stays signed).'],
+   [2,'<b>TOML</b> — comments allowed, no comma or bracket traps. Every option listed with its default.'],
+   [3,'<b>Mistakes can’t break it</b> — a bad value is squiggled and its default is used.'],
+   [4,'<b>Saved = applied</b>, live. ⌘/Ctrl , just opens this file.'],
+   [5,'<b>Clear fallback</b> when the folder is read-only — never silent.']]);};
+
+F['10-theme']=()=>{
+  const BG='#00240A';
+  const lum=h=>{const c=h.replace('#','').match(/../g).map(x=>parseInt(x,16)/255).map(v=>v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4));return .2126*c[0]+.7152*c[1]+.0722*c[2];};
+  const cr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
+  const toHsl=h=>{let [r,g,b]=h.replace('#','').match(/../g).map(x=>parseInt(x,16)/255);const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let H=0,S=0,L=(mx+mn)/2;
+    if(mx!==mn){const d=mx-mn;S=L>.5?d/(2-mx-mn):d/(mx+mn);H=mx===r?(g-b)/d+(g<b?6:0):mx===g?(b-r)/d+2:(r-g)/d+4;H/=6;}return [H*360,S*100,L*100];};
+  const toHex=(h,s,l)=>{s/=100;l/=100;const k=n=>(n+h/30)%12,a=s*Math.min(l,1-l),f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));return '#'+[f(0),f(8),f(4)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('');};
+  const roles=[['Editor background',BG,''],['Base text','#d9dcd6','Server'],['Keywords','#77a5a5','return'],['Functions','#d8ba7b','route()'],['Types','#86b98a','Response'],['Variables','#c8a8b8','headers'],
+    ['Parameters','#d97969','req','italic'],['Strings','#d4a574','"\\r\\n"'],['Comments','#6b7d70','// note','italic'],['Errors','#d97969','~~~'],['Warnings','#d4a574','···'],['Selection','#2b6a5a','sel']];
+  const [h,s,l]=toHsl('#6b7d70');let L2=l,sug='#6b7d70';while(cr(sug,BG)<4.5&&L2<95){L2+=.5;sug=toHex(h,s,L2);}
+  const rows=roles.map(([n,c,ex,st],i)=>{const r=cr(c,BG);const isbg=i===0;const flag=isbg?'':r<4.5?`<span class="badge warm">⚠ ${r.toFixed(1)} : 1 low</span>`:r>15?`<span class="badge warm">⚠ ${r.toFixed(1)} glare</span>`:`<span class="badge" style="background:rgba(134,185,138,.12);color:var(--ty)">${r.toFixed(1)} : 1</span>`;
+    const sel=n==='Comments';
+    return `<div style="display:grid;grid-template-columns:22px 170px 90px 1fr 130px;align-items:center;gap:10px;padding:0 16px;height:31px;${sel?'background:rgba(119,165,165,.14);box-shadow:inset 2px 0 var(--kw)':''}">
+      <span style="width:16px;height:16px;border-radius:4px;background:${c};box-shadow:0 0 0 1px rgba(255,255,255,.12)"></span><span style="color:#c3cbc1">${n}</span><span style="font:11.5px var(--mono);color:var(--dim)">${c}</span>
+      <span style="font:12.5px var(--mono);color:${isbg?'var(--dim)':c};${st?'font-style:italic':''}">${isbg?'—':esc(ex)}</span><span style="justify-self:start">${flag}</span></div>`;}).join('');
+  const slider=(lab,grad,pos,val)=>`<div style="display:grid;grid-template-columns:16px 1fr 34px;gap:8px;align-items:center;margin:7px 0"><span class="dm">${lab}</span><span style="height:8px;border-radius:4px;background:${grad};position:relative"><i style="position:absolute;left:${pos}%;top:-4px;width:6px;height:16px;border-radius:3px;background:#e8ebe4;box-shadow:0 0 0 2px #00240a;margin-left:-3px"></i></span><span style="font:11px var(--mono)">${val}</span></div>`;
+  const picker=`<div class="pop" style="left:430px;top:450px;width:300px;padding:12px 14px;font-size:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b>Comments</b><span class="dm" style="margin-left:auto;font:11px var(--mono)">#6b7d70 → ${sug}</span></div>
+    ${slider('H',`linear-gradient(90deg,${[0,60,120,180,240,300,360].map(x=>toHex(x,s,l)).join(',')})`,h/3.6,Math.round(h)+'°')}
+    ${slider('S',`linear-gradient(90deg,${toHex(h,0,l)},${toHex(h,60,l)})`,s/0.6,Math.round(s)+'%')}
+    ${slider('L',`linear-gradient(90deg,${toHex(h,s,10)},${toHex(h,s,90)})`,(L2-10)/0.8,Math.round(L2)+'%')}
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px"><span style="width:14px;height:14px;border-radius:3px;background:var(--kw);display:grid;place-items:center;color:#00240a;font-size:10px;font-weight:700">✓</span>Keep contrast ≥ 4.5 : 1<span class="pin">3</span><span class="badge" style="margin-left:auto;background:rgba(134,185,138,.12);color:var(--ty)">${cr(sug,BG).toFixed(1)} : 1</span></div></div>`;
+  const tabs=`<div style="display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)">${['Syntax','Editor','Panels','Terminal','Diagnostics','Lines'].map((t,i)=>`<span class="chip ${i?'':'on'}" style="font-size:11.5px;padding:3px 10px">${t}</span>`).join('')}<span class="pin">1</span>
+    <span style="margin-left:auto;display:flex;gap:8px"><span class="chip" style="font-size:11.5px;padding:3px 10px;color:var(--fg)">Import VS Code theme / .vsix…</span><span class="pin">4</span><span class="chip" style="font-size:11.5px;padding:3px 10px;color:var(--fg)">Export</span></span></div>`;
+  const head=`<div style="display:grid;grid-template-columns:22px 170px 90px 1fr 130px;gap:10px;padding:8px 16px 4px;font:600 10px var(--ui);letter-spacing:.1em;color:var(--dim)"><span></span><span>ROLE</span><span>COLOUR</span><span>SAMPLE</span><span>CONTRAST VS BG <span class="pin">2</span></span></div>`;
+  return frame('10','Theme editor — every colour, with contrast you can trust','Edits write to a plain TOML theme file; both stay in sync.',
+   win({crumb:crumb('data/themes/','eye-comfort-green.toml',['Theme editor'],true),right:'',cols:'1.45fr 1fr',
+     panes:[pane('',tabs+head+`<div style="font-size:12.5px">${rows}</div>`),
+       pane('',code(MAIN.split('\n').slice(8,19).join('\n').replace('«pin:2|»','').replace(/«c:\w+\|(\w+)»/g,'$1'),{start:38,active:45,params:['req']})+`<div class="cnote" style="padding:8px 18px">Live preview — uses the colours on the left as you drag. <span class="pin">5</span></div>`,'Live preview')],over:picker}),
+  [[1,'<b>Every colour in the app</b> — syntax, editor, panels, terminal, diagnostics, preview lines.'],
+   [2,'<b>Contrast vs. the real background</b>, flagged below 4.5 : 1 or above 15 : 1 (glare).'],
+   [3,'<b>Contrast lock</b> — the picker won’t let a colour drop below your floor.'],
+   [4,'<b>Imports</b> VS Code themes and .vsix files (yours imports as-is). Exports back too.'],
+   [5,'<b>Live preview</b> while you drag.']]);};
+
+F['11-comfort']=()=>{
+  const LONG=R`    if (req.method == Method::Options) {
+        return Response::cors(allowed_origins_);
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    if (!handler) {
+        metrics_.miss(req.path);
+        return Response::not_found();
+    }
+    Response res = handler(req, headers);«cur|»
+    res.headers.set("Server", "tinyhttp/0.3");
+    if («c:keep_alive|keep_alive»(req)) {
+        res.headers.set("Connection", "keep");
+    }
+    «c:send_response|send_response»(socket_, res);
+    return res;
+}
+
+Server::~Server() {
+    socket_.close();
+}`;
+  const sticky=`<div style="position:relative;z-index:2;background:var(--bg);box-shadow:0 6px 14px rgba(0,0,0,.35);border-bottom:1px solid var(--line)">${code('Response Server::handle(const Request& req) {«pin:3|»',{start:39,params:['req']})}</div>`;
+  const KA=R`bool keep_alive(const Request& req) {
+    auto c = req.headers.get("Connection");
+    return c ? iequals(*c, "keep-alive")
+             : req.version >= Http11;
+}`;
+  const mk=(evening)=>win({crumb:crumb('src/','server.cpp',['Server::handle']),right:evening?`<span style="color:#8a9a8c;font-family:var(--ui)">look 6 m away for 20 s · <u>later</u></span><span class="pin">5</span>`+RIGHT('55:42'):RIGHT('55:42'),cols:'1.15fr 1fr 0.55fr 190px',
+    style:`position:absolute;inset:0;${evening?'clip-path:inset(0 0 0 50%);filter:sepia(.32) hue-rotate(-14deg) saturate(.85) brightness(.86);':''}`,
+    panes:[pane('',sticky+code(LONG,{start:47,active:55,params:['req'],dim:[0,62]})),
+      pane('prev',cards(card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),card('keep_alive','http/headers.cpp:40',KA,{c:{start:40,params:['req']}}),card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}})),P1HEAD('3 calls')),
+      pane('prev','<div class="empty">Click into a card<br>to go deeper</div>','Preview 2'),pane('files',tree(TREE_MAIN),'tinyhttp')]});
+  return frame('11','Eye comfort, built in','Left half: 14:00. Right half: the same screen at 21:30 with evening warmth on.',
+   `<div style="position:relative;flex:1">${mk(false)}${mk(true)}
+    <div style="position:absolute;left:50%;top:-6px;bottom:-6px;width:2px;margin-left:-1px;background:#e8ebe4;opacity:.6;z-index:10"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:11;background:#e8ebe4;color:#00240a;border-radius:14px;padding:4px 10px;font:600 11px var(--ui)">◂ 14:00 · 21:30 ▸</div>
+    <div style="position:absolute;left:12px;bottom:12px;z-index:11" class="pop"><div style="padding:6px 10px;font-size:11.5px">Lines 64–66 are outside the function → dimmed <span class="pin">1</span></div></div>
+    <div style="position:absolute;right:14px;bottom:12px;z-index:11" class="pop"><div style="padding:6px 10px;font-size:11.5px">warmth 40 % · fades in over 30 min <span class="pin">2</span></div></div></div>`,
+  [[1,'<b>Focus dimming</b> — code outside the current function fades (strength adjustable, or off).'],
+   [2,'<b>Evening warmth</b> — less blue, a little dimmer, on a schedule or at local sunset.'],
+   [3,'<b>Pinned signature</b> — the function’s first line stays at the top while you scroll it.'],
+   [4,'<b>Calm cursor</b> — slow fade instead of a hard blink; or no blink. Reduced-motion switch.'],
+   [5,'<b>Break nudge</b> — 20-20-20 text in the header only. No pop-ups, ever.']]);};
+
+F['12-asm']=()=>{
+  const SRC=R`#include <span>
+
+// Sum of squares of v.
+int sum_squares(std::span<const int> v) {
+    int total = 0;«c:a2|»
+    for (int x : v)«c:a3|»
+        total += x * x;«c:a4|»
+    return total;«c:a5|»
+}`;
+  const ASM=R`sum_squares(std::span<int const>):
+        test    rsi, rsi        ; v.empty()
+        je      .LBB0_1
+        xor     eax, eax        ; total = 0
+.LBB0_4:
+        mov     ecx, dword ptr [rdi]
+        imul    ecx, ecx        ; x * x
+        add     eax, ecx        ; total +=
+        add     rdi, 4          ; ++it
+        dec     rsi
+        jne     .LBB0_4
+        ret                     ; return total
+.LBB0_1:
+        xor     eax, eax
+        ret`;
+  const after=root=>{const p=root.querySelector('.asmp');const set=(n,id,c)=>{const l=p.querySelector(`.ln[data-n="${n}"]`);l.dataset.card=id;l.dataset.color=c;};
+    set(4,'a2','#d8ba7b');set(2,'a3','#86b98a');set(6,'a4','#c8a8b8');set(12,'a5','#77a5a5');};
+  const head=`ASM<span class="pin">1</span><span class="grow"></span><span class="chip">Calls</span><span class="chip">Callers</span><span class="chip on">ASM</span><span style="width:10px"></span><span class="chip on">x86-64 ▾</span><span class="chip on">-O2 ▾</span><span class="pin">4</span>`;
+  return {after,html:frame('12','Assembly view — see what the compiler made of this function','A preview mode: the function under the cursor, compiled with your real flags.',
+   win({cls:'big',crumb:crumb('src/','math.cpp',['sum_squares']),right:RIGHT('7:22'),cols:'1.05fr 1.55fr 190px',
+    panes:[pane('',code(SRC,{start:1,active:7,params:['v'],lcls:{5:'g2',6:'g3',7:'g4 hitl',8:'g5'}})+`<div class="cnote" style="padding:10px 20px">Each source line and its instructions share a colour. <span class="pin">2</span></div>`),
+      pane('prev asmp',code(ASM,{lang:'asm',start:1,lcls:{4:'g2',14:'g5',2:'g3',3:'g3',5:'g3',9:'g3',10:'g3',11:'g3',6:'g4',7:'g4 hitl',8:'g4',12:'g5',15:'g5'},lcls2:1,eol:{7:'<span class="pin">3</span>'}})+`<div class="cnote" style="padding:10px 18px;border-top:1px solid var(--line)">clang++ -std=c++20 -O2 · flags from compile_commands.json · rebuilt 140 ms after you stop typing</div>`,head),
+      pane('files',tree(R`
+tinyhttp/|open
+  src/|open
+    math.cpp|act
+    server.cpp
+  compile_commands.json|dim`),'tinyhttp')]}),
+  [[1,'<b>ASM mode</b> spans both preview panes. Toggle Calls / Callers / ASM in the pane header.'],
+   [2,'<b>Colour-matched</b> lines and the same connector system as the call preview.'],
+   [3,'<b>Hover either side</b> to highlight its partner lines.'],
+   [4,'<b>Target and optimisation</b> switchable: x86-64 / arm64, -O0…-O3.'],
+   [0,'Needs a compiler (clang, gcc or MSVC). Moss finds it; if none, the mode says so.']])};};
+
+F['13-layout']=()=>{
+  const SRC=R`#pragma once
+#include <cstdint>
+
+struct «occ:#pk|Packet» {
+    uint8_t  kind;
+    uint64_t id;
+    uint16_t port;
+    bool     urgent;
+    double   ts;
+    uint8_t  flags;
+};
+
+static_assert(sizeof(Packet) <= 64);`;
+  const fields=[['kind',0,1,'#d8ba7b'],['id',8,8,'#86b98a'],['port',16,2,'#c8a8b8'],['urgent',18,1,'#77a5a5'],['ts',24,8,'#d4a574'],['flags',32,1,'#d97969']];
+  const grid=(fs,total,cell)=>{let h='';for(let b=0;b<total;b++){const f=fs.find(([,o,s])=>b>=o&&b<o+s);const first=f&&b===f[1];
+    h+=`<div style="height:${cell}px;border-radius:3px;${f?`background:${f[3]}2e;box-shadow:inset 0 0 0 1px ${f[3]}90;`:'background:repeating-linear-gradient(135deg,#0d3a1b 0 3px,transparent 3px 7px);box-shadow:inset 0 0 0 1px #17432a;'}font:10.5px var(--mono);color:${f?f[3]:'transparent'};display:flex;align-items:center;padding-left:5px;white-space:nowrap;overflow:visible">${first?f[0]:''}</div>`;}
+    return `<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:3px">${h}</div>`;};
+  const re=[['id',0,8,'#86b98a'],['ts',8,8,'#d4a574'],['port',16,2,'#c8a8b8'],['kind',18,1,'#d8ba7b'],['urgent',19,1,'#77a5a5'],['flags',20,1,'#d97969']];
+  const pop=`<div class="pop" data-at="pk" data-dx="300" data-dy="-30" style="width:560px;padding:14px 16px">
+   <div style="font:12.5px var(--mono);margin-bottom:4px"><span class="k">struct</span> <span class="y">Packet</span></div>
+   <div style="font-size:12px;color:#a9b4a8;margin-bottom:12px"><b style="color:var(--fg)">40 bytes</b> · align 8 · <b style="color:var(--warn)">19 bytes padding (48%)</b> <span class="pin">2</span></div>
+   <div style="display:grid;grid-template-columns:28px 1fr;gap:3px 8px;font:10.5px var(--mono);color:var(--dim)"><div style="display:grid;gap:3px;grid-auto-rows:24px;align-items:center">${[0,8,16,24,32].map(x=>`<span>+${x}</span>`).join('')}</div>${grid(fields,40,24)}</div>
+   <div style="display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 2px;font:11px var(--mono);color:#a9b4a8">${fields.map(([n,o,s,c])=>`<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${c};margin-right:5px"></i>${n} <span class="dm">@${o} · ${s}B</span></span>`).join('')}<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:repeating-linear-gradient(135deg,#2a6a3e 0 2px,transparent 2px 4px);margin-right:5px"></i><span class="dm">padding</span></span></div>
+   <div style="margin-top:14px;border-top:1px solid #1f4d2c;padding-top:12px;display:grid;grid-template-columns:1fr 120px;gap:14px;align-items:center">
+     <div><div style="font-size:12px;margin-bottom:8px">Reorder by alignment → <b style="color:var(--ty)">24 bytes (−16)</b> <span class="pin">3</span></div><div style="display:grid;grid-template-columns:28px 1fr;gap:3px 8px;font:10.5px var(--mono);color:var(--dim)"><div style="display:grid;gap:3px;grid-auto-rows:16px;align-items:center"><span>+0</span><span>+8</span><span>+16</span></div>${grid(re,24,16)}</div></div>
+     <div style="display:flex;flex-direction:column;gap:8px"><span class="chip on" style="font-size:12px;padding:5px 10px;text-align:center">Apply reorder</span><span class="dm" style="font-size:11px;text-align:center"><span class="kbd">⌘/Ctrl .</span> also works</span></div></div></div>`;
+  return frame('13','Memory layout — hover a struct, see every byte','Exact size, alignment, field offsets and padding, straight from clang.',
+   win({cls:'big',crumb:crumb('src/net/','packet.hpp',['Packet']),right:RIGHT('8:12'),cols:'1.15fr 1fr 0.55fr 190px',
+    panes:[pane('',code(SRC,{start:1,active:4,eol:{4:'<span class="pin">1</span>'}})),
+      pane('prev','<div class="empty">Cursor is outside any function<br>— nothing to preview.</div>','Preview 1'),pane('prev','','Preview 2'),
+      pane('files',tree(R`
+tinyhttp/|open
+  src/|open
+    net/|open
+      io.cpp
+      packet.hpp|act
+      socket.cpp
+    server.cpp`),'tinyhttp')],over:pop}),
+  [[1,'<b>Hover any struct, class or union</b> — also inside preview cards.'],
+   [2,'<b>Every byte drawn</b>: fields in their colours, padding hatched. Wasted space is obvious.'],
+   [3,'<b>Reorder suggestion</b> with a before / after preview; applied as a normal undoable edit.'],
+   [0,'<b>Bitfields</b> switch to a bit-level view. Data comes from clangd’s hover — no compiler run.']]);};
+
+F['14-callers']=()=>{
+  const SRC=R`// Splits raw header text into name → value pairs.
+Headers «c:cal1 cal2 cal3|parse_headers»(std::string_view raw) {«cur|»«pin:1|»
+    Headers out;
+    for (auto line : split(raw, "\r\n")) {
+        auto colon = line.find(':');
+        if (colon == npos) continue;
+        out.emplace(trim(line.substr(0, colon)),
+                    trim(line.substr(colon + 1)));
+    }
+    return out;
+}`;
+  const head=`Callers<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· 3</span><span class="pin">2</span><span class="grow"></span><span class="chip">Calls</span><span class="chip on">Callers</span><span class="chip">ASM</span><span class="kbd" style="text-transform:none;letter-spacing:0">⌥/Alt C</span>`;
+  return frame('14','Who calls this? — the preview, flipped','One key turns the preview around: callers of the current function, linked to its name.',
+   win({crumb:crumb('src/http/','headers.cpp',['parse_headers']),right:RIGHT('12:9'),cols:'1.15fr 1fr 1fr 190px',
+    panes:[pane('',code(SRC,{start:11,active:12,params:['raw']})),
+      pane('prev',cards(
+        card('cal1','server.cpp:39',R`Response Server::«c:up1|handle»(const Request& req) {
+    auto headers = parse_headers(req.raw);
+    if (headers.empty()) {`,{title:'Server::handle',focus:true,c:{start:39,params:['req'],lcls:{40:'hitl'},active:39}}),
+        card('cal2','proxy.cpp:71',R`void Proxy::forward(Conn& c) {
+    auto h = parse_headers(c.peek());
+    h.erase("Host");`,{title:'Proxy::forward',c:{start:71,params:['c'],lcls:{72:'hitl'}}}),
+        card('cal3','tests/headers_test.cpp:12',R`TEST(headers, parses_basic) {
+    auto h = parse_headers("A: 1\r\nB: 2");
+    EXPECT_EQ(h.size(), 2);
+}`,{title:'TEST parses_basic',badge:'<span class="badge pink">test</span><span class="pin">4</span>',c:{start:12,lcls:{13:'hitl'}}})),head),
+      pane('prev',cards(card('up1','server.cpp:30',R`void Server::start() {
+    socket_.listen(port_);
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}`,{title:'Server::start',c:{start:30,lcls:{34:'hitl'}}}))+`<div class="cnote" style="padding:2px 18px;color:#4f6b57">↑ main() is 2 more levels up — dive to follow</div>`,'Callers 2<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· of Server::handle</span><span class="pin">3</span>'),
+      pane('files',tree(TREE_MAIN.replace('server.cpp|act|mod','server.cpp|dot=#d8ba7b').replace('headers.cpp|dot=#d8ba7b','headers.cpp|act').replace('io.cpp|dot=#c8a8b8','io.cpp').replace('strings.cpp|dot=#77a5a5|dot=#d4a574','strings.cpp').replace('router.cpp|dot=#86b98a','router.cpp').replace('  tests/','  proxy/|dot=#86b98a\n  tests/|dot=#c8a8b8')),'tinyhttp')]}),
+  [[1,'<b>⌥/Alt C</b> flips Calls ⇄ Callers. Lines leave from the function’s own name.'],
+   [2,'<b>Each caller card</b> shows the calling line highlighted, in context.'],
+   [3,'<b>Preview 2</b> = callers of the focused caller, so you see the path upward.'],
+   [4,'<b>Tests</b> that call it are badged — you see what covers this function.'],
+   [0,'Uses clangd’s call hierarchy over its background index of the whole project.']]);};
+
+F['15-history']=()=>{
+  const SRC=R`Response Server::handle(const Request& req) {
+    auto headers = parse_headers(req.raw);
+    if (headers.empty()) return {};
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    Response res = handler(req, headers);
+    «c:write_all|write_all»(socket_, res.serialize());
+    send_response(socket_, res);
+    return res;
+}`;
+  const W_ALL=R`void write_all(Socket& s, std::string_view b) {
+    while (!b.empty())
+        b.remove_prefix(s.write(b));
+}`;
+  const pts=[6,14,22,35,47,58,66,79,92];
+  const strip=`<div style="padding:9px 14px 10px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.16);font:11px var(--ui)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><span style="font-weight:600;letter-spacing:.1em;color:var(--dim)">HISTORY</span><span class="f" style="font-family:var(--mono)">Server::handle</span><span class="pin">1</span><span class="dm">· 9 saves</span>
+    <span style="margin-left:auto;display:flex;gap:6px"><span class="chip on" style="font-size:11px">Restore this version</span><span class="chip" style="font-size:11px">Copy</span><span class="chip" style="font-size:11px">Esc</span></span></div>
+    <div style="position:relative;height:22px"><div style="position:absolute;left:0;right:0;top:7px;height:2px;background:#17432a;border-radius:1px"></div>
+    ${pts.map((p,i)=>`<i style="position:absolute;left:${p}%;top:4px;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:${i===3?'transparent':'#3f6b4b'}"></i>`).join('')}
+    <i style="position:absolute;left:35%;top:0;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--kw);box-shadow:0 0 0 4px rgba(119,165,165,.2)"></i><span class="pin" style="position:absolute;left:35%;top:-2px;margin-left:12px">2</span>
+    <span class="dm" style="position:absolute;left:0;top:13px;font-size:10px">Mon 09:12</span><span style="position:absolute;left:35%;top:13px;font-size:10px;transform:translateX(-50%);color:var(--fg)">Tue 14:02 → now</span><span class="dm" style="position:absolute;right:0;top:13px;font-size:10px">now</span></div></div>`;
+  const note=`<div class="pop" style="left:260px;top:330px;width:330px;padding:10px 12px;border-left:3px solid var(--str)"><div style="display:flex;gap:8px;font:600 10px var(--ui);letter-spacing:.1em;color:var(--str);margin-bottom:6px">NOTE<span class="dm" style="font-weight:500;letter-spacing:0">· 12 Oct · on Server::handle</span><span class="pin">3</span></div>
+    <div style="font:12px/1.5 var(--ui);color:#c3cbc1">handler is never null — route() falls back to not_found. Checked router.cpp:37.</div>
+    <div style="font:10.5px var(--ui);color:var(--dim);margin-top:8px">Private · not in the source · data/notes/tinyhttp.toml <span class="pin">4</span></div></div>`;
+  return frame('15','Function history scrubber and margin notes','How this one function looked at any earlier save; plus private notes pinned to code.',
+   win({crumb:crumb('src/','server.cpp',['Server::handle']),right:RIGHT('46:42'),cols:'1.3fr 1fr 0.5fr 190px',
+    panes:[pane('',strip+code(SRC,{start:39,params:['req'],nums:[39,40,41,'',42,43,44,45,46,'',47,48],gut:{46:'<i class="gd" style="background:var(--str)"></i>'},
+       lcls:{41:'del',42:'add',43:'add',44:'add',47:'del',48:'add'}}).replace(/(<div class="ln del"[^>]*><span class="g">)/g,'$1− ').replace(/(<div class="ln add"[^>]*><span class="g">)/g,'$1+ ')),
+      pane('prev',cards(card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),card('write_all','net/io.cpp:70',W_ALL,{c:{start:70,params:['s','b']}}))+`<div class="cnote" style="padding:2px 18px;color:#4f6b57">Preview follows the version you’re viewing.</div>`,P1HEAD('as of Tue 14:02')),
+      pane('prev','','Preview 2'),pane('files',tree(TREE_MAIN),'tinyhttp')],over:note}),
+  [[1,'<b>⌥/Alt H</b> — history of the function under the cursor. Every save is a snapshot; no git needed.'],
+   [2,'<b>Drag the scrubber</b> — diff against now; restore or copy that version.'],
+   [3,'<b>Margin notes</b> — private notes attached to a symbol, shown as a gutter dot.'],
+   [4,'<b>Notes follow the symbol</b> through edits and renames; stored as plain TOML in data/.'],
+   [0,'Snapshots live in data/state/history and are pruned by age (setting).']]);};
+
+/* ---------- render ---------- */
+function drawLinks(w){
+  const svg=w.querySelector('svg.links');if(!svg)return;const wr=w.getBoundingClientRect();
+  svg.setAttribute('width',wr.width);svg.setAttribute('height',wr.height);
+  const colorOf={};let ci=0;
+  w.querySelectorAll('[data-card]').forEach(c=>{const id=c.dataset.card;colorOf[id]=c.dataset.color||PAL[ci++%PAL.length];const sw=c.querySelector(':scope > .card-h .sw');if(sw)sw.style.background=colorOf[id];});
+  let out='';
+  w.querySelectorAll('.call[data-call]').forEach(el=>el.dataset.call.split(' ').forEach(id=>{
+    const t=w.querySelector(`[data-card="${id}"]`);if(!t)return;const col=colorOf[id];
+    const a=el.getBoundingClientRect(),pr=el.closest('.pane').getBoundingClientRect();
+    const b=(t.querySelector(':scope > .card-h')||t.querySelector(':scope > .t')||t).getBoundingClientRect();
+    // start after the end of the line's text so the lead never crosses code
+    const rg=document.createRange();rg.selectNodeContents(el.closest('.t'));const tr=rg.getBoundingClientRect();
+    const xe=pr.right-wr.left,y1=a.top+a.height/2-wr.top,x1=Math.min(Math.max(a.right-wr.left+2,tr.right-wr.left+8),xe),x2=b.left-wr.left+(t.classList.contains('ln')?4:0),y2=b.top+b.height/2-wr.top;
+    if(el.textContent){el.style.textDecoration=`underline ${col}`;el.style.textUnderlineOffset='4px';el.style.textDecorationThickness='1.5px';}
+    const k=Math.max(28,(x2-xe)*.55);
+    if(xe-x1>2)out+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${col}" stroke-width="1.2" stroke-dasharray="2 4" opacity=".55" fill="none"/>`;
+    out+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${col}" stroke-width="1.6" opacity=".9" fill="none"/>`;
+    out+=`${xe-x1>2?`<circle cx="${x1}" cy="${y1}" r="2.6" fill="${col}"/>`:''}<circle cx="${x2}" cy="${y2}" r="3.2" fill="${col}"/>`;
+  }));
+  // analyzer step path
+  const steps=[...w.querySelectorAll('.astep')];
+  for(let i=1;i<steps.length;i++){const p=steps[i-1].getBoundingClientRect(),q=steps[i].getBoundingClientRect();
+    const x1=p.left-wr.left+p.width/2,y1=p.bottom-wr.top,x2=q.left-wr.left+q.width/2,y2=q.top-wr.top;const c=i===steps.length-1?'#d97969':'#d4a574';
+    out+=`<path d="M${x1} ${y1} C${x1} ${y1+24} ${x2} ${y2-24} ${x2} ${y2}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3" fill="none" opacity=".85"/>`;}
+  svg.innerHTML=out;}
+function placePops(w){const wr=w.getBoundingClientRect();
+  w.querySelectorAll('.pop[data-at]').forEach(p=>{const a=document.getElementById(p.dataset.at);if(!a)return;const r=a.getBoundingClientRect();
+    const dx=+(p.dataset.dx||0),dy=+(p.dataset.dy||0);p.style.left=(r.left-wr.left+dx)+'px';
+    p.style.top=(p.dataset.side==='above'?r.top-wr.top-p.offsetHeight+dy+50:r.bottom-wr.top+dy)+'px';});
+  const rul=w.querySelector('#rul');if(rul){const code=w.querySelector('.pane');const cr=code.getBoundingClientRect();rul.style.left=(cr.right-wr.left-9)+'px';rul.style.top=(cr.top-wr.top)+'px';rul.style.height=cr.height+'px';rul.style.bottom='auto';
+    const ticks=[...code.querySelectorAll('.eol')].map(e=>{const r=e.getBoundingClientRect();const c=e.classList.contains('er')?'#d97969':e.classList.contains('wa')?'#d4a574':'#77a5a5';return `<i style="top:${(r.top-cr.top)+6}px;background:${c}"></i>`;});rul.innerHTML=ticks.join('');}}
+const id=new URLSearchParams(location.search).get('f')||'01-overview';
+let res=F[id]();if(typeof res==='string')res={html:res};
+const root=document.getElementById('root');root.innerHTML=res.html;
+if(res.after)res.after(root);
+document.querySelectorAll('.win').forEach(w=>{placePops(w);drawLinks(w);});
+</script></body></html>

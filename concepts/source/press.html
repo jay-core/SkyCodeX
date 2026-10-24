@@ -1,0 +1,531 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lithograph concepts</title>
+<style>
+:root{
+  --bg:#00240A; --side:#001C08; --term:#001506; --pop:#00300E; --card:#002A0C; --prev:#001F09; --line:#0A3A18;
+  --fg:#d9dcd6; --dim:#6b7d70; --gut:#3f5a46; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b8766b; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#050906;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace; --ui:-apple-system,system-ui,"Segoe UI",sans-serif;
+}
+html,body{margin:0;background:var(--stage)}
+*{box-sizing:border-box}
+.frame{width:1440px;height:900px;padding:24px 28px 26px;display:flex;flex-direction:column;gap:14px;font-family:var(--ui);color:var(--fg);
+  background:radial-gradient(1200px 700px at 30% 20%,#0a1a0e 0%,#050906 70%)}
+.ttl{display:flex;align-items:baseline;gap:14px;height:30px;flex:none}
+.ttl .no{font:600 12px var(--mono);color:var(--kw);letter-spacing:.12em}
+.ttl h1{margin:0;font:600 22px var(--ui);letter-spacing:-.01em}
+.ttl p{margin:0;color:#8d9a8f;font-size:14px}
+.ttl .brand{margin-left:auto;font:600 11px var(--ui);letter-spacing:.2em;color:#2f4d38}
+.stage{flex:1;min-height:0;position:relative;display:flex;gap:20px}
+.notes{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:12px;height:96px;flex:none}
+.note{background:#09120b;border:1px solid #12251a;border-radius:9px;padding:9px 12px;font-size:12.2px;line-height:1.4;color:#a9b4a8;overflow:hidden}
+.big .code{font-size:14px;line-height:24px}
+.big .ln .g{width:50px}
+.note b{color:var(--fg);font-weight:600}
+.pin{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--fn);color:#00240A;font:700 10px var(--ui);
+  vertical-align:1px;margin:0 6px 0 4px;box-shadow:0 0 0 3px rgba(216,186,123,.2);flex:none;font-style:normal;text-decoration:none;line-height:1}
+.note .pin{margin:0 6px 0 0}
+.label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
+.col{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* window */
+.win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
+.hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
+.crumb{display:flex;align-items:center;white-space:nowrap}
+.crumb .dir{color:var(--dim)} .crumb .file{color:var(--fg)} .crumb .sep{margin:0 8px;color:var(--gut)} .crumb .fnn{color:var(--fn);font-family:var(--mono);font-size:11.5px}
+.crumb .mod{width:6px;height:6px;border-radius:50%;background:var(--ty);margin-left:8px;display:inline-block}
+.hdr .right{margin-left:auto;display:flex;gap:16px;align-items:center;font:11px var(--mono);white-space:nowrap}
+.hdr .ok{color:var(--ty)} .hdr .wa{color:var(--warn)} .hdr .er{color:var(--err)}
+.dots{display:flex;gap:6px;margin-right:12px}
+.dots i{width:8px;height:8px;border-radius:50%;display:block;background:#173a22}
+.dots.on i:nth-child(1){background:#b8766b}.dots.on i:nth-child(2){background:#ab9070}.dots.on i:nth-child(3){background:#7f9e82}
+.wctl{display:flex;margin:0 -12px 0 14px;height:29px}
+.wctl span{width:32px;display:grid;place-items:center;color:var(--dim);font-size:11px}
+.wctl span.hov{background:#b9584b;color:#efeae2}
+.body{flex:1;min-height:0;display:grid}
+.pane{min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--line);position:relative;display:flex;flex-direction:column}
+.pane:last-child{border-right:0}
+.pane.files{background:var(--side)}
+.pane.prev{background:var(--prev)}
+.ph{height:26px;flex:none;display:flex;align-items:center;padding:0 10px;font:600 10px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);gap:6px;white-space:nowrap}
+.ph .grow{flex:1}
+.chip{white-space:nowrap;font:500 10.5px var(--ui);padding:2px 7px;border-radius:9px;border:1px solid #17432a;color:var(--dim);text-transform:none;letter-spacing:0}
+.chip.on{color:var(--fg);background:rgba(119,165,165,.14);border-color:rgba(119,165,165,.45)}
+.pbody{flex:1;min-height:0;position:relative;overflow:hidden}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
+.links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
+
+/* code */
+.code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
+.ln{display:flex;position:relative}
+.ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
+.ln.act{background:rgba(119,165,165,.075)}
+.ln.act .g{color:var(--kw)}
+.ln .t{flex:1;min-width:0}
+.ln.dimmed .t{opacity:.36}
+.k{color:var(--kw)} .f{color:var(--fn)} .y{color:var(--ty)} .v{color:var(--var)} .p{color:var(--par);font-style:italic} .s{color:var(--str)}
+.n{color:var(--var)} .cm{color:var(--dim);font-style:italic} .pp{color:var(--kw)} .ns{color:var(--fg)} .mac{color:var(--kw)}
+.e{text-decoration:underline wavy var(--err) 1px;text-underline-offset:4px}
+.w{text-decoration:underline dotted var(--warn) 2px;text-underline-offset:4px}
+.i{text-decoration:underline dotted var(--kw) 2px;text-underline-offset:4px}
+.cur{display:inline-block;width:2px;height:16px;background:var(--kw);vertical-align:-3px;margin:0 -1px;box-shadow:0 0 6px rgba(119,165,165,.7)}
+.sel{background:rgba(119,165,165,.33)}
+.occ{background:rgba(119,165,165,.22);border-radius:2px}
+.u{text-decoration:underline var(--kw) 1px;text-underline-offset:4px}
+.hint{font:500 10.5px var(--ui);color:#86a28d;background:rgba(119,165,165,.12);border-radius:4px;padding:1px 5px;margin:0 3px 0 1px;font-style:normal}
+.eol{font:italic 11.5px var(--ui);margin-left:24px;opacity:.85}
+.eol.er{color:var(--err)} .eol.wa{color:var(--warn)} .eol.in{color:var(--kw)}
+.tag{font:500 9.5px var(--ui);padding:0 5px;border-radius:3px;border:1px solid currentColor;opacity:.8;margin-left:6px;font-style:normal}
+.ln.hitl{background:rgba(119,165,165,.16)}
+.ln.del{background:rgba(217,121,105,.12)} .ln.add{background:rgba(134,185,138,.12)}
+.ln.del .g,.ln.add .g{font-weight:600}
+.ln.del .g{color:var(--err)} .ln.add .g{color:var(--ty)}
+.ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
+.gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
+
+/* cards */
+.cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
+.card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
+.card-h{display:flex;align-items:center;gap:7px;padding:4px 9px;height:26px;font:11.5px var(--mono);border-bottom:1px solid var(--line);background:rgba(0,0,0,.14);white-space:nowrap}
+.card.collapsed .card-h{border-bottom:0}
+.card-h .nm{color:var(--fn)}
+.card-h .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.card-h .sw{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim)}
+.card .code{font-size:11.5px;line-height:18px;padding:4px 0}
+.card .ln .g{width:34px;padding-right:10px}
+.badge{font:500 10px var(--ui);padding:1px 7px;border-radius:9px;background:rgba(119,165,165,.15);color:var(--kw)}
+.badge.warm{background:rgba(212,165,116,.14);color:var(--str)}
+.badge.pink{background:rgba(200,168,184,.14);color:var(--var)}
+.rows{padding:4px 0;font:11.5px var(--mono)}
+.row{display:flex;gap:8px;padding:3px 10px;color:#b7c0b5;white-space:nowrap}
+.row .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.row.on{background:rgba(119,165,165,.12);color:var(--fg)}
+.cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
+
+/* tree */
+.tree{font:12px var(--ui);padding:2px 0}
+.ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
+.ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
+.ti.act{background:rgba(119,165,165,.16);color:var(--fg);box-shadow:inset 2px 0 var(--kw)}
+.ti.mod .nm{color:var(--kw)} .ti.dim .nm{color:var(--dim)} .ti.new .nm{color:var(--ty)}
+.ti .fds{margin-left:auto;display:flex;gap:3px}
+.ti .fd{width:7px;height:7px;border-radius:50%}
+
+/* terminal */
+.term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
+.tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
+.tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
+.tt .grow{flex:1}
+.term .code{font-size:12px;line-height:18px;padding:2px 2px}
+.okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
+
+/* floating */
+.pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
+.kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
+.toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
+.ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
+.ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
+/* Lithograph: charcoal, borderless, low contrast */
+:root{
+  --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
+  --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#0b0c0b;
+}
+.frame{background:radial-gradient(1200px 700px at 30% 20%,#151715 0%,#0b0c0b 70%)}
+.ttl p{color:#6d746c}
+.ttl .brand{color:#2b2f2b}
+.win{box-shadow:0 30px 80px rgba(0,0,0,.65);border-radius:9px}
+.hdr{background:var(--bg);border-bottom:0;color:#4f564f}
+.crumb .file{color:#8b9189} .crumb .sep{color:#33372f}
+.pane{border-right:0}
+.pane.files{background:#141514}
+.ph{color:#454b45;font-weight:500}
+.chip{border:0;padding:2px 3px;color:#454b45}
+.chip.on{background:none;color:#8b9189}
+.ln.act{background:rgba(255,255,255,.022)}
+.ln.act .g{color:#6a716a}
+.cur{box-shadow:none;width:2px;background:#6f8f8f}
+.card{border:0;border-radius:6px;background:var(--card)}
+.card.focus{border:0;box-shadow:inset 2px 0 #4e6a6a;background:#1d1e1d}
+.card-h{border:0;background:none;height:22px;padding:7px 10px 0;font-size:10.5px}
+.card-h .nm{color:#727971}
+.card-h .loc{color:#3f453f}
+.card-h .sw{width:5px;height:5px}
+.card .code{padding:2px 0 6px}
+.badge{background:none;color:#5f665f;padding:0}
+.badge.warm,.badge.pink{background:none}
+.term{border-top:0}
+.tt .on{box-shadow:none;color:#8b9189}
+.pop{border:0;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.note{background:#0f100f;border:0;color:#7b8279}
+.note b{color:#a3a8a0}
+.dots i{background:#262826}
+.ti{color:#777e76}
+.ti.act{background:rgba(255,255,255,.035);box-shadow:none;color:#a3a8a0}
+.kbd{border:0;background:#242624;color:#8b9189}
+.pin{background:#8c7d5a;color:#141514;box-shadow:none}
+.hint{background:rgba(255,255,255,.04);color:#5f665f}
+.label{color:#4f564f}
+.e{text-decoration-color:#9a655c}
+.occ{background:rgba(115,150,150,.16)}
+.occw{background:rgba(173,155,111,.2);border-radius:2px}
+.ln.noise .t{opacity:.2}
+.ln.chg{box-shadow:inset 2px 0 #4e6a6a}
+.toast{border:0}
+.ln.hitl{background:rgba(115,150,150,.07)}
+/* Metro: typography is the chrome */
+.win{border-radius:0}
+.hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
+.pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
+.pv .on{color:#a3a8a0} .pv .off{color:#313531} .pv .fn{font:300 15px var(--ui);color:#7d6f50;margin-left:-12px}
+.hdr .right{font:300 11.5px var(--ui);color:#3f453f;gap:18px;align-self:flex-start;margin-top:12px}
+.dots,.wctl{display:none}
+.card,.note,.pop,.toast,.kbd,.chip{border-radius:0}
+.ph{font:300 15px var(--ui);text-transform:lowercase;letter-spacing:0;height:36px;color:#4f564f;padding:0 14px}
+.ttl h1{font-weight:300;font-size:32px;text-transform:lowercase;letter-spacing:-.01em}
+.ttl p{font-weight:300}
+.pin{border-radius:0}
+.cards{padding:2px 10px 10px 22px;gap:10px}
+.tt{font:300 13px var(--ui);text-transform:lowercase;height:30px}
+.term .code{font-size:12px}
+.metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
+.big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkl.ttf');font-weight:300}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksl.ttf');font-weight:350}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawk.ttf');font-weight:400}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksb.ttf');font-weight:600}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkb.ttf');font-weight:700}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-ExtraLight.otf');font-weight:200}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Light.otf');font-weight:300}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Regular.otf');font-weight:400}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Medium.otf');font-weight:500}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-SemiBold.otf');font-weight:600}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Bold.otf');font-weight:700}
+:root{--mono:'ARX F1',ui-monospace,monospace;--ui:'Selawik',-apple-system,sans-serif}
+html,body{overflow:hidden;background:#171817;color:var(--fg)}
+.card .code{font-size:11px;line-height:17.5px}
+.code{font-size:12.5px}
+</style></head>
+<body><div id="root"></div>
+<script>
+window.onerror=(m,s,l,c)=>{window.__err=m+' @'+l+':'+c;};
+const R=String.raw;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sp=(c,t)=>`<span class="${c}">${esc(t)}</span>`;
+const KW=new Set(`auto bool break case char class const constexpr continue default delete do double else enum explicit extern false float for if inline int long namespace new noexcept nullptr operator private protected public return short signed sizeof static static_assert struct switch template this throw true try typedef typename union unsigned using virtual void volatile while override final size_t uint8_t uint16_t uint32_t uint64_t int64_t`.split(/\s+/));
+const NS=new Set(['std','tiny']);
+const TYPES=new Set(['string_view','string','vector','optional','span','function','sv']);
+
+function hlCpp(s,o,after){
+  const inc=s.match(/^(\s*#\s*(?:include|pragma))(.*)$/); if(inc) return sp('pp',inc[1])+sp(/include/.test(inc[1])?'s':'pp',inc[2]);
+  const re=/(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\w.]*)|([A-Za-z_]\w*)/g;
+  let out='',last=0,m;
+  while((m=re.exec(s))){out+=esc(s.slice(last,m.index));last=re.lastIndex;const t=m[0];
+    if(m[1])out+=sp('cm',t);else if(m[2])out+=sp('s',t);else if(m[3])out+=sp('n',t);
+    else{const rest=s.slice(last)+after;let c;
+      if(KW.has(t))c='k';
+      else if(o.params&&o.params.includes(t))c='p';
+      else if(/^[A-Z][A-Z0-9_]+$/.test(t))c='mac';
+      else if(/^\s*\(/.test(rest))c='f';
+      else if(NS.has(t))c='ns';
+      else if(/^[A-Z]/.test(t)||TYPES.has(t))c='y';
+      else c='v';
+      out+=sp(c,t);}}
+  return out+esc(s.slice(last));}
+function hlTomlVal(v){
+  const m=v.match(/^("(?:[^"\\]|\\.)*"|[^#]*?)(\s*)(#.*)?$/);if(!m)return esc(v);
+  const val=m[1];let o;
+  if(/^"/.test(val))o=sp('s',val);else if(/^(true|false)$/.test(val.trim()))o=sp('k',val);else if(/^[\d.\-]+$/.test(val.trim()))o=sp('n',val);else o=esc(val);
+  return o+esc(m[2]||'')+(m[3]?sp('cm',m[3]):'');}
+function hlToml(s){let m;
+  if(/^\s*#/.test(s))return sp('cm',s);
+  if((m=s.match(/^(\s*)(\[[^\]]+\])(.*)$/))){const r=m[3],i=r.indexOf('#');return esc(m[1])+sp('y',m[2])+(i<0?esc(r):esc(r.slice(0,i))+sp('cm',r.slice(i)));}
+  if((m=s.match(/^(\s*)([\w.]+)(\s*=\s*)(.*)$/)))return esc(m[1])+sp('f',m[2])+esc(m[3])+hlTomlVal(m[4]);
+  if(/^\d+$/.test(s.trim()))return sp('n',s);
+  return esc(s);}
+const REG=/^(r[a-d]x|e[a-d]x|r[sd]i|e[sd]i|r[sb]p|e[sb]p|r\d+d?|xmm\d+|[a-d]l)$/;
+function hlAsm(s){const ci=s.indexOf(';');const code=ci<0?s:s.slice(0,ci),cm=ci<0?'':s.slice(ci);
+  if(/^\S/.test(code))return sp('f',code)+(cm?sp('cm',cm):'');
+  let first=true;
+  const out=code.replace(/[A-Za-z_.][\w.]*|\d+|[^\w.]+/g,t=>{
+    if(/^[^\w.]+$/.test(t))return esc(t);
+    if(first&&/^[a-z]/.test(t)){first=false;return sp('k',t);}
+    if(REG.test(t))return sp('v',t); if(/^\d/.test(t))return sp('n',t); if(/^\./.test(t))return sp('f',t);
+    if(/^(dword|qword|ptr|byte|word)$/.test(t))return sp('cm',t); return esc(t);});
+  return out+(cm?sp('cm',cm):'');}
+function hlTerm(s){const m=s.match(/^(\S+) (❯) (.*)$/);if(m)return sp('k',m[1])+' '+sp('y',m[2])+' '+esc(m[3]);return esc(s);}
+function hl(s,o,after=''){const L=o.lang||'cpp';
+  if(L==='cpp')return hlCpp(s,o,after);if(L==='toml')return hlToml(s);if(L==='asm')return hlAsm(s);if(L==='term')return hlTerm(s);return esc(s);}
+
+const MK=/«([^|»]*)\|([^»]*)»/g;
+function wrap(spec,inner,o,after){
+  const [k,...a]=spec.split(':');
+  switch(k){
+    case 'cur': return '<span class="cur"></span>';
+    case 'pin': return `<span class="pin">${a[0]}</span>`;
+    case 'hint': return `<span class="hint">${esc(inner)}</span>`;
+    case 'raw': return o.raw[a[0]];
+    case 'c': return `<span class="call f" data-call="${a[0]}">${esc(inner)}</span>`;
+    default:{const id=[k,...a].find(x=>x.startsWith('#'));const cls=[k,...a].filter(x=>!x.startsWith('#')).join(' ');
+      return `<span class="${cls}"${id?` id="${id.slice(1)}"`:''}>${hl(inner,o,after)}</span>`;}
+  }}
+function line(s,o){let out='',last=0;const ms=[...s.matchAll(MK)];
+  ms.forEach(m=>{const after=s.slice(m.index+m[0].length).replace(MK,'$2');
+    out+=hl(s.slice(last,m.index),o,m[2]+after);out+=wrap(m[1],m[2],o,after);last=m.index+m[0].length;});
+  return out+hl(s.slice(last),o,'');}
+function code(src,o={}){
+  const L=src.replace(/^\n/,'').replace(/\n\s*$/,'').split('\n');const st=o.start||1;
+  return `<div class="code">`+L.map((s,i)=>{const n=st+i;const cls=['ln'];
+    if(o.active===n)cls.push('act');
+    if(o.dim&&!(n>=o.dim[0]&&n<=o.dim[1]))cls.push('dimmed');
+    if(o.lcls&&o.lcls[n])cls.push(o.lcls[n]);
+    const num=o.nums?o.nums[i]:n;
+    const g=o.nog?'':`<span class="g">${o.gut&&o.gut[n]?o.gut[n]:''}${num}</span>`;
+    return `<div class="${cls.join(' ')}" data-n="${n}">${g}<span class="t">${line(s,o)||' '}${o.eol&&o.eol[n]?o.eol[n]:''}</span></div>`;}).join('')+`</div>`;}
+const eol=(cls,t,tag)=>`<span class="eol ${cls}">${esc(t)}${tag?`<span class="tag">${tag}</span>`:''}</span>`;
+
+function tree(spec){return '<div class="tree">'+spec.replace(/^\n/,'').trimEnd().split('\n').map(l=>{
+  const ind=l.match(/^ */)[0].length/2;const [name,...fl]=l.trim().split('|');const dir=name.endsWith('/');
+  const fds=fl.filter(f=>f.startsWith('dot=')).map(f=>`<i class="fd" style="background:${f.slice(4)}"></i>`).join('');
+  const cls=fl.filter(f=>!f.startsWith('dot=')&&!f.startsWith('note=')).join(' ');const nt=fl.find(f=>f.startsWith('note='));
+  return `<div class="ti ${cls}" style="padding-left:${10+ind*13}px"><span class="ic">${dir?(cls.includes('open')?'▾':'▸'):''}</span><span class="nm">${esc(name)}</span>${nt?`<span class="dm" style="margin-left:8px;font-size:11px">${nt.slice(5)}</span>`:''}${fds?`<span class="fds">${fds}</span>`:''}</div>`;}).join('')+'</div>';}
+
+function crumb(dir,file,fn,mod){return `<span class="crumb"><span class="dir">${dir}</span><span class="file">${file}</span>${mod?'<i class="mod"></i>':''}${fn?fn.map(f=>`<span class="sep">›</span><span class="fnn">${f}</span>`).join(''):''}</span>`;}
+const RIGHT=(pos='45:42',w=0,e=0,extra='')=>`${extra}<span>${pos}</span><span class="ok">● clangd</span><span class="wa">⚠ ${w}</span><span class="er">✕ ${e}</span>`;
+function win(o){
+  const ctl=o.os==='win'?`<span class="wctl"><span>─</span><span>▢</span><span class="${o.hovx?'hov':''}">✕</span></span>`:o.os==='linux'?`<span class="wctl"><span class="${o.hovx?'hov':''}">✕</span></span>`:'';
+  const dots=o.os==='win'||o.os==='linux'?'':`<span class="dots ${o.dotsOn?'on':''}"><i></i><i></i><i></i></span>`;
+  return `<div class="win ${o.cls||''}" style="${o.style||''}">${o.nohdr?'':`<div class="hdr">${dots}${o.crumb}<span class="right">${o.right??RIGHT()}</span>${ctl}</div>`}
+  <div class="body" style="grid-template-columns:${o.cols}">${o.panes.join('')}</div>
+  ${o.term?`<div class="term" style="height:${o.termH||130}px">${o.term}</div>`:''}<svg class="links"></svg>${o.over||''}</div>`;}
+const pane=(cls,inner,head)=>`<div class="pane ${cls}">${head?`<div class="ph">${head}</div>`:''}<div class="pbody">${inner}</div></div>`;
+function card(name,loc,src,o={}){return `<div class="card ${o.focus?'focus':''} ${o.cls||''}" data-card="${o.id||name}" ${o.color?`data-color="${o.color}"`:''}>
+  <div class="card-h"><span class="sw"></span><span class="nm">${o.title||name}</span>${o.badge||''}<span class="loc">${loc}</span></div>
+  ${o.pre||''}${src?code(src,o.c||{}):''}${o.extra||''}</div>`;}
+const cards=(...c)=>`<div class="cards">${c.join('')}</div>`;
+const term=(tabs,src,o={})=>`<div class="tt">${tabs}</div><div style="padding:0 10px">${code(src,{lang:'term',nog:true,...o})}</div>`;
+const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</span><span class="grow"></span><span>⌃\` toggle · drag edge to resize</span>`;
+function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
+  <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
+
+/* ---------- shared sample project ---------- */
+const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
+const MAIN=R`void Server::start() {
+    socket_.listen(port_);
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}
+
+// Handles one client request end-to-end.
+Response Server::handle(const Request& req) {«pin:2|»
+    auto headers = «c:parse_headers|parse_headers»(req.raw);
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    Response res = handler(req, headers);«cur|»
+    «c:send_response|send_response»(socket_, res);
+    return res;
+}
+
+Server::~Server() {
+    socket_.close();
+}
+
+} // namespace tiny`;
+const C_PARSE=R`Headers parse_headers(std::string_view raw) {
+    Headers out;
+    for (auto line : «c:split|split»(raw, "\r\n")) {
+        auto colon = line.find(':');
+        if (colon == npos) continue;
+        out.emplace(«c:trim|trim»(line.substr(0, colon)),
+                    «c:trim|trim»(line.substr(colon + 1)));«cur|»
+    }
+    return out;
+}`;
+const C_ROUTE=R`Handler route(sv path, const Routes& routes) {
+    for (const auto& r : routes)
+        if (match_path(r.pattern, path))
+            return r.handler;
+    return not_found;
+}`;
+const C_SEND=R`void send_response(Socket& s, const Response& r) {
+    auto bytes = r.serialize();
+    write_all(s, bytes.data(), bytes.size());
+}`;
+const C_SPLIT=R`Parts split(sv s, sv delim) {
+    Parts out;
+    size_t at = 0, nx;
+    while ((nx = s.find(delim, at)) != npos) {
+        out.push_back(s.substr(at, nx - at));
+        at = nx + delim.size();
+    }
+    out.push_back(s.substr(at));
+    return out;
+}`;
+const C_TRIM=R`sv trim(sv s) {
+    while (!s.empty() && «c:is_space|is_space»(s.front()))
+        s.remove_prefix(1);
+    while (!s.empty() && «c:is_space|is_space»(s.back()))
+        s.remove_suffix(1);«cur|»
+    return s;
+}`;
+const TREE_MAIN=R`
+tinyhttp/|open
+  src/|open
+    http/|open
+      headers.cpp|dot=#ad9b6f
+      headers.hpp
+    net/|open
+      io.cpp|dot=#a8929e
+      socket.cpp
+    util/|open
+      strings.cpp|dot=#739696|dot=#ab9070
+    router.cpp|dot=#7f9e82
+    server.cpp|act|mod
+    server.hpp
+  tests/
+  CMakeLists.txt
+  compile_commands.json|dim`;
+const P1HEAD=(n,extra='')=>`Preview 1<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${n}</span>${extra}<span class="grow"></span><span class="chip on">project</span><span class="chip">std</span><span class="chip">system</span>`;
+const P2HEAD=(of,extra='')=>`Preview 2<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${of}</span>${extra}`;
+const mainCards=(focusParse)=>cards(
+  card('parse_headers','http/headers.cpp:12',C_PARSE,{focus:focusParse,c:{start:12,params:['raw'],active:focusParse?18:0}}),
+  card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),
+  card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
+
+try{
+/* ---------- terminal + press view (clean, full window) ---------- */
+const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
+const PR='<span style="color:#5f7f7f">~/code/tinyhttp</span> <span style="color:#6f8f74">❯</span>';
+const M=t=>`<span style="font-family:var(--mono)">${t}</span>`;
+const dot=c=>`<i style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};margin-right:12px;vertical-align:1px"></i>`;
+const OK='#6f8f74',BAD='#a8685e',RUN='#ad9b6f';
+function block(cmd,out,st,dur,o={}){return `<div style="padding:8px 18px 10px;${o.sel?'background:rgba(255,255,255,.025);':''}">
+  <div style="display:flex;align-items:center;font:12.5px/1.7 var(--mono);color:#a3a8a0">${dot(st)}${PR}&nbsp;${esc(cmd)}<span style="margin-left:auto;font:300 12px var(--ui);color:#454b45">${dur}</span></div>
+  <div style="padding-left:19px;font:12px/1.65 var(--mono);color:#7b8279;white-space:pre">${out.join('\n')}</div>${o.extra||''}</div>`;}
+const link=t=>`<span style="color:#7fa3a3;text-decoration:underline;text-underline-offset:3px">${t}</span>`;
+const tabs=(on,list)=>`<div style="display:flex;gap:20px;padding:12px 18px 6px;font:300 15px var(--ui)">${list.map(x=>`<span style="color:${x===on?'#a3a8a0':'#3a3f3a'}">${x}</span>`).join('')}<span style="color:#3a3f3a">+</span></div>`;
+const H={};
+H['t1-terminal']=()=>{
+  const left=tabs('zsh',['zsh','build','tests'])+
+   block('git status -sb',['## main...origin/main',' M src/server.cpp'],OK,'0.04 s')+
+   block('cmake --preset debug',['-- Configuring done (1.2s)','-- Generating done (0.1s)','-- Build files have been written to: build/debug'],OK,'1.8 s')+
+   block('ninja -C build/debug',['[38/42] Building CXX object src/CMakeFiles/server.dir/server.cpp.o','<span style="color:#a8685e">FAILED:</span> src/CMakeFiles/server.dir/server.cpp.o',`${link('src/server.cpp:46:33')}: <span style="color:#a8685e">error:</span> use of undeclared identifier 'headrs'`,'1 error generated.','ninja: build stopped: subcommand failed.'],BAD,'4.2 s',{sel:true,extra:`<div style="padding:8px 0 0 19px;font:300 13px var(--ui);color:#7fa3a3">open in build view ›</div>`})+
+   `<div style="padding:8px 18px;font:12.5px var(--mono);color:#a3a8a0">${dot('#2f332f')}${PR}&nbsp;<span class="cur"></span></div>`;
+  const rows=[['headers.parses_basic','Passed','0.01'],['headers.trims_values','Passed','0.01'],['router.exact_match','Passed','0.02'],['router.wildcard','***Failed','0.03'],['server.roundtrip','Passed','0.41']];
+  const right=tabs('tests',['zsh','build','tests'])+
+   `<div style="margin:0 0 6px;padding:8px 18px;background:#191a19;box-shadow:0 8px 16px rgba(0,0,0,.25);font:12.5px var(--mono);color:#a3a8a0;display:flex;align-items:center">${dot(RUN)}${PR}&nbsp;ctest --test-dir build/debug --output-on-failure<span style="margin-left:auto;font:300 12px var(--ui);color:#7d6f50">running · 3.1 s</span></div>`+
+   `<div style="padding:4px 18px 0 37px;font:12px/1.75 var(--mono);color:#7b8279;white-space:pre">Test project /Users/dev/code/tinyhttp/build/debug
+${rows.map(([n,r,t],i)=>`    Start ${i+1}: ${n}\n${i+1}/6 Test #${i+1}: ${n.padEnd(24,' ')} <span style="color:${r==='Passed'?OK:BAD}">${r==='Passed'?'✓ passed':'✕ failed'}</span>  ${t} sec`).join('\n')}
+    Start 6: server.keep_alive
+<span style="color:#a8685e">router_test.cpp</span>:${link('41')}: Expected equality of these values:
+  match_path("/api/*", "/api/v1/users")
+    Which is: false
+  true</div>`;
+  return `<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+   <div class="hdr">${PV('terminal',['server.cpp','build'])}<span class="right"><span>2 sessions</span><span>zsh · ctest</span></span></div>
+   <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;min-height:0;background:#131413">
+     <div style="min-width:0;overflow:hidden">${left}</div><div style="min-width:0;overflow:hidden;background:#141514">${right}</div></div>
+   <div style="height:34px;display:flex;align-items:center;gap:26px;padding:0 18px;background:#131413;font:300 12.5px var(--ui);color:#3f453f"><span>⌘/Ctrl ↑ ↓ jump between commands</span><span>⌘/Ctrl ⇧ C copy output</span><span>⌘/Ctrl F search output</span></div></div>`;};
+
+H['t2-build']=()=>{
+  let seed=5;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  const files=['main','server','session','io','socket','tls','http','proto','poller','parser','lexer','planner','exec','expr','catalog','btree','wal','arena','pager','sstable','bloom','cache','manifest','iterator','txn','raft','log','snapshot','strings','hash','time','status','pool','flags','router','headers','chars','config','cli','bench','dump','checksum'];
+  const SC=205,lanes=Array.from({length:8},()=>[]);let fi=0;
+  lanes.forEach((L,li)=>{let x=0;while(x<4.0&&fi<files.length){const d=files[fi]==='headers'?1.9:files[fi]==='cache'?1.3:0.25+rnd()*0.6;L.push([files[fi],x,d]);x+=d+0.03;fi++;}});
+  const bar=([n,x,d])=>{const c=n==='server'||n==='cache'?['#4a302c','#b8766b']:n==='headers'?['#3d382a','#ad9b6f']:['#232823','#6d746c'];
+    return `<div style="position:absolute;left:${x*SC}px;width:${Math.max(2,d*SC-3)}px;top:0;bottom:0;background:${c[0]};font:300 10.5px var(--ui);color:${c[1]};padding:3px 6px;white-space:nowrap;overflow:hidden">${d*SC>46?n+'.cpp':''}</div>`;};
+  const timeline=`<div style="position:relative;height:${8*20}px;width:${4.3*SC}px">${lanes.map((L,i)=>`<div style="position:absolute;left:0;right:0;top:${i*20}px;height:17px">${L.map(bar).join('')}</div>`).join('')}</div>
+    <div style="position:relative;height:18px;width:${4.3*SC}px;font:300 11px var(--ui);color:#3a3f3a">${[0,1,2,3,4].map(s=>`<span style="position:absolute;left:${s*SC}px">${s} s</span>`).join('')}</div>`;
+  const big=(v,l,c='#a3a8a0')=>`<div style="margin-bottom:12px"><div style="font:300 38px/1 var(--ui);color:${c};letter-spacing:-.02em">${v}</div><div style="font:300 12.5px var(--ui);color:#4f564f;margin-top:3px">${l}</div></div>`;
+  const ecard=(kind,loc,msg,src,o={})=>`<div style="background:#1b1c1b;padding:12px 16px 10px;margin-bottom:10px;${o.dim?'opacity:.45':''}">
+     <div style="display:flex;align-items:baseline;gap:12px;font:300 13px var(--ui)"><span style="color:${kind==='error'?'#b8766b':'#ab9070'}">${kind}</span>${o.isnew?'<span style="color:#ad9b6f;font-size:11.5px">new</span>':''}<span style="color:#7fa3a3">${loc}</span>${o.act?`<span style="margin-left:auto;color:#a3a8a0;border:1px solid #3a3f3a;padding:2px 10px">${o.act}</span>`:''}</div>
+     <div style="font:300 15px/1.5 var(--ui);color:#a3a8a0;margin:4px 0 6px">${msg}</div>${src?`<div style="background:#171817">${code(src,o.c||{})}</div>`:''}${o.extra||''}</div>`;
+  const errs=ecard('error','src/server.cpp:46',"use of undeclared identifier <span style=\"font-family:var(--mono);color:#b8766b\">headrs</span> — did you mean <span style=\"font-family:var(--mono)\">headers</span>?",R`auto handler = route(req.path, routes_);
+Response res = handler(req, «e|headrs»);`,{act:'apply fix  ⌘/Ctrl .',c:{start:44,params:['req']}})+
+   `<div style="font:300 13px var(--ui);color:#454b45;margin:-2px 0 12px 16px">2 more errors in server.cpp, probably caused by this one — hidden · show</div>`+
+   ecard('error','src/cache.cpp:88',"no matching member function for call to <span style=\"font-family:var(--mono)\">emplace</span>",R`entries_.emplace(key, ttl_seconds);`,{c:{start:88},extra:`<div style="font:300 12.5px/1.8 var(--ui);color:#5f665f;margin-top:8px">on ${M('<span style="color:#7f9e82">std::map</span>&lt;<span style="color:#7f9e82">std::string</span>, <span style="color:#7f9e82">std::string</span>&gt;')} &nbsp;<span style="color:#3f453f">full type · 412 characters</span><br>› candidate ${M('emplace(Args&amp;&amp;…)')} needs a value constructible from ${M('int')}<br><span style="color:#3f453f">3 notes from system headers hidden</span></div>`})+
+   ecard('warning','src/router.cpp:37','comparison of integers of different signs',R`for (int i = 0; «w|i < parts.size()»; ++i)`,{isnew:true,c:{start:37}});
+  const slow=[['headers.cpp','1.9 s','+0.8 s','new include &lt;regex&gt;'],['cache.cpp','1.3 s','+0.1 s','std::map instantiations'],['wal.cpp','0.9 s','−0.2 s',''],['btree.cpp','0.8 s','±0','']];
+  const side=`${big('4.2 s','total · 8 jobs')}${big('40 / 42','files compiled')}${big('2','errors','#b8766b')}${big('+2.1 KB','tinyhttp vs last build')}
+    <div style="font:300 15px var(--ui);color:#4f564f;margin:20px 0 8px">slowest</div>
+    ${slow.map(([f,t,d,why])=>`<div style="font:300 13px/1.45 var(--ui);margin-bottom:8px"><div style="display:flex;color:#8b9189"><span>${f}</span><span style="margin-left:auto">${t}</span><span style="width:56px;text-align:right;color:${d.startsWith('+0.8')?'#ad9b6f':'#454b45'}">${d}</span></div>${why?`<div style="color:#454b45;font-size:12px">${why}</div>`:''}</div>`).join('')}
+    <div style="font:300 15px var(--ui);color:#4f564f;margin:18px 0 8px">since last build</div>
+    <div style="font:300 13px/1.9 var(--ui);color:#7b8279"><div><span style="color:#ad9b6f">+ 2</span> new warnings</div><div><span style="color:#6f8f74">✓ 1</span> error fixed · router.cpp</div><div><span style="color:#454b45">= 4</span> warnings unchanged</div></div>`;
+  return `<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+   <div class="hdr">${PV('build',['memory','misra','terminal'])}<span class="right"><span>ninja · build/debug</span><span>build #14</span></span></div>
+   <div style="flex:1;display:grid;grid-template-columns:1fr 300px;min-height:0">
+     <div style="padding:6px 26px 0;min-width:0;overflow:hidden">
+       <div style="font:300 15px var(--ui);color:#4f564f;margin-bottom:8px">timeline</div>${timeline}
+       <div style="font:300 15px var(--ui);color:#4f564f;margin:16px 0 8px">problems</div>${errs}</div>
+     <div style="padding:6px 26px;background:#151615;overflow:hidden">${side}</div></div>
+   <div style="height:54px;display:flex;align-items:center;gap:22px;padding:0 26px;background:#131413">
+     <span style="font:300 15px var(--ui);color:#a3a8a0">build</span><span style="font:300 15px var(--ui);color:#3a3f3a">raw</span>
+     <span style="font:12.5px var(--mono);color:#a3a8a0;margin-left:16px">${PR}&nbsp;ninja -C build/debug<span class="cur"></span></span>
+     <span style="margin-left:auto;font:300 12.5px var(--ui);color:#3f453f">⌘/Ctrl R re-run · ⌥/Alt \` raw output</span></div></div>`;};
+
+const sec=t=>`<div style="font:300 15px var(--ui);color:#4f564f;margin:0 0 10px">${t}</div>`;
+function region(name,used,budget,cap,parts,o={}){const pct=used/budget,over=pct>1;const W=780,sc=W/Math.max(cap,used);
+  const col=over?'#b8766b':pct>.9?'#ad9b6f':'#7f9e82';
+  return `<div style="margin-bottom:22px"><div style="display:flex;align-items:baseline;gap:14px"><span style="font:300 22px var(--ui);color:#a3a8a0">${name}</span>
+    <span style="font:300 14px var(--ui);color:${col}">${used.toFixed(1)} KB of ${budget} KB budget · ${Math.round(pct*100)} %${over?` · over by ${(used-budget).toFixed(1)} KB`:''}</span><span style="margin-left:auto;font:300 12px var(--ui);color:#3f453f">region ${cap} KB</span></div>
+    <div style="position:relative;height:16px;margin-top:8px;width:${W}px;background:#1d1f1d">${(()=>{let x=0;return parts.map(([n,v,c])=>{const h=`<div style="position:absolute;left:${x*sc}px;width:${v*sc-1}px;top:0;bottom:0;background:${c}"></div>`;x+=v;return h;}).join('');})()}
+      <div style="position:absolute;left:${budget*sc}px;top:-5px;bottom:-5px;width:2px;background:${over?'#b8766b':'#8b9189'}"></div></div>
+    <div style="display:flex;gap:18px;margin-top:6px;font:300 12px var(--ui);color:#5f665f">${parts.map(([n,v,c])=>`<span><i style="display:inline-block;width:8px;height:8px;background:${c};margin-right:6px"></i>${n} ${v} KB</span>`).join('')}</div></div>`;}
+H['t3-memory']=()=>{
+  const rows=[['rx_ring','static uint8_t[32768]','32.0','uart.c:14',''],['sample_buf','static int16_t[8192]','16.0','adc.c:9',''],['log_buffer','static char[8192]','8.0','log.c:22','new'],['heap reserve','linker · _Min_Heap_Size','8.0','stm32f4.ld:41',''],['fs_cache','static struct Block[24]','6.0','fs.c:30','+1.5'],['net_task stack','RTOS task stack · .bss','4.0','tasks.c:12',''],['main stack','linker · _Min_Stack_Size','4.0','stm32f4.ld:42',''],['.data (rest)','212 objects','5.2','',''],['.bss (rest)','480 objects','18.2','','']];
+  const mx=32;
+  const list=`<div style="display:flex;gap:18px;font:300 15px var(--ui);margin-bottom:10px"><span style="color:#a3a8a0">ram</span><span style="color:#3a3f3a">flash</span><span style="color:#3a3f3a">ccm</span><span style="margin-left:auto;font-size:12.5px;color:#3f453f">largest first</span></div>`+
+    rows.map(([n,k,v,f,d])=>`<div style="display:grid;grid-template-columns:150px 1fr 70px 110px;align-items:center;gap:12px;padding:6px 0;${d==='new'?'background:rgba(184,118,107,.08);margin:0 -10px;padding:6px 10px;':''}">
+      <span style="font:12.5px var(--mono);color:${d==='new'?'#c9928a':'#a3a8a0'}">${n}</span>
+      <span style="position:relative;height:14px"><i style="position:absolute;left:0;top:3px;height:8px;width:${parseFloat(v)/mx*100}%;background:${d==='new'?'#7a4a43':'#3a4a40'}"></i><span style="position:absolute;left:0;top:-14px;font:300 11px var(--ui);color:#3f453f;white-space:nowrap">${k}</span></span>
+      <span style="font:300 13px var(--ui);color:#8b9189;text-align:right">${v} KB${d?`<div style="font-size:11px;color:${d==='new'?'#b8766b':'#ad9b6f'}">${d==='new'?'new':d+' KB'}</div>`:''}</span>
+      <span style="font:300 12px var(--ui);color:#5f7f7f">${f}</span></div>`).join('');
+  const alert=`<div style="background:#1f1a18;padding:12px 16px;margin-bottom:22px;font:300 14px/1.55 var(--ui);color:#c9a49c"><b style="font-weight:400;color:#d4ada5">RAM budget exceeded by 5.4 KB.</b> The largest change is <span style="font-family:var(--mono)">log_buffer</span> — 8.0 KB, new in <span style="color:#7fa3a3">log.c:22</span>. Moving it to CCM RAM (52 KB free) brings RAM to 97 %; shrinking it to 2 KB brings RAM to 99 %.</div>`;
+  const stack=[['main','3.1','4.0'],['net_task','3.9','4.0'],['USART1 IRQ','0.4','+ on top'],['sensor_task','1.2','2.0']];
+  const side=`${sec('stack · worst case')}${stack.map(([n,u,b])=>`<div style="display:flex;font:300 13.5px/2 var(--ui);color:#8b9189"><span style="font-family:var(--mono);font-size:12.5px">${n}</span><span style="margin-left:auto;color:${n==='net_task'?'#ad9b6f':'#8b9189'}">${u} / ${b} KB</span></div>`).join('')}
+    <div style="font:300 12.5px/1.6 var(--ui);color:#5f665f;margin:6px 0 22px">deepest: net_task → http_reply → json_write → fmt_float<br><span style="color:#ad9b6f">1 unbounded</span> — recursion in parse_json (json.c:61)</div>
+    ${sec('heap · dynamic allocation')}<div style="font:300 13.5px/1.9 var(--ui);color:#8b9189"><div>3 sites · no-heap mode <span style="color:#a3a8a0">on</span></div><div style="font:12px var(--mono);color:#b8766b">malloc  json.c:88</div><div style="font:12px var(--mono);color:#b8766b">malloc  fs.c:142</div><div style="font:12px var(--mono);color:#b8766b">realloc json.c:97</div></div>
+    <div style="font:300 12.5px var(--ui);color:#3f453f;margin-top:22px">release · arm-none-eabi-gcc 13.2<br>from sensor-node.elf + linker map</div>`;
+  return `<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+   <div class="hdr">${PV('memory',['build','misra','terminal'])}<span class="right"><span style="color:#b8766b">RAM 106 %</span><span>flash 89 %</span><span>stm32f4 · release</span></span></div>
+   <div style="flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0">
+     <div style="padding:8px 30px;overflow:hidden">${alert}
+       ${region('ram',101.4,96,128,[['.data',5.2,'#5a6f73'],['.bss',84.2,'#4e6a5a'],['heap',8,'#6e6448'],['main stack',4,'#5c5068']])}
+       ${region('flash',341.2,384,512,[['.text',298,'#4e6a5a'],['.rodata',38,'#5a6f73'],['.data image',5.2,'#5c5068']])}
+       ${list}</div>
+     <div style="padding:8px 26px;background:#151615;overflow:hidden">${side}</div></div></div>`;};
+H['t4-misra']=()=>{
+  const card=(rule,cat,sum,msg,src,o={})=>`<div style="background:#1b1c1b;padding:12px 16px 10px;margin-bottom:10px">
+    <div style="display:flex;align-items:baseline;gap:12px;font:300 13px var(--ui)"><span style="color:#a3a8a0;font-size:14px">${rule}</span><span style="color:${cat==='mandatory'?'#b8766b':cat==='required'?'#ad9b6f':'#739696'}">${cat}</span><span style="color:#5f665f">${sum}</span><span style="margin-left:auto;color:#7fa3a3">${o.loc}</span></div>
+    <div style="font:300 15px/1.5 var(--ui);color:#a3a8a0;margin:5px 0 6px">${msg}</div><div style="background:#171817">${code(src,o.c||{})}</div>
+    <div style="display:flex;gap:18px;margin-top:8px;font:300 12.5px var(--ui)">${o.fix?`<span style="color:#a3a8a0;border:1px solid #3a3f3a;padding:2px 10px">${o.fix}</span>`:''}<span style="color:#4f564f;padding:3px 0">deviate…</span></div></div>`;
+  const list=card('Rule 9.1','mandatory','no reads before initialisation','<span style="font-family:var(--mono)">crc</span> is read before it is set — on the first loop pass (line 31), and at the return (line 32) when <span style="font-family:var(--mono)">len == 0</span>.',R`uint16_t crc;
+for (size_t i = 0; i < len; ++i) { crc = crc16_step(«e|crc», buf[i]); }
+return «e|crc»;`,{loc:'crc.c:31',fix:'initialise: uint16_t crc = 0xFFFFu;',c:{start:30}})+
+   card('Rule 10.4','required','same essential type category in arithmetic and comparisons','<span style="font-family:var(--mono)">count</span> is essentially unsigned, <span style="font-family:var(--mono)">-1</span> is essentially signed — mixed categories in one comparison.',R`if («w|count > -1») {`,{loc:'uart.c:58',fix:'write count > 0u',c:{start:58}})+
+   card('Rule 21.3','required','no stdlib dynamic memory','<span style="font-family:var(--mono)">malloc</span> allocates from the heap; this project runs in no-heap mode. Use the static pool <span style="font-family:var(--mono)">json_pool</span> (json.c:12).',R`node = «w|malloc»(sizeof(JsonNode));`,{loc:'json.c:88',c:{start:88}})+
+   card('Rule 17.7','required','use the value a function returns','The status returned by <span style="font-family:var(--mono)">hal_write</span> is discarded; a failed write would go unnoticed.',R`«w|hal_write(port, frame, n)»;`,{loc:'uart.c:71',fix:'check it, or cast to (void) with a reason',c:{start:71}});
+  const sum=`${sec('this file set')}<div style="font:300 38px/1 var(--ui);color:#a3a8a0">27</div><div style="font:300 12.5px var(--ui);color:#4f564f;margin:3px 0 16px">findings in 14 files</div>
+    ${[['mandatory','2','#b8766b'],['required','19','#ad9b6f'],['advisory','6','#739696']].map(([c,n,col])=>`<div style="display:flex;font:300 14px/2 var(--ui)"><span style="color:${col}">${c}</span><span style="margin-left:auto;color:#a3a8a0">${n}</span></div>`).join('')}
+    <div style="font:300 15px var(--ui);color:#4f564f;margin:22px 0 8px">most frequent</div>
+    ${[['10.4','7'],['17.7','4'],['15.5','4'],['21.3','3']].map(([r,n])=>`<div style="display:flex;font:300 13.5px/1.9 var(--ui);color:#8b9189"><span>Rule ${r}</span><span style="margin-left:auto">${n}</span></div>`).join('')}
+    <div style="font:300 15px var(--ui);color:#4f564f;margin:22px 0 8px">deviations</div><div style="font:300 13.5px/1.7 var(--ui);color:#8b9189">2 recorded · deviations.toml</div>
+    <div style="margin-top:22px;font:300 13px var(--ui);color:#a3a8a0;border:1px solid #3a3f3a;padding:5px 12px;display:inline-block">export compliance report</div>
+    <div style="font:300 12px/1.6 var(--ui);color:#3f453f;margin-top:16px">MISRA C:2023 · headlines from your licensed copy<br>fast feedback — not a qualified tool</div>`;
+  return `<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+   <div class="hdr">${PV('misra',['build','memory','terminal'])}<span class="right"><span>2 mandatory · 19 required · 6 advisory</span></span></div>
+   <div style="flex:1;display:grid;grid-template-columns:1fr 300px;min-height:0">
+     <div style="padding:8px 30px;overflow:hidden"><div style="display:flex;gap:20px;font:300 15px var(--ui);margin-bottom:12px"><span style="color:#a3a8a0">by severity</span><span style="color:#3a3f3a">by rule</span><span style="color:#3a3f3a">by file</span></div>${list}</div>
+     <div style="padding:8px 26px;background:#151615;overflow:hidden">${sum}</div></div></div>`;};
+
+const id=new URLSearchParams(location.search).get('f')||'t2-press';
+document.getElementById('root').innerHTML=H[id]();
+
+}catch(e){window.__err=e.message+" | "+e.stack;}
+</script></body></html>

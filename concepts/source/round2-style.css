@@ -1,0 +1,65 @@
+/* Lithograph: charcoal, borderless, low contrast */
+:root{
+  --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
+  --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#0b0c0b;
+}
+.frame{background:radial-gradient(1200px 700px at 30% 20%,#151715 0%,#0b0c0b 70%)}
+.ttl p{color:#6d746c}
+.ttl .brand{color:#2b2f2b}
+.win{box-shadow:0 30px 80px rgba(0,0,0,.65);border-radius:9px}
+.hdr{background:var(--bg);border-bottom:0;color:#4f564f}
+.crumb .file{color:#8b9189} .crumb .sep{color:#33372f}
+.pane{border-right:0}
+.pane.files{background:#141514}
+.ph{color:#454b45;font-weight:500}
+.chip{border:0;padding:2px 3px;color:#454b45}
+.chip.on{background:none;color:#8b9189}
+.ln.act{background:rgba(255,255,255,.022)}
+.ln.act .g{color:#6a716a}
+.cur{box-shadow:none;width:2px;background:#6f8f8f}
+.card{border:0;border-radius:6px;background:var(--card)}
+.card.focus{border:0;box-shadow:inset 2px 0 #4e6a6a;background:#1d1e1d}
+.card-h{border:0;background:none;height:22px;padding:7px 10px 0;font-size:10.5px}
+.card-h .nm{color:#727971}
+.card-h .loc{color:#3f453f}
+.card-h .sw{width:5px;height:5px}
+.card .code{padding:2px 0 6px}
+.badge{background:none;color:#5f665f;padding:0}
+.badge.warm,.badge.pink{background:none}
+.term{border-top:0}
+.tt .on{box-shadow:none;color:#8b9189}
+.pop{border:0;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.note{background:#0f100f;border:0;color:#7b8279}
+.note b{color:#a3a8a0}
+.dots i{background:#262826}
+.ti{color:#777e76}
+.ti.act{background:rgba(255,255,255,.035);box-shadow:none;color:#a3a8a0}
+.kbd{border:0;background:#242624;color:#8b9189}
+.pin{background:#8c7d5a;color:#141514;box-shadow:none}
+.hint{background:rgba(255,255,255,.04);color:#5f665f}
+.label{color:#4f564f}
+.e{text-decoration-color:#9a655c}
+.occ{background:rgba(115,150,150,.16)}
+.occw{background:rgba(173,155,111,.2);border-radius:2px}
+.ln.noise .t{opacity:.2}
+.ln.chg{box-shadow:inset 2px 0 #4e6a6a}
+.toast{border:0}
+/* Metro: typography is the chrome */
+.win{border-radius:0}
+.hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
+.pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
+.pv .on{color:#a3a8a0} .pv .off{color:#313531} .pv .fn{font:300 15px var(--ui);color:#7d6f50;margin-left:-12px}
+.hdr .right{font:300 11.5px var(--ui);color:#3f453f;gap:18px;align-self:flex-start;margin-top:12px}
+.dots,.wctl{display:none}
+.card,.note,.pop,.toast,.kbd,.chip{border-radius:0}
+.ph{font:300 15px var(--ui);text-transform:lowercase;letter-spacing:0;height:36px;color:#4f564f;padding:0 14px}
+.ttl h1{font-weight:300;font-size:32px;text-transform:lowercase;letter-spacing:-.01em}
+.ttl p{font-weight:300}
+.pin{border-radius:0}
+.cards{padding:2px 10px 10px 22px;gap:10px}
+.tt{font:300 13px var(--ui);text-transform:lowercase;height:30px}
+.term .code{font-size:12px}
+.metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
+.big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
+.ln.hitl{background:rgba(115,150,150,.07)}

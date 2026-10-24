@@ -1,0 +1,91 @@
+Lithograph License
+Copyright (c) 2026 Jatin Aggarwal
+
+This license has two parts. Part 1 is the MIT License. Part 2 adds
+conditions that limit Part 1. Where the two differ, Part 2 prevails.
+Together, Part 1 and Part 2 are "the License".
+
+=====================================================================
+PART 1 - MIT LICENSE
+=====================================================================
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+=====================================================================
+PART 2 - ADDITIONAL CONDITIONS
+=====================================================================
+
+A. No selling ("Commons Clause" License Condition v1.0)
+
+The Software is provided to you by the Licensor under the License, as
+defined below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights
+under the License will not include, and the License does not grant to
+you, the right to Sell the Software.
+
+For purposes of the foregoing, "Sell" means practicing any or all of
+the rights granted to you under the License to provide to third
+parties, for a fee or other consideration (including without limitation
+fees for hosting or consulting/support services related to the
+Software), a product or service whose value derives, entirely or
+substantially, from the functionality of the Software. Any license
+notice or attribution required by the License must also include this
+Commons Clause License Condition notice.
+
+Software: Lithograph
+License: MIT License with the Additional Conditions in Part 2
+Licensor: Jatin Aggarwal
+
+Using the Software, including for work that is paid or commercial
+(for example, writing your own programs with it), is permitted.
+Only selling the Software, as defined above, is not.
+
+B. Origin and credit
+
+1. The origin of the Software must not be misrepresented. You must not
+   claim that you wrote the original Software.
+
+2. Modified versions must be plainly marked as modified and must not be
+   represented as the original Software.
+
+3. Every copy you distribute, modified or not, must show the line
+   "Based on Lithograph by Jatin Aggarwal" in its About screen (or the
+   nearest equivalent) and in its documentation, and must include this
+   License file unchanged.
+
+C. Name
+
+The name "Lithograph" and any Lithograph logo are not licensed for
+modified versions. A modified version you distribute must use a
+different name. Unmodified copies may keep the name.
+
+D. Keeping these terms
+
+You may not remove or change this License, and you may not sublicense
+or distribute the Software, or any modified version, under terms that
+remove or weaken any condition in Part 2.
+
+=====================================================================
+
+Bundled third-party components (the fonts in fonts/, and the libraries
+listed in THIRD_PARTY_NOTICES once the app is built) are not covered by
+this License; each keeps its own license. See ARCHITECTURE.md,
+section 28.

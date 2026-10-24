@@ -1,0 +1,495 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lithograph concepts</title>
+<style>
+:root{
+  --bg:#00240A; --side:#001C08; --term:#001506; --pop:#00300E; --card:#002A0C; --prev:#001F09; --line:#0A3A18;
+  --fg:#d9dcd6; --dim:#6b7d70; --gut:#3f5a46; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b8766b; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#050906;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace; --ui:-apple-system,system-ui,"Segoe UI",sans-serif;
+}
+html,body{margin:0;background:var(--stage)}
+*{box-sizing:border-box}
+.frame{width:1440px;height:900px;padding:24px 28px 26px;display:flex;flex-direction:column;gap:14px;font-family:var(--ui);color:var(--fg);
+  background:radial-gradient(1200px 700px at 30% 20%,#0a1a0e 0%,#050906 70%)}
+.ttl{display:flex;align-items:baseline;gap:14px;height:30px;flex:none}
+.ttl .no{font:600 12px var(--mono);color:var(--kw);letter-spacing:.12em}
+.ttl h1{margin:0;font:600 22px var(--ui);letter-spacing:-.01em}
+.ttl p{margin:0;color:#8d9a8f;font-size:14px}
+.ttl .brand{margin-left:auto;font:600 11px var(--ui);letter-spacing:.2em;color:#2f4d38}
+.stage{flex:1;min-height:0;position:relative;display:flex;gap:20px}
+.notes{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:12px;height:96px;flex:none}
+.note{background:#09120b;border:1px solid #12251a;border-radius:9px;padding:9px 12px;font-size:12.2px;line-height:1.4;color:#a9b4a8;overflow:hidden}
+.big .code{font-size:14px;line-height:24px}
+.big .ln .g{width:50px}
+.note b{color:var(--fg);font-weight:600}
+.pin{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--fn);color:#00240A;font:700 10px var(--ui);
+  vertical-align:1px;margin:0 6px 0 4px;box-shadow:0 0 0 3px rgba(216,186,123,.2);flex:none;font-style:normal;text-decoration:none;line-height:1}
+.note .pin{margin:0 6px 0 0}
+.label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
+.col{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+/* window */
+.win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
+.hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
+.crumb{display:flex;align-items:center;white-space:nowrap}
+.crumb .dir{color:var(--dim)} .crumb .file{color:var(--fg)} .crumb .sep{margin:0 8px;color:var(--gut)} .crumb .fnn{color:var(--fn);font-family:var(--mono);font-size:11.5px}
+.crumb .mod{width:6px;height:6px;border-radius:50%;background:var(--ty);margin-left:8px;display:inline-block}
+.hdr .right{margin-left:auto;display:flex;gap:16px;align-items:center;font:11px var(--mono);white-space:nowrap}
+.hdr .ok{color:var(--ty)} .hdr .wa{color:var(--warn)} .hdr .er{color:var(--err)}
+.dots{display:flex;gap:6px;margin-right:12px}
+.dots i{width:8px;height:8px;border-radius:50%;display:block;background:#173a22}
+.dots.on i:nth-child(1){background:#b8766b}.dots.on i:nth-child(2){background:#ab9070}.dots.on i:nth-child(3){background:#7f9e82}
+.wctl{display:flex;margin:0 -12px 0 14px;height:29px}
+.wctl span{width:32px;display:grid;place-items:center;color:var(--dim);font-size:11px}
+.wctl span.hov{background:#b9584b;color:#efeae2}
+.body{flex:1;min-height:0;display:grid}
+.pane{min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--line);position:relative;display:flex;flex-direction:column}
+.pane:last-child{border-right:0}
+.pane.files{background:var(--side)}
+.pane.prev{background:var(--prev)}
+.ph{height:26px;flex:none;display:flex;align-items:center;padding:0 10px;font:600 10px var(--ui);letter-spacing:.09em;text-transform:uppercase;color:var(--dim);gap:6px;white-space:nowrap}
+.ph .grow{flex:1}
+.chip{white-space:nowrap;font:500 10.5px var(--ui);padding:2px 7px;border-radius:9px;border:1px solid #17432a;color:var(--dim);text-transform:none;letter-spacing:0}
+.chip.on{color:var(--fg);background:rgba(119,165,165,.14);border-color:rgba(119,165,165,.45)}
+.pbody{flex:1;min-height:0;position:relative;overflow:hidden}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
+.links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
+
+/* code */
+.code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
+.ln{display:flex;position:relative}
+.ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
+.ln.act{background:rgba(119,165,165,.075)}
+.ln.act .g{color:var(--kw)}
+.ln .t{flex:1;min-width:0}
+.ln.dimmed .t{opacity:.36}
+.k{color:var(--kw)} .f{color:var(--fn)} .y{color:var(--ty)} .v{color:var(--var)} .p{color:var(--par);font-style:italic} .s{color:var(--str)}
+.n{color:var(--var)} .cm{color:var(--dim);font-style:italic} .pp{color:var(--kw)} .ns{color:var(--fg)} .mac{color:var(--kw)}
+.e{text-decoration:underline wavy var(--err) 1px;text-underline-offset:4px}
+.w{text-decoration:underline dotted var(--warn) 2px;text-underline-offset:4px}
+.i{text-decoration:underline dotted var(--kw) 2px;text-underline-offset:4px}
+.cur{display:inline-block;width:2px;height:16px;background:var(--kw);vertical-align:-3px;margin:0 -1px;box-shadow:0 0 6px rgba(119,165,165,.7)}
+.sel{background:rgba(119,165,165,.33)}
+.occ{background:rgba(119,165,165,.22);border-radius:2px}
+.u{text-decoration:underline var(--kw) 1px;text-underline-offset:4px}
+.hint{font:500 10.5px var(--ui);color:#86a28d;background:rgba(119,165,165,.12);border-radius:4px;padding:1px 5px;margin:0 3px 0 1px;font-style:normal}
+.eol{font:italic 11.5px var(--ui);margin-left:24px;opacity:.85}
+.eol.er{color:var(--err)} .eol.wa{color:var(--warn)} .eol.in{color:var(--kw)}
+.tag{font:500 9.5px var(--ui);padding:0 5px;border-radius:3px;border:1px solid currentColor;opacity:.8;margin-left:6px;font-style:normal}
+.ln.hitl{background:rgba(119,165,165,.16)}
+.ln.del{background:rgba(217,121,105,.12)} .ln.add{background:rgba(134,185,138,.12)}
+.ln.del .g,.ln.add .g{font-weight:600}
+.ln.del .g{color:var(--err)} .ln.add .g{color:var(--ty)}
+.ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
+.gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
+
+/* cards */
+.cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
+.card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
+.card-h{display:flex;align-items:center;gap:7px;padding:4px 9px;height:26px;font:11.5px var(--mono);border-bottom:1px solid var(--line);background:rgba(0,0,0,.14);white-space:nowrap}
+.card.collapsed .card-h{border-bottom:0}
+.card-h .nm{color:var(--fn)}
+.card-h .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.card-h .sw{width:7px;height:7px;border-radius:50%;flex:none;background:var(--dim)}
+.card .code{font-size:11.5px;line-height:18px;padding:4px 0}
+.card .ln .g{width:34px;padding-right:10px}
+.badge{font:500 10px var(--ui);padding:1px 7px;border-radius:9px;background:rgba(119,165,165,.15);color:var(--kw)}
+.badge.warm{background:rgba(212,165,116,.14);color:var(--str)}
+.badge.pink{background:rgba(200,168,184,.14);color:var(--var)}
+.rows{padding:4px 0;font:11.5px var(--mono)}
+.row{display:flex;gap:8px;padding:3px 10px;color:#b7c0b5;white-space:nowrap}
+.row .loc{margin-left:auto;color:var(--dim);font:10.5px var(--ui)}
+.row.on{background:rgba(119,165,165,.12);color:var(--fg)}
+.cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
+
+/* tree */
+.tree{font:12px var(--ui);padding:2px 0}
+.ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
+.ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
+.ti.act{background:rgba(119,165,165,.16);color:var(--fg);box-shadow:inset 2px 0 var(--kw)}
+.ti.mod .nm{color:var(--kw)} .ti.dim .nm{color:var(--dim)} .ti.new .nm{color:var(--ty)}
+.ti .fds{margin-left:auto;display:flex;gap:3px}
+.ti .fd{width:7px;height:7px;border-radius:50%}
+
+/* terminal */
+.term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
+.tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
+.tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
+.tt .grow{flex:1}
+.term .code{font-size:12px;line-height:18px;padding:2px 2px}
+.okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
+
+/* floating */
+.pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
+.kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
+.toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
+.ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
+.ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
+/* Lithograph: charcoal, borderless, low contrast */
+:root{
+  --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
+  --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
+  --err:#b8766b; --warn:#ab9070; --stage:#0b0c0b;
+}
+.frame{background:radial-gradient(1200px 700px at 30% 20%,#151715 0%,#0b0c0b 70%)}
+.ttl p{color:#6d746c}
+.ttl .brand{color:#2b2f2b}
+.win{box-shadow:0 30px 80px rgba(0,0,0,.65);border-radius:9px}
+.hdr{background:var(--bg);border-bottom:0;color:#4f564f}
+.crumb .file{color:#8b9189} .crumb .sep{color:#33372f}
+.pane{border-right:0}
+.pane.files{background:#141514}
+.ph{color:#454b45;font-weight:500}
+.chip{border:0;padding:2px 3px;color:#454b45}
+.chip.on{background:none;color:#8b9189}
+.ln.act{background:rgba(255,255,255,.022)}
+.ln.act .g{color:#6a716a}
+.cur{box-shadow:none;width:2px;background:#6f8f8f}
+.card{border:0;border-radius:6px;background:var(--card)}
+.card.focus{border:0;box-shadow:inset 2px 0 #4e6a6a;background:#1d1e1d}
+.card-h{border:0;background:none;height:22px;padding:7px 10px 0;font-size:10.5px}
+.card-h .nm{color:#727971}
+.card-h .loc{color:#3f453f}
+.card-h .sw{width:5px;height:5px}
+.card .code{padding:2px 0 6px}
+.badge{background:none;color:#5f665f;padding:0}
+.badge.warm,.badge.pink{background:none}
+.term{border-top:0}
+.tt .on{box-shadow:none;color:#8b9189}
+.pop{border:0;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+.note{background:#0f100f;border:0;color:#7b8279}
+.note b{color:#a3a8a0}
+.dots i{background:#262826}
+.ti{color:#777e76}
+.ti.act{background:rgba(255,255,255,.035);box-shadow:none;color:#a3a8a0}
+.kbd{border:0;background:#242624;color:#8b9189}
+.pin{background:#8c7d5a;color:#141514;box-shadow:none}
+.hint{background:rgba(255,255,255,.04);color:#5f665f}
+.label{color:#4f564f}
+.e{text-decoration-color:#9a655c}
+.occ{background:rgba(115,150,150,.16)}
+.occw{background:rgba(173,155,111,.2);border-radius:2px}
+.ln.noise .t{opacity:.2}
+.ln.chg{box-shadow:inset 2px 0 #4e6a6a}
+.toast{border:0}
+.ln.hitl{background:rgba(115,150,150,.07)}
+/* Metro: typography is the chrome */
+.win{border-radius:0}
+.hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
+.pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
+.pv .on{color:#a3a8a0} .pv .off{color:#313531} .pv .fn{font:300 15px var(--ui);color:#7d6f50;margin-left:-12px}
+.hdr .right{font:300 11.5px var(--ui);color:#3f453f;gap:18px;align-self:flex-start;margin-top:12px}
+.dots,.wctl{display:none}
+.card,.note,.pop,.toast,.kbd,.chip{border-radius:0}
+.ph{font:300 15px var(--ui);text-transform:lowercase;letter-spacing:0;height:36px;color:#4f564f;padding:0 14px}
+.ttl h1{font-weight:300;font-size:32px;text-transform:lowercase;letter-spacing:-.01em}
+.ttl p{font-weight:300}
+.pin{border-radius:0}
+.cards{padding:2px 10px 10px 22px;gap:10px}
+.tt{font:300 13px var(--ui);text-transform:lowercase;height:30px}
+.term .code{font-size:12px}
+.metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
+.big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkl.ttf');font-weight:300}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksl.ttf');font-weight:350}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawk.ttf');font-weight:400}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksb.ttf');font-weight:600}
+@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkb.ttf');font-weight:700}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-ExtraLight.otf');font-weight:200}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Light.otf');font-weight:300}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Regular.otf');font-weight:400}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Medium.otf');font-weight:500}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-SemiBold.otf');font-weight:600}
+@font-face{font-family:'ARX F1';src:url('../../fonts/ARXF1/ARXF1-Bold.otf');font-weight:700}
+:root{--mono:'ARX F1',ui-monospace,monospace;--ui:'Selawik',-apple-system,sans-serif}
+html,body{overflow:hidden;background:#171817;color:var(--fg)}
+.card .code{font-size:11px;line-height:17.5px}
+.code{font-size:12.5px}
+</style></head>
+<body><div id="root"></div>
+<script>
+window.onerror=(m,s,l,c)=>{window.__err=m+' @'+l+':'+c;};
+const R=String.raw;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sp=(c,t)=>`<span class="${c}">${esc(t)}</span>`;
+const KW=new Set(`auto bool break case char class const constexpr continue default delete do double else enum explicit extern false float for if inline int long namespace new noexcept nullptr operator private protected public return short signed sizeof static static_assert struct switch template this throw true try typedef typename union unsigned using virtual void volatile while override final size_t uint8_t uint16_t uint32_t uint64_t int64_t`.split(/\s+/));
+const NS=new Set(['std','tiny']);
+const TYPES=new Set(['string_view','string','vector','optional','span','function','sv']);
+
+function hlCpp(s,o,after){
+  const inc=s.match(/^(\s*#\s*(?:include|pragma))(.*)$/); if(inc) return sp('pp',inc[1])+sp(/include/.test(inc[1])?'s':'pp',inc[2]);
+  const re=/(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d[\w.]*)|([A-Za-z_]\w*)/g;
+  let out='',last=0,m;
+  while((m=re.exec(s))){out+=esc(s.slice(last,m.index));last=re.lastIndex;const t=m[0];
+    if(m[1])out+=sp('cm',t);else if(m[2])out+=sp('s',t);else if(m[3])out+=sp('n',t);
+    else{const rest=s.slice(last)+after;let c;
+      if(KW.has(t))c='k';
+      else if(o.params&&o.params.includes(t))c='p';
+      else if(/^[A-Z][A-Z0-9_]+$/.test(t))c='mac';
+      else if(/^\s*\(/.test(rest))c='f';
+      else if(NS.has(t))c='ns';
+      else if(/^[A-Z]/.test(t)||TYPES.has(t))c='y';
+      else c='v';
+      out+=sp(c,t);}}
+  return out+esc(s.slice(last));}
+function hlTomlVal(v){
+  const m=v.match(/^("(?:[^"\\]|\\.)*"|[^#]*?)(\s*)(#.*)?$/);if(!m)return esc(v);
+  const val=m[1];let o;
+  if(/^"/.test(val))o=sp('s',val);else if(/^(true|false)$/.test(val.trim()))o=sp('k',val);else if(/^[\d.\-]+$/.test(val.trim()))o=sp('n',val);else o=esc(val);
+  return o+esc(m[2]||'')+(m[3]?sp('cm',m[3]):'');}
+function hlToml(s){let m;
+  if(/^\s*#/.test(s))return sp('cm',s);
+  if((m=s.match(/^(\s*)(\[[^\]]+\])(.*)$/))){const r=m[3],i=r.indexOf('#');return esc(m[1])+sp('y',m[2])+(i<0?esc(r):esc(r.slice(0,i))+sp('cm',r.slice(i)));}
+  if((m=s.match(/^(\s*)([\w.]+)(\s*=\s*)(.*)$/)))return esc(m[1])+sp('f',m[2])+esc(m[3])+hlTomlVal(m[4]);
+  if(/^\d+$/.test(s.trim()))return sp('n',s);
+  return esc(s);}
+const REG=/^(r[a-d]x|e[a-d]x|r[sd]i|e[sd]i|r[sb]p|e[sb]p|r\d+d?|xmm\d+|[a-d]l)$/;
+function hlAsm(s){const ci=s.indexOf(';');const code=ci<0?s:s.slice(0,ci),cm=ci<0?'':s.slice(ci);
+  if(/^\S/.test(code))return sp('f',code)+(cm?sp('cm',cm):'');
+  let first=true;
+  const out=code.replace(/[A-Za-z_.][\w.]*|\d+|[^\w.]+/g,t=>{
+    if(/^[^\w.]+$/.test(t))return esc(t);
+    if(first&&/^[a-z]/.test(t)){first=false;return sp('k',t);}
+    if(REG.test(t))return sp('v',t); if(/^\d/.test(t))return sp('n',t); if(/^\./.test(t))return sp('f',t);
+    if(/^(dword|qword|ptr|byte|word)$/.test(t))return sp('cm',t); return esc(t);});
+  return out+(cm?sp('cm',cm):'');}
+function hlTerm(s){const m=s.match(/^(\S+) (❯) (.*)$/);if(m)return sp('k',m[1])+' '+sp('y',m[2])+' '+esc(m[3]);return esc(s);}
+function hl(s,o,after=''){const L=o.lang||'cpp';
+  if(L==='cpp')return hlCpp(s,o,after);if(L==='toml')return hlToml(s);if(L==='asm')return hlAsm(s);if(L==='term')return hlTerm(s);return esc(s);}
+
+const MK=/«([^|»]*)\|([^»]*)»/g;
+function wrap(spec,inner,o,after){
+  const [k,...a]=spec.split(':');
+  switch(k){
+    case 'cur': return '<span class="cur"></span>';
+    case 'pin': return `<span class="pin">${a[0]}</span>`;
+    case 'hint': return `<span class="hint">${esc(inner)}</span>`;
+    case 'raw': return o.raw[a[0]];
+    case 'c': return `<span class="call f" data-call="${a[0]}">${esc(inner)}</span>`;
+    default:{const id=[k,...a].find(x=>x.startsWith('#'));const cls=[k,...a].filter(x=>!x.startsWith('#')).join(' ');
+      return `<span class="${cls}"${id?` id="${id.slice(1)}"`:''}>${hl(inner,o,after)}</span>`;}
+  }}
+function line(s,o){let out='',last=0;const ms=[...s.matchAll(MK)];
+  ms.forEach(m=>{const after=s.slice(m.index+m[0].length).replace(MK,'$2');
+    out+=hl(s.slice(last,m.index),o,m[2]+after);out+=wrap(m[1],m[2],o,after);last=m.index+m[0].length;});
+  return out+hl(s.slice(last),o,'');}
+function code(src,o={}){
+  const L=src.replace(/^\n/,'').replace(/\n\s*$/,'').split('\n');const st=o.start||1;
+  return `<div class="code">`+L.map((s,i)=>{const n=st+i;const cls=['ln'];
+    if(o.active===n)cls.push('act');
+    if(o.dim&&!(n>=o.dim[0]&&n<=o.dim[1]))cls.push('dimmed');
+    if(o.lcls&&o.lcls[n])cls.push(o.lcls[n]);
+    const num=o.nums?o.nums[i]:n;
+    const g=o.nog?'':`<span class="g">${o.gut&&o.gut[n]?o.gut[n]:''}${num}</span>`;
+    return `<div class="${cls.join(' ')}" data-n="${n}">${g}<span class="t">${line(s,o)||' '}${o.eol&&o.eol[n]?o.eol[n]:''}</span></div>`;}).join('')+`</div>`;}
+const eol=(cls,t,tag)=>`<span class="eol ${cls}">${esc(t)}${tag?`<span class="tag">${tag}</span>`:''}</span>`;
+
+function tree(spec){return '<div class="tree">'+spec.replace(/^\n/,'').trimEnd().split('\n').map(l=>{
+  const ind=l.match(/^ */)[0].length/2;const [name,...fl]=l.trim().split('|');const dir=name.endsWith('/');
+  const fds=fl.filter(f=>f.startsWith('dot=')).map(f=>`<i class="fd" style="background:${f.slice(4)}"></i>`).join('');
+  const cls=fl.filter(f=>!f.startsWith('dot=')&&!f.startsWith('note=')).join(' ');const nt=fl.find(f=>f.startsWith('note='));
+  return `<div class="ti ${cls}" style="padding-left:${10+ind*13}px"><span class="ic">${dir?(cls.includes('open')?'▾':'▸'):''}</span><span class="nm">${esc(name)}</span>${nt?`<span class="dm" style="margin-left:8px;font-size:11px">${nt.slice(5)}</span>`:''}${fds?`<span class="fds">${fds}</span>`:''}</div>`;}).join('')+'</div>';}
+
+function crumb(dir,file,fn,mod){return `<span class="crumb"><span class="dir">${dir}</span><span class="file">${file}</span>${mod?'<i class="mod"></i>':''}${fn?fn.map(f=>`<span class="sep">›</span><span class="fnn">${f}</span>`).join(''):''}</span>`;}
+const RIGHT=(pos='45:42',w=0,e=0,extra='')=>`${extra}<span>${pos}</span><span class="ok">● clangd</span><span class="wa">⚠ ${w}</span><span class="er">✕ ${e}</span>`;
+function win(o){
+  const ctl=o.os==='win'?`<span class="wctl"><span>─</span><span>▢</span><span class="${o.hovx?'hov':''}">✕</span></span>`:o.os==='linux'?`<span class="wctl"><span class="${o.hovx?'hov':''}">✕</span></span>`:'';
+  const dots=o.os==='win'||o.os==='linux'?'':`<span class="dots ${o.dotsOn?'on':''}"><i></i><i></i><i></i></span>`;
+  return `<div class="win ${o.cls||''}" style="${o.style||''}">${o.nohdr?'':`<div class="hdr">${dots}${o.crumb}<span class="right">${o.right??RIGHT()}</span>${ctl}</div>`}
+  <div class="body" style="grid-template-columns:${o.cols}">${o.panes.join('')}</div>
+  ${o.term?`<div class="term" style="height:${o.termH||130}px">${o.term}</div>`:''}<svg class="links"></svg>${o.over||''}</div>`;}
+const pane=(cls,inner,head)=>`<div class="pane ${cls}">${head?`<div class="ph">${head}</div>`:''}<div class="pbody">${inner}</div></div>`;
+function card(name,loc,src,o={}){return `<div class="card ${o.focus?'focus':''} ${o.cls||''}" data-card="${o.id||name}" ${o.color?`data-color="${o.color}"`:''}>
+  <div class="card-h"><span class="sw"></span><span class="nm">${o.title||name}</span>${o.badge||''}<span class="loc">${loc}</span></div>
+  ${o.pre||''}${src?code(src,o.c||{}):''}${o.extra||''}</div>`;}
+const cards=(...c)=>`<div class="cards">${c.join('')}</div>`;
+const term=(tabs,src,o={})=>`<div class="tt">${tabs}</div><div style="padding:0 10px">${code(src,{lang:'term',nog:true,...o})}</div>`;
+const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</span><span class="grow"></span><span>⌃\` toggle · drag edge to resize</span>`;
+function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
+  <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
+
+/* ---------- shared sample project ---------- */
+const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
+const MAIN=R`void Server::start() {
+    socket_.listen(port_);
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}
+
+// Handles one client request end-to-end.
+Response Server::handle(const Request& req) {«pin:2|»
+    auto headers = «c:parse_headers|parse_headers»(req.raw);
+    if (headers.empty()) {
+        return Response::bad_request();
+    }
+    auto handler = «c:route|route»(req.path, routes_);
+    Response res = handler(req, headers);«cur|»
+    «c:send_response|send_response»(socket_, res);
+    return res;
+}
+
+Server::~Server() {
+    socket_.close();
+}
+
+} // namespace tiny`;
+const C_PARSE=R`Headers parse_headers(std::string_view raw) {
+    Headers out;
+    for (auto line : «c:split|split»(raw, "\r\n")) {
+        auto colon = line.find(':');
+        if (colon == npos) continue;
+        out.emplace(«c:trim|trim»(line.substr(0, colon)),
+                    «c:trim|trim»(line.substr(colon + 1)));«cur|»
+    }
+    return out;
+}`;
+const C_ROUTE=R`Handler route(sv path, const Routes& routes) {
+    for (const auto& r : routes)
+        if (match_path(r.pattern, path))
+            return r.handler;
+    return not_found;
+}`;
+const C_SEND=R`void send_response(Socket& s, const Response& r) {
+    auto bytes = r.serialize();
+    write_all(s, bytes.data(), bytes.size());
+}`;
+const C_SPLIT=R`Parts split(sv s, sv delim) {
+    Parts out;
+    size_t at = 0, nx;
+    while ((nx = s.find(delim, at)) != npos) {
+        out.push_back(s.substr(at, nx - at));
+        at = nx + delim.size();
+    }
+    out.push_back(s.substr(at));
+    return out;
+}`;
+const C_TRIM=R`sv trim(sv s) {
+    while (!s.empty() && «c:is_space|is_space»(s.front()))
+        s.remove_prefix(1);
+    while (!s.empty() && «c:is_space|is_space»(s.back()))
+        s.remove_suffix(1);«cur|»
+    return s;
+}`;
+const TREE_MAIN=R`
+tinyhttp/|open
+  src/|open
+    http/|open
+      headers.cpp|dot=#ad9b6f
+      headers.hpp
+    net/|open
+      io.cpp|dot=#a8929e
+      socket.cpp
+    util/|open
+      strings.cpp|dot=#739696|dot=#ab9070
+    router.cpp|dot=#7f9e82
+    server.cpp|act|mod
+    server.hpp
+  tests/
+  CMakeLists.txt
+  compile_commands.json|dim`;
+const P1HEAD=(n,extra='')=>`Preview 1<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${n}</span>${extra}<span class="grow"></span><span class="chip on">project</span><span class="chip">std</span><span class="chip">system</span>`;
+const P2HEAD=(of,extra='')=>`Preview 2<span class="dm" style="text-transform:none;letter-spacing:0;font-weight:500">· ${of}</span>${extra}`;
+const mainCards=(focusParse)=>cards(
+  card('parse_headers','http/headers.cpp:12',C_PARSE,{focus:focusParse,c:{start:12,params:['raw'],active:focusParse?18:0}}),
+  card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),
+  card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
+
+try{
+/* ---------- flow as boxes and arrows: hover lists, click opens preview ---------- */
+const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
+const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const BX=[['main','main.cpp',40,300,[['1','main'],['','print_usage']],'entry'],
+  ['config','config.cpp',290,120,[['2','Config::load'],['3','read_env'],['','Config::save']]],
+  ['server','server.cpp',290,330,[['4','Server::start'],['6','Server::handle'],['14','Server::stop'],['','Server::reload'],['','Server::~Server']]],
+  ['io','net/io.cpp',560,110,[['5','Socket::accept'],['12','send_response'],['13','write_all'],['','Socket::set_nodelay']]],
+  ['headers','http/headers.cpp',560,300,[['7','parse_headers'],['','parse_cookie'],['','keep_alive']]],
+  ['router','router.cpp',560,480,[['10','route'],['11','match_path'],['','Router::dump']]],
+  ['strings','util/strings.cpp',790,300,[['8','split'],['9','trim'],['','to_lower'],['','join']]],
+  ['metrics','metrics.cpp',290,610,[['t1','Metrics::run'],['t2','Metrics::flush'],['t3','write_file']],'thread'],
+  ['cgi','legacy/cgi.cpp',560,690,[['','cgi_main'],['','cgi_env']],'dead'],['bench','tools/bench.cpp',760,690,[['','bench_main']],'dead']];
+const BW=176,BH=66;
+const AR=[['main','config','2',1],['main','server','4 · 14',2],['server','io','5 · 12',3],['server','headers','7',4],['headers','strings','8 · 9',5],['server','router','10',6],['server','metrics','spawns thread',7,'v']];
+const box=([id,f,x,y,fs,kind])=>{const run=fs.filter(r=>r[0]).length;return `<div class="bx" id="b-${id}" style="position:absolute;left:${x}px;top:${y}px;width:${BW}px;height:${BH}px;border:1.5px solid ${kind==='dead'?'#2a2d2a':'#3f453f'};background:#1a1b1a;padding:9px 12px">
+  ${kind==='entry'?'<div style="position:absolute;left:-30px;top:22px;font:300 12px var(--ui);color:#ad9b6f">start ▸</div>':''}${kind==='thread'?'<div style="position:absolute;left:0;top:-20px;font:300 12px var(--ui);color:#7a6f8a">thread</div>':''}
+  <div style="font:300 16px var(--ui);color:${kind==='dead'?'#4a4f4a':'#a3a8a0'}">${f}</div><div style="font:300 12px var(--ui);color:#4f564f;margin-top:2px">${fs.length} functions · ${kind==='dead'?'none run':run+' run'}</div></div>`;};
+const pop=([id,f,x,y,fs])=>`<div class="hp" id="h-${id}" style="position:absolute;left:${x}px;top:${y+BH+8}px;min-width:${BW+40}px;background:#222422;box-shadow:0 18px 40px rgba(0,0,0,.55);padding:8px 0;z-index:8;opacity:0">
+  ${fs.map(([nm,fn])=>`<div style="display:flex;gap:12px;padding:3px 14px;font:13px var(--mono)"><span style="width:22px;text-align:right;color:${nm?'#c9b98f':'transparent'}">${nm||'·'}</span><span style="color:${nm?'#a3a8a0':'#4a4f4a'}">${fn}</span></div>`).join('')}</div>`;
+const SV=R`void Server::start() {
+    socket_.listen(port_);
+    std::thread(&Metrics::run, &metrics_).detach();
+    while (running_) {
+        auto conn = socket_.accept();
+        handle(conn);
+    }
+}`;
+const SH=R`Response Server::handle(const Request& req) {
+    auto headers = parse_headers(req.raw);
+    if (headers.empty())
+        return Response::bad_request();
+    auto handler = route(req.path, routes_);
+    Response res = handler(req, headers);
+    send_response(socket_, res);
+    return res;
+}`;
+const SS=R`void Server::stop() {
+    running_ = false;
+    socket_.close();
+}`;
+const numCard=(n,name,loc,src,start,params)=>`<div class="pc">${card(name,loc,src,{title:`<span style="font:13px var(--mono);color:#c9b98f;margin-right:10px">${n}</span>${name}`,c:{start,params}})}</div>`;
+const preview=`<div style="padding:14px 20px 0"><div class="pc" style="font:300 30px var(--ui);color:#a3a8a0">server.cpp</div><div class="pc" style="font:300 13px var(--ui);color:#4f564f;margin:2px 0 14px">3 of 5 functions run in this flow · in execution order</div></div>
+  <div class="cards" style="padding-left:20px">${numCard('4','Server::start','server.cpp:30',SV,30,[])}${numCard('6','Server::handle','server.cpp:39',SH,39,['req'])}${numCard('14','Server::stop','server.cpp:61',SS,61,[])}
+  <div class="pc" style="font:300 13px/1.9 var(--ui);color:#3f453f;padding:2px 4px">Server::reload — not run in this flow<br>Server::~Server — not run in this flow</div></div>`;
+document.getElementById('root').innerHTML=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+ <div class="hdr">${PV('flow',['atlas','book','server.cpp'])}<span class="right"><span>tinyhttp · 2 entry points · 2 files not reached</span></span></div>
+ <div style="flex:1;display:flex;min-height:0">
+  <div id="cv" style="width:990px;position:relative;flex:none">
+   <svg id="asv" width="990" height="844" style="position:absolute;left:0;top:0;overflow:visible"></svg>
+   ${BX.map(box).join('')}
+   <div id="nr" style="position:absolute;left:560px;top:662px;font:300 13px var(--ui);color:#3f453f">not reached from any entry point</div>
+   <div id="lp" style="position:absolute;left:290px;top:404px;font:300 12.5px var(--ui);color:#5f8a8a">↻ 5–13 repeat until !running_</div>
+   ${BX.map(pop).join('')}
+  </div>
+  <div id="pp" style="flex:1;position:relative;background:var(--prev);overflow:hidden"><div id="ph0" style="position:absolute;inset:0;display:grid;place-items:center;font:300 14px var(--ui);color:#2f332f">click a box to see what’s inside</div><div id="ppc" style="position:absolute;inset:0">${preview}</div></div>
+ </div>
+ <svg id="ptr" width="22" height="30" viewBox="0 0 22 30" style="position:absolute;z-index:40;left:0;top:0"><path d="M2 2 L2 24 L8 18 L12 28 L16 26 L12 16 L20 16 Z" fill="#e8ebe4" stroke="#171817" stroke-width="1.5"/></svg>
+ <div id="cap" style="position:absolute;left:40px;bottom:30px;z-index:30;font:300 17px var(--ui);color:#7b8279"></div></div>`;
+const colour={};$$('#ppc [data-card]').forEach((c,i)=>{c.querySelector('.sw').style.background=PAL[i];});
+const B=id=>{const e=$('#b-'+id),c=$('#cv').getBoundingClientRect(),r=e.getBoundingClientRect();return {l:r.left-c.left,r:r.right-c.left,t:r.top-c.top,b:r.bottom-c.top,cx:(r.left+r.right)/2-c.left,cy:(r.top+r.bottom)/2-c.top};};
+const NS='http://www.w3.org/2000/svg',asv=$('#asv');
+const arrows=AR.map(([a,b,lab,ord,v])=>{const A=B(a),Z=B(b);let d,x2,y2,ang;
+  if(v){d=`M${A.cx} ${A.b} C${A.cx} ${A.b+60} ${Z.cx} ${Z.t-60} ${Z.cx} ${Z.t-2}`;x2=Z.cx;y2=Z.t-2;ang=90;}
+  else{const x1=A.r,y1=A.cy;x2=Z.l-2;y2=Z.cy;const k=Math.max(30,(x2-x1)*.5);d=`M${x1} ${y1} C${x1+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}`;ang=0;}
+  const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('fill','none');p.setAttribute('stroke-width','1.5');if(v)p.setAttribute('stroke-dasharray','5 4');asv.appendChild(p);
+  const L=p.getTotalLength(),mid=p.getPointAtLength(L/2);
+  const head=document.createElementNS(NS,'path');head.setAttribute('d','M0 0 L-9 -5 L-9 5 Z');head.setAttribute('transform',`translate(${x2} ${y2}) rotate(${ang})`);asv.appendChild(head);
+  const g=document.createElement('div');g.className='al';g.textContent=lab;g.style.cssText=`position:absolute;left:${mid.x}px;top:${mid.y}px;transform:translate(-50%,-50%);background:#171817;padding:1px 7px;font:${v?'300 12px var(--ui)':'12.5px var(--mono)'};color:#c9b98f;white-space:nowrap;z-index:3`;$('#cv').appendChild(g);
+  return {a,b,p,head,g,L,ord,v};});
+const PT=[[1060,820,0],[1060,820,4.5],[640,330,5.3],[640,330,6.6],[370,362,7.2],[370,362,8.55],[370,362,99]];
+function ptrAt(t){let i=0;while(i<PT.length-2&&t>PT[i+1][2])i++;const [x0,y0,t0]=PT[i],[x1,y1,t1]=PT[i+1];const p=expo(clamp((t-t0)/Math.max(0.01,(t1-t0))));
+  const x=lerp(x0,x1,p),y=lerp(y0,y1,p)+56;const cl=t>8.55&&t<8.75;$('#ptr').style.transform=`translate(${x}px,${y}px) scale(${cl?0.86:1})`;$('#ptr').style.opacity=t<4.4?0:clamp((t-4.4)/0.3);}
+const CAPS=[[0.3,4.6,'flow as boxes and arrows — the numbers give the order things run in'],[4.6,8.5,'hover a box: its functions, numbered in execution order · no number means it doesn’t run in this flow'],[8.5,99,'click: the box’s contents open in the preview pane, in the same order']];
+window.TOTAL=12.5;
+window.seek=function(t){
+  const hov=t>=5.3&&t<6.6?'headers':t>=7.2&&t<8.6?'server':null,sel=t>=8.6?'server':null;
+  BX.forEach(([id],k)=>{const e=$('#b-'+id),p=clamp((t-0.2-k*0.09)/0.45);e.style.opacity=p;e.style.transform=`translateY(${(1-expo(p))*16}px)`;
+    const lit=(hov===id||sel===id);e.style.borderColor=lit?'#ad9b6f':'';e.style.background=lit?'#1f201d':'';});
+  arrows.forEach(ar=>{const s=1.3+ar.ord*0.38,p=expo(clamp((t-s)/0.45));const touches=!hov&&!sel?1:(ar.a===(hov||sel)||ar.b===(hov||sel))?1:0.25;
+    const col=touches===1&&(hov||sel)?'#ad9b6f':'#5f665f';
+    ar.p.setAttribute('stroke',col);ar.p.setAttribute('stroke-dashoffset',ar.v?0:ar.L*(1-p));if(!ar.v)ar.p.setAttribute('stroke-dasharray',ar.L);ar.p.style.opacity=(ar.v?p:1)*touches;
+    ar.head.setAttribute('fill',col);ar.head.style.opacity=clamp((p-0.85)/0.15)*touches;ar.g.style.opacity=clamp((t-s-0.25)/0.3)*touches;});
+  $('#nr').style.opacity=clamp((t-3.9)/0.4);$('#lp').style.opacity=clamp((t-4.1)/0.4);
+  BX.forEach(([id])=>{const h=$('#h-'+id),on=hov===id;const p=on?clamp((t-(id==='headers'?5.35:7.25))/0.3):0;h.style.opacity=expo(p);h.style.transform=`translateY(${(1-expo(p))*10}px)`;});
+  ptrAt(t);
+  $('#ph0').style.opacity=t<8.6?1:1-clamp((t-8.6)/0.2);
+  $$('#ppc .pc').forEach((e,k)=>{const p=clamp((t-8.7-k*0.08)/0.55);e.style.opacity=Math.min(1,p*1.6);e.style.transformOrigin='left center';e.style.transform=`perspective(900px) rotateY(${70*(1-expo(p))}deg)`;});
+  const c=CAPS.find(([a,b])=>t>=a&&t<b)||[0,0,''],cap=$('#cap');cap.textContent=c[2];cap.style.opacity=Math.min(clamp((t-c[0])/0.35),clamp((c[1]-t)/0.3));cap.style.transform=`translateX(${(1-expo(clamp((t-c[0])/0.6)))*40}px)`;
+};
+seek(0);
+
+}catch(e){window.__err=e.message+" | "+e.stack;}
+</script></body></html>

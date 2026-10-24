@@ -1,0 +1,9 @@
+.DS_Store
+# runtime data created beside the executable
+data/
+# build output
+node_modules/
+dist/
+build/
+out/
+*.log
