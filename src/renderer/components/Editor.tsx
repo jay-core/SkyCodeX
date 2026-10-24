@@ -1,0 +1,142 @@
+import { onMount, onCleanup, createEffect, on } from 'solid-js';
+import { EditorView, Decoration, DecorationSet, keymap } from '@codemirror/view';
+import { EditorState, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
+import { editorExtensions, posToOffset, offsetToPos } from '../lib/cm';
+import { completionFor, hoverFor, lintSupport, attachView, definitionAt, indexEpoch } from '../lib/lsp';
+import { files, states, settings, setStateFactory, setMainView, onDocChanged, openFile, save, setCrumb, setCursorPos } from '../lib/store';
+import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
+import { PAL } from '../lib/lines';
+
+// ---- decorations: coloured call sites, focus dimming, ⌘/Ctrl-hover link ----
+interface Marks { calls: { from: number; to: number; color: string }[]; dim: [number, number] | null; link: [number, number] | null }
+export const setMarks = StateEffect.define<Partial<Marks>>();
+const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
+  create: () => ({ m: { calls: [], dim: null, link: null }, deco: Decoration.none }),
+  update(v, tr) {
+    let m = v.m;
+    for (const e of tr.effects) if (e.is(setMarks)) m = { ...m, ...e.value };
+    if (m === v.m && !tr.docChanged) return v;
+    if (m === v.m) return { m, deco: v.deco.map(tr.changes) };
+    const doc = tr.state.doc;
+    const ranges: { from: number; to: number; d: Decoration }[] = [];
+    if (m.dim) {
+      const [a, b] = m.dim;
+      for (let n = 1; n <= doc.lines; n++) if (n < a || n > b) { const l = doc.line(n); ranges.push({ from: l.from, to: l.from, d: Decoration.line({ class: 'cm-dimmed' }) }); }
+    }
+    for (const c of m.calls) if (c.to <= doc.length && c.to > c.from) ranges.push({ from: c.from, to: c.to, d: Decoration.mark({ attributes: { style: `text-decoration: underline ${c.color} 1.5px; text-underline-offset: 4px` } }) });
+    if (m.link && m.link[1] <= doc.length) ranges.push({ from: m.link[0], to: m.link[1], d: Decoration.mark({ class: 'cmd-link' }) });
+    ranges.sort((x, y) => x.from - y.from || (x.d.spec.class === 'cm-dimmed' ? -1 : 1));
+    const b = new RangeSetBuilder<Decoration>();
+    for (const r of ranges) b.add(r.from, r.to, r.d);
+    return { m, deco: b.finish() };
+  },
+  provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+});
+
+export function wordAt(view: EditorView, pos: number): [number, number] | null {
+  const w = view.state.wordAt(pos);
+  return w ? [w.from, w.to] : null;
+}
+
+export default function Editor(props: { onScroll: () => void; onCursor: () => void }) {
+  let host!: HTMLDivElement;
+  let view: EditorView;
+  let settleTimer: number | undefined;
+  let current = '';
+
+  const settle = () => {
+    clearTimeout(settleTimer);
+    settleTimer = window.setTimeout(() => {
+      const st = view.state, head = st.selection.main.head;
+      const p = offsetToPos(st.doc, head);
+      setCursorPos({ line: p.line + 1, col: p.character + 1 });
+      refreshForCursor(current, p);
+      props.onCursor();
+    }, 100);
+  };
+
+  const makeState = (file: string, text: string) => {
+    const s = settings();
+    return EditorState.create({
+      doc: text,
+      extensions: [
+        editorExtensions({ tabSize: s['editor.tab_size'] ?? 4, wrap: !!s['editor.word_wrap'] }),
+        completionFor(() => file), hoverFor(() => file), lintSupport, marksField,
+        keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
+        EditorView.updateListener.of((u) => {
+          if (u.docChanged) onDocChanged(file, u.state);
+          else states.set(file, u.state);
+          if (u.docChanged || u.selectionSet) settle();
+        }),
+        EditorView.domEventHandlers({
+          mousedown(e, v) {
+            if (!(e.metaKey || e.ctrlKey) || e.button !== 0) return false;
+            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+            if (pos == null) return false;
+            e.preventDefault();
+            definitionAt(file, offsetToPos(v.state.doc, pos)).then((loc) => { if (loc) openFile(loc.file, { line: loc.line, character: loc.character }); });
+            return true;
+          },
+          mousemove(e, v) {
+            const want = e.metaKey || e.ctrlKey;
+            const cur = v.state.field(marksField).m.link;
+            if (!want) { if (cur) v.dispatch({ effects: setMarks.of({ link: null }) }); return false; }
+            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+            const w = pos == null ? null : wordAt(v, pos);
+            if (w?.[0] !== cur?.[0] || w?.[1] !== cur?.[1]) v.dispatch({ effects: setMarks.of({ link: w }) });
+            return false;
+          },
+          keyup(e, v) { if ((e.key === 'Meta' || e.key === 'Control') && v.state.field(marksField).m.link) v.dispatch({ effects: setMarks.of({ link: null }) }); return false; },
+          scroll() { props.onScroll(); return false; },
+        }),
+      ],
+    });
+  };
+
+  onMount(() => {
+    setStateFactory(makeState);
+    view = new EditorView({ parent: host, state: EditorState.create({ doc: '' }) });
+    view.scrollDOM.addEventListener('scroll', () => props.onScroll(), { passive: true });
+    setMainView(view);
+  });
+  onCleanup(() => { setMainView(null); view?.destroy(); });
+
+  // switch documents
+  createEffect(on(() => files.active, (active) => {
+    if (!view) return;
+    if (current) attachView(current, null);
+    current = active;
+    const st = states.get(active);
+    view.setState(st ?? EditorState.create({ doc: '' }));
+    if (st) { attachView(active, view); settle(); view.focus(); }
+    else setCrumb('');
+  }));
+
+  // when clangd finishes indexing, rebuild the previews with the complete call graph
+  createEffect(on(indexEpoch, () => {
+    if (!view || !current) return;
+    refreshForCursor(current, offsetToPos(view.state.doc, view.state.selection.main.head), true);
+  }, { defer: true }));
+
+  // crumb, focus dimming and coloured call sites follow the preview state
+  createEffect(() => {
+    const fn = mainFn(), ls = levels(), w = win(), s = settings();
+    if (!view) return;
+    setCrumb(fn && fn.file === current ? fn.name : '');
+    const doc = view.state.doc;
+    const dim: [number, number] | null = fn && fn.file === current && s['theme.focus_dimming'] ? [fn.range.start.line + 1, fn.range.end.line + 1] : null;
+    const calls: Marks['calls'] = [];
+    const l1 = ls[0];
+    if (l1 && w === 0 && l1.callerFile === current) {
+      l1.cards.forEach((c, i) => {
+        for (const r of c.fromRanges) {
+          calls.push({ from: posToOffset(doc, r.start.line, r.start.character), to: posToOffset(doc, r.end.line, r.end.character), color: PAL[i % PAL.length] });
+        }
+      });
+    }
+    view.dispatch({ effects: setMarks.of({ dim, calls }) });
+    props.onScroll();
+  });
+
+  return <div class="code" ref={host} />;
+}
