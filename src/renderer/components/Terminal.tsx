@@ -3,9 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '../lib/api';
-import { root, settings, terminalOpen, setTerminalOpen, setSettingsOpen } from '../lib/store';
-import { GEAR } from './Header';
-import { setMenuOpen, menuOpen } from './AppMenu';
+import { root, settings, terminalOpen } from '../lib/store';
 
 interface Session { id: number; name: string; term: XTerm; fit: FitAddon; el: HTMLDivElement }
 let nextId = 1;
@@ -79,12 +77,8 @@ export default function TerminalPane() {
       <div class="tt">
         <For each={sessions()}>{(s) => <button classList={{ on: active() === s.id }} onClick={() => show(s.id)}>{s.name}</button>}</For>
         <button onClick={add} title="New terminal">+</button>
-        <span class="grow" />
-        <button class="barbtn" classList={{ on: terminalOpen() }} onClick={() => setTerminalOpen(!terminalOpen())} title="Show or hide the terminal (⌃`)">{terminalOpen() ? 'hide terminal' : 'terminal'}</button>
-        <button class="barbtn" classList={{ on: menuOpen() }} title="Options" onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenuOpen(!menuOpen())}>options</button>
-        <button class="gear" style={{ 'margin-top': '0' }} title="Settings (⌘/Ctrl ,)" onClick={() => setSettingsOpen(true)}>{GEAR}</button>
       </div>
-      <div class="xt" ref={host} style={{ display: terminalOpen() ? 'block' : 'none' }} />
+      <div class="xt" ref={host} />
     </div>
   );
 }

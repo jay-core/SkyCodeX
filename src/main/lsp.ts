@@ -46,7 +46,7 @@ export class LspClient {
 
   start(clangd: string, root: string, extraArgs: string[]): Promise<unknown> {
     this.stop();
-    const args = ['--background-index', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
+    const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
     const cc = findCompileCommands(root);
     if (cc) args.push(`--compile-commands-dir=${cc}`);
     args.push(...extraArgs);

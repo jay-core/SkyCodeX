@@ -1,7 +1,7 @@
 // The preview engine: calls made by the function under the cursor, level by level.
 import { createSignal } from 'solid-js';
 import { api, CallItem, Range, Pos, uriToFile, basename, relPath } from './api';
-import { symbols, enclosingFunction, callItemAt, outgoing, inProject, projectRoot, resolveDefinition } from './lsp';
+import { symbols, enclosingFunction, callItemAt, outgoing, inProject, projectRoot, resolveDefinition, withBody } from './lsp';
 import { states, settings } from './store';
 
 export interface Card {
@@ -13,6 +13,7 @@ export interface Card {
   text: string;
   fromRanges: Range[];      // call sites, in the caller's file coordinates
   std: boolean;
+  declOnly?: boolean;       // std: only a declaration exists, the body is compiled into the library
 }
 export interface Level {
   caller: CallItem;
@@ -56,14 +57,18 @@ async function buildLevel(caller: CallItem, callerStartLine: number): Promise<Le
     const std = !inProject(file);
     if (std && !s['preview.include_std']) { hidden++; continue; }
     if (cards.length >= s['preview.max_cards']) { more.push(c.to.name); continue; }
-    const def = std ? c.to : await resolveDefinition(c.to);  // definition with its whole body
+    const def = std ? await withBody(c.to) : await resolveDefinition(c.to);  // definition with its whole body
     const dfile = uriToFile(def.uri);
     const lines = await fileLines(dfile);
-    const a = def.range.start.line, b = Math.min(def.range.end.line, a + (std ? 0 : 400));
+    // a library function with no body in its header (or an implicit member) shows just its declaration line
+    // library headers are macro-heavy: trust a parsed body only when it starts just above the name and isn't a class
+    const bodiless = std && (def === c.to || def.range.start.line < c.to.selectionRange.start.line - 6
+      || /^\s*(template\s*<.*>\s*)?(class|struct|union)\b/.test(lines[def.range.start.line] ?? ''));
+    const a = bodiless ? def.selectionRange.start.line : def.range.start.line, b = bodiless ? a : Math.min(def.range.end.line, a + 400);
     cards.push({
       key: `${def.uri}#${a}:${c.to.name}`, item: def, file: dfile, name: c.to.name,
-      startLine: a, text: std ? (c.to.detail ? `${c.to.detail}` : lines[a] ?? c.to.name) : lines.slice(a, b + 1).join('\n'),
-      fromRanges: c.fromRanges, std,
+      startLine: a, text: lines.slice(a, b + 1).join('\n') || c.to.detail || c.to.name,
+      fromRanges: c.fromRanges, std, declOnly: bodiless,
     });
   }
   return { caller, callerFile: uriToFile(caller.uri), callerStartLine, cards, hidden, more, focus: -1 };
@@ -72,11 +77,16 @@ async function buildLevel(caller: CallItem, callerStartLine: number): Promise<Le
 let generation = 0;
 /** Called when the main cursor settles. Rebuilds level 1 only when the enclosing function changes. */
 export async function refreshForCursor(file: string, pos: Pos, force = false) {
-  if (!settings()['preview.enabled']) { setLevels([]); setMainFn(null); return; }
   const gen = ++generation;
   const fn = enclosingFunction(await symbols(file), pos);
   if (gen !== generation) return;
   if (!fn) { setMainFn(null); setLevels([]); setWin(0); return; }
+  if (!settings()['preview.enabled']) {
+    const cur = mainFn();
+    if (!cur || cur.file !== file || cur.range.start.line !== fn.range.start.line) setMainFn({ name: fn.name, file, range: fn.range });
+    if (levels().length) setLevels([]);
+    return;
+  }
   const cur = mainFn();
   if (!force && cur && cur.file === file && cur.name === fn.name && cur.range.start.line === fn.range.start.line && levels().length) return;
   setMainFn({ name: fn.name, file, range: fn.range });

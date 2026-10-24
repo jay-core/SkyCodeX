@@ -1,6 +1,7 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
-import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder } from './lib/store';
+import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings } from './lib/store';
+import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
 import { lspState } from './lib/lsp';
 import { quickOpen, palette, setPalette, applyWorkspaceEdit, COMMANDS } from './lib/actions';
@@ -74,8 +75,52 @@ export async function runSmoke() {
     setSettingsOpen(true);
     await sleep(1200);
     await api.smoke.capture('4-settings');
+    // settings: installed fonts, typed numbers, live slider value
+    const fonts = await installedFonts();
+    report.fontsListed = fonts.length;
+    report.monoFonts = fonts.filter((f) => f.mono).slice(0, 6).map((f) => f.name);
+    const ctls = [...document.querySelectorAll('.set .ctl')] as HTMLElement[];
+    const sizeCtl = ctls.find((c) => c.querySelector('.lab')?.textContent?.startsWith('code size'))!;
+    const box = sizeCtl.querySelector('.num') as HTMLInputElement;
+    box.value = '15'; box.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(500);
+    report.typedFontSize = settings()['font.size'];
+    const rng = sizeCtl.querySelector('input[type=range]') as HTMLInputElement;
+    rng.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    rng.value = '22'; rng.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(150);
+    report.sliderLive = { bubble: sizeCtl.querySelector('.bubble')?.textContent, box: box.value, cssSize: document.documentElement.style.getPropertyValue('--code-size') };
+    await api.smoke.capture('4b-settings-slider');
+    rng.value = '13'; rng.dispatchEvent(new Event('input', { bubbles: true })); rng.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(500);
+    report.fontSizeRestored = settings()['font.size'];
+    const famCtl = ctls.find((c) => c.querySelector('.lab')?.textContent?.startsWith('code font'))!;
+    (famCtl.querySelector('.combo input') as HTMLInputElement).focus();
+    await until(() => !!famCtl.querySelector('.combo-list button'), 4000);
+    report.fontOptions = famCtl.querySelectorAll('.combo-list button').length;
+    report.fontGroups = [...famCtl.querySelectorAll('.combo-g')].map((g) => g.textContent);
+    await api.smoke.capture('4c-settings-fonts');
+    (famCtl.querySelector('.combo input') as HTMLInputElement).blur();
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    const pageBtn = (n: string) => ([...document.querySelectorAll('.set .pv button')] as HTMLButtonElement[]).find((x) => x.textContent === n)!;
+    pageBtn('clangd').click(); await sleep(300);
+    await api.smoke.capture('4e-settings-clangd');
+    pageBtn('terminal').click(); await sleep(300);
+    (document.querySelector('.set .combo input') as HTMLInputElement).focus();
+    await until(() => document.querySelectorAll('.set .combo-list button').length > 1, 4000);
+    report.shellOptions = [...document.querySelectorAll('.set .combo-list button')].map((x) => x.textContent);
+    await api.smoke.capture('4f-settings-shell');
+    (document.querySelector('.set .combo input') as HTMLInputElement).blur();
     setSettingsOpen(false);
     await sleep(300);
+    (document.querySelector('.wctl') as HTMLElement).style.transition = 'none';
+    (document.querySelector('.wctl') as HTMLElement).style.opacity = '1';
+    await sleep(100);
+    report.windowIcons = [...document.querySelectorAll('.wctl svg')].map((s) => Math.round(s.getBoundingClientRect().width));
+    await api.smoke.capture('4d-window-controls');
+    (document.querySelector('.wctl') as HTMLElement).style.opacity = '';
+    (document.querySelector('.wctl') as HTMLElement).style.transition = '';
 
     setPage('flow');
     report.flowReady = await until(() => document.querySelectorAll('.fbox').length >= 4 && ![...document.querySelectorAll('.fbox:not(.dead) .t')].some((e) => /\.(h|hpp)$/.test(e.textContent ?? '')), 45000);
@@ -127,11 +172,22 @@ export async function runSmoke() {
     await until(() => !!document.querySelector('.card .chip'), 15000, () => refreshForCursor(file, offsetToPos(v2.state.doc, hAt), true));
     const stdCard = [...document.querySelectorAll('.card')].find((c) => c.querySelector('.chip')) as HTMLElement | undefined;
     report.stdCards = document.querySelectorAll('.card .chip').length;
-    (stdCard?.querySelector('.std-act button') as HTMLButtonElement | undefined)?.click();
-    await sleep(1200);
-    report.stdSourceShown = !!stdCard?.querySelector('.cm-editor') || !!stdCard?.querySelector('.std-row');
+    report.stdSourceShown = (stdCard?.querySelectorAll('.cm-line').length ?? 0) > 1;
+    // the preview splits: drag the handle between the two card columns, pan a card sideways
+    const col0 = document.querySelector('.pcol') as HTMLElement, w0 = col0.offsetWidth;
+    const handle = document.querySelectorAll('.psplit')[1] as HTMLElement, hx = handle.getBoundingClientRect().left + 3;
+    handle.dispatchEvent(new MouseEvent('mousedown', { clientX: hx, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: hx + 120 }));
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: hx + 120 }));
+    await sleep(300);
+    report.columnResized = col0.offsetWidth - w0;
+    const sc = [...document.querySelectorAll('.card .cm-scroller')].find((e) => e.scrollWidth > e.clientWidth + 4) as HTMLElement | undefined;
+    if (sc) { sc.scrollLeft = 60; await sleep(100); }
+    report.cardPans = sc ? sc.scrollLeft > 0 : 'no wide card';
+    report.linksClipped = !!document.querySelector('svg.links g[clip-path]');
     await api.smoke.capture('9a-std-source');
-    await api.settings.set('preview.include_std', false);
+    try { localStorage.removeItem('litho.preview.split'); } catch { /* fine */ }
+    await api.settings.set('preview.include_std', true);
     // tabs close, the ··· menu, new file
     report.tabsBefore = document.querySelectorAll('.hdr .tab').length;
     (document.querySelector('.hdr .tab:last-child .tabx') as HTMLButtonElement | null)?.click();
@@ -144,6 +200,25 @@ export async function runSmoke() {
     COMMANDS.newFile(); await sleep(300);
     palette()?.prompt?.accept('smoke_new.cpp'); await sleep(900);
     report.newFileActive = files.active.split('/').pop();
+    // typing cost: 300 single-character edits in the open file (the edits are undone afterwards, never saved)
+    await openFile(file); await sleep(400);
+    const pv = getMainView()!;
+    const at0 = pv.state.doc.toString().indexOf('return res;');
+    const t0 = performance.now();
+    for (let i = 0; i < 300; i++) pv.dispatch({ changes: { from: at0 + i, insert: 'x' } });
+    report.msPerKeystroke = +((performance.now() - t0) / 300).toFixed(3);
+    pv.dispatch({ changes: { from: at0, to: at0 + 300 } });
+    // cursor moves inside one function: no clangd round trip once symbols are cached
+    const t1 = performance.now();
+    for (let i = 0; i < 20; i++) await refreshForCursor(file, offsetToPos(pv.state.doc, at0 - 20 - i));
+    report.msPerCursorRefresh = +((performance.now() - t1) / 20).toFixed(2);
+    // preview can be hidden and shown
+    const before = !!document.querySelector('.pane.prev .cindex');
+    await api.settings.set('preview.enabled', false); await sleep(500);
+    report.previewHidden = before && !document.querySelector('.cindex') && document.querySelector('svg.links')?.innerHTML === '';
+    await api.smoke.capture('9c-preview-hidden');
+    await api.settings.set('preview.enabled', true); await sleep(800);
+    report.previewShownAgain = !!document.querySelector('.cindex');
     // switching folders: clangd must come back up and the terminal must follow
     const sub = `${root()}/src`;
     await openFolder(sub);

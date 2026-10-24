@@ -173,6 +173,7 @@ export const COMMANDS: Record<string, () => void> = {
   quickOpen, goToSymbol: () => goToSymbol(), commandPalette: () => commandPalette(),
   showEditor: () => setPage('editor'), showFlow: () => setPage('flow'), showMemory: () => setPage('memory'),
   toggleTerminal: () => setTerminalOpen(!terminalOpen()), settings: () => setSettingsOpen(true),
+  togglePreview: () => api.settings.get().then((x: any) => api.settings.set('preview.enabled', !x.settings['preview.enabled'])),
 };
 api.menu.onCommand((id) => COMMANDS[id]?.());
 
@@ -194,6 +195,7 @@ export function commandPalette() {
     ['Show memory', '', () => setPage('memory')],
     ['Show editor', '', () => setPage('editor')],
     [terminalOpen() ? 'Hide terminal' : 'Show terminal', '⌃`', () => setTerminalOpen(!terminalOpen())],
+    ['Show / hide preview panes', '⌘/Ctrl ⇧ E', () => api.settings.get().then((x: any) => api.settings.set('preview.enabled', !x.settings['preview.enabled']))],
     ['Settings', '⌘/Ctrl ,', () => setSettingsOpen(true)],
   ];
   setPalette({ placeholder: 'command…', items: cmds.map(([label, detail, run]) => ({ label, detail, run })) });

@@ -24,11 +24,19 @@ export function linkSvg(links: Link[]): string {
     out += `<path d="M${l.lead} ${y1} C${l.lead + k} ${y1} ${x2 - k} ${y2} ${x2} ${y2}" stroke="${l.color}" stroke-width="${l.edge ? 0.8 : 0.9}" opacity="${l.edge ? 0.5 : 0.75}" fill="none"${l.edge ? ' stroke-dasharray="4 4"' : ''}/>`;
     if (l.edge) {
       const e = l.edge;
-      out += `<path d="M${x2 + 4} ${y2 + e * 5} l5 ${-e * 7} l5 ${e * 7}" stroke="${l.color}" fill="none" stroke-width="1.4"/>`;
-      out += `<text x="${x2 + 16}" y="${y2 + 4}" fill="${l.color}" font-size="11.5" font-weight="300" font-family="Selawik, sans-serif" stroke="#151615" stroke-width="4" paint-order="stroke">${e < 0 ? '↑' : '↓'} ${escapeXml(l.name)}</text>`;
+      if (!l.name) continue;   // folded into an "N more" note
+      out += edgeStub(x2, y2, e, l.color, l.name);
     } else if (!l.onDot) out += `<circle cx="${x2}" cy="${y2}" r="1.6" fill="${l.color}" opacity=".8"/>`;
   }
   return out;
+}
+
+/** Marker for a card scrolled out of its column: a chevron pointing toward it and its name on a plate. */
+export function edgeStub(x: number, y: number, e: number, color: string, label: string): string {
+  const w = Math.round(label.length * 6.4) + 26;
+  return `<rect x="${x}" y="${y - 7}" width="${w}" height="14" fill="#151615" opacity=".92"/>`
+    + `<path d="M${x + 4} ${y - e * 3} l4 ${e * 5} l4 ${-e * 5}" stroke="${color}" fill="none" stroke-width="1.3"/>`
+    + `<text x="${x + 17}" y="${y + 4}" fill="${color}" font-size="11.5" font-weight="300" font-family="Selawik, sans-serif">${escapeXml(label)}</text>`;
 }
 
 /** A plain connector from the call index to a card's colour dot. */

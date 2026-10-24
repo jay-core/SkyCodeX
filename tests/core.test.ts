@@ -65,7 +65,7 @@ describe('settings.toml', () => {
     const out = setSetting(text, 'font.size', 14.5);
     expect(loadSettings(out).settings['font.size']).toBe(14.5);
     const line = out.split('\n')[lineOf(out, 'font.size') - 1];
-    expect(line).toMatch(/^size\s*= 14\.5\s+# pt$/);
+    expect(line).toMatch(/^size\s*= 14\.5\s+# code text size$/);
     expect(out.split('\n').length).toBe(text.split('\n').length);
     const s = setSetting(out, 'font.family', 'Mono # odd');
     expect(loadSettings(s).settings['font.family']).toBe('Mono # odd');

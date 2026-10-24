@@ -10,6 +10,7 @@ const on = (ch: string, cb: (...a: any[]) => void) => {
 
 const api = {
   info: () => invoke('app:info'),
+  sys: { shells: () => invoke('sys:shells') },
   settings: {
     get: () => invoke('settings:get'),
     set: (key: string, value: unknown) => invoke('settings:set', key, value),
@@ -26,7 +27,7 @@ const api = {
     write: (file: string, text: string) => invoke('fs:write', file, text),
     mtime: (file: string) => invoke('fs:mtime', file),
     watch: (root: string) => invoke('fs:watch', root),
-    onChange: (cb: (p: string) => void) => on('fs:changed', cb),
+    onChange: (cb: (paths: string[]) => void) => on('fs:changedBatch', cb),
   },
   buffers: {
     save: (file: string, text: string) => invoke('buffers:save', file, text),

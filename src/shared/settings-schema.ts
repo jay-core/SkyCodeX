@@ -11,6 +11,7 @@ export interface SettingDef {
   min?: number;
   max?: number;
   values?: string[];      // for enums
+  unit?: string;          // shown beside a number
 }
 
 export const SECTIONS: { name: string; doc: string }[] = [
@@ -29,29 +30,29 @@ export const SECTIONS: { name: string; doc: string }[] = [
 
 export const SETTINGS: SettingDef[] = [
   { key: 'font.family', type: 'string', default: 'ARX F1', doc: 'any installed font' },
-  { key: 'font.size', type: 'number', default: 13, min: 6, max: 72, doc: 'pt' },
-  { key: 'font.letter_spacing', type: 'number', default: 0, min: -2, max: 6, doc: 'px' },
-  { key: 'font.line_height', type: 'number', default: 1.6, min: 1, max: 3, doc: '× size' },
+  { key: 'font.size', type: 'number', default: 13, min: 6, max: 72, doc: 'code text size', unit: 'px' },
+  { key: 'font.letter_spacing', type: 'number', default: 0, min: -2, max: 6, doc: 'space between letters', unit: 'px' },
+  { key: 'font.line_height', type: 'number', default: 1.6, min: 1, max: 3, doc: 'line height', unit: '× size' },
   { key: 'font.ligatures', type: 'boolean', default: false, doc: 'true | false' },
   { key: 'font.ui.family', type: 'string', default: 'Selawik', doc: 'interface text' },
-  { key: 'font.preview.scale', type: 'number', default: 0.9, min: 0.5, max: 1.5, doc: '× code size' },
+  { key: 'font.preview.scale', type: 'number', default: 0.9, min: 0.5, max: 1.5, doc: 'preview text size', unit: '× code size' },
   { key: 'theme.name', type: 'enum', default: 'charcoal', values: ['charcoal'], doc: 'charcoal' },
   { key: 'theme.focus_dimming', type: 'boolean', default: true, doc: 'fade code outside the current function' },
-  { key: 'editor.tab_size', type: 'number', default: 4, min: 1, max: 16, doc: 'spaces' },
+  { key: 'editor.tab_size', type: 'number', default: 4, min: 1, max: 16, doc: 'indent width', unit: 'spaces' },
   { key: 'editor.word_wrap', type: 'boolean', default: false, doc: 'true | false' },
-  { key: 'editor.autosave', type: 'enum', default: 'off', values: ['off', 'focus', 'delay'], doc: 'off | focus | delay' },
-  { key: 'editor.autosave_delay_ms', type: 'number', default: 1000, min: 200, max: 60000, doc: 'for autosave = "delay"' },
+  { key: 'editor.autosave', type: 'enum', default: 'off', values: ['off', 'focus', 'delay'], doc: 'focus saves when you leave the window; delay saves after a pause' },
+  { key: 'editor.autosave_delay_ms', type: 'number', default: 1000, min: 200, max: 60000, doc: 'for autosave = "delay"', unit: 'ms' },
   { key: 'preview.enabled', type: 'boolean', default: true, doc: 'true | false' },
-  { key: 'preview.include_std', type: 'boolean', default: false, doc: 'show standard-library and system calls' },
-  { key: 'preview.max_cards', type: 'number', default: 12, min: 1, max: 100, doc: 'per level; the rest fold into "+N more"' },
-  { key: 'window.chrome', type: 'enum', default: 'minimal', values: ['minimal', 'native'], doc: 'minimal | native (restart to apply)' },
+  { key: 'preview.include_std', type: 'boolean', default: true, doc: 'show standard-library and system calls' },
+  { key: 'preview.max_cards', type: 'number', default: 12, min: 1, max: 100, doc: 'per level; the rest fold into "+N more"', unit: 'cards' },
+  { key: 'window.chrome', type: 'enum', default: 'minimal', values: ['minimal', 'native'], doc: 'native uses the system title bar · restart to apply' },
   { key: 'clangd.path', type: 'string', default: 'auto', doc: '"auto" or a path to any clangd' },
   { key: 'clangd.args', type: 'string[]', default: [], doc: 'extra arguments, e.g. ["--clang-tidy"]' },
   { key: 'terminal.shell', type: 'string', default: 'auto', doc: '"auto" uses your login shell' },
-  { key: 'terminal.font_size', type: 'number', default: 12.5, min: 6, max: 40, doc: 'pt' },
-  { key: 'memory.ram_budget_kb', type: 'number', default: 0, min: 0, max: 1e9, doc: 'KB' },
-  { key: 'memory.storage_budget_kb', type: 'number', default: 0, min: 0, max: 1e9, doc: 'KB (flash / disk image)' },
-  { key: 'memory.warn_percent', type: 'number', default: 90, min: 1, max: 100, doc: '%' },
+  { key: 'terminal.font_size', type: 'number', default: 12.5, min: 6, max: 40, doc: 'terminal text size', unit: 'px' },
+  { key: 'memory.ram_budget_kb', type: 'number', default: 0, min: 0, max: 1e9, doc: 'RAM budget', unit: 'KB' },
+  { key: 'memory.storage_budget_kb', type: 'number', default: 0, min: 0, max: 1e9, doc: 'flash / disk image budget', unit: 'KB' },
+  { key: 'memory.warn_percent', type: 'number', default: 90, min: 1, max: 100, doc: 'warn above this share of a budget', unit: '%' },
   { key: 'motion.reduce', type: 'boolean', default: false, doc: 'true turns animations into instant changes' },
 ];
 

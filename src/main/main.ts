@@ -56,6 +56,10 @@ function createWindow() {
     title: 'Lithograph',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
+  // the interface may list installed fonts (settings) and write to the clipboard; nothing else is granted
+  const allowed = new Set(['local-fonts', 'clipboard-sanitized-write']);
+  win.webContents.session.setPermissionRequestHandler((wc, perm, cb) => cb(wc === win?.webContents && allowed.has(perm)));
+  win.webContents.session.setPermissionCheckHandler((wc, perm) => wc === win?.webContents && allowed.has(perm));
   win.loadFile(path.join(appRoot, 'dist', 'renderer', 'index.html'));
   win.once('ready-to-show', () => win!.show());
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
@@ -86,6 +90,15 @@ ipcMain.handle('app:info', () => ({
 }));
 
 // ---------- files ----------
+// shells the terminal can use, for the settings page
+ipcMain.handle('sys:shells', () => {
+  if (process.platform === 'win32') {
+    const sys = process.env.SystemRoot ?? 'C:\\Windows';
+    return [path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), path.join(sys, 'System32', 'cmd.exe'),
+      'C:\\Program Files\\PowerShell\\7\\pwsh.exe', 'C:\\Program Files\\Git\\bin\\bash.exe'].filter((p) => fs.existsSync(p));
+  }
+  try { return [...new Set(fs.readFileSync('/etc/shells', 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('/') && fs.existsSync(l)))]; } catch { return []; }
+});
 ipcMain.handle('fs:pickFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
@@ -109,9 +122,15 @@ let watcher: fs.FSWatcher | null = null;
 ipcMain.handle('fs:watch', (_e, root: string) => {
   watcher?.close();
   try {
+    // clangd's index, git and build output change thousands of files; none of that is shown, so it is ignored,
+    // and the rest is sent in batches so a burst of writes costs the interface one refresh
+    const IGNORE = /(^|[\\/])(\.git|node_modules|\.cache|CMakeFiles|build|out|cmake-build-[^\\/]*)([\\/]|$)|\.(o|obj|d|su|tmp)$|\.lithograph-/;
+    let batch = new Set<string>(), timer: NodeJS.Timeout | undefined;
     watcher = fs.watch(root, { recursive: true }, (_ev, name) => {
-      if (!name || /(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(name) || name.includes('.lithograph-')) return;
-      send('fs:changed', path.join(root, name));
+      if (!name || IGNORE.test(name)) return;
+      batch.add(path.join(root, name));
+      clearTimeout(timer);
+      timer = setTimeout(() => { const b = [...batch]; batch = new Set(); send('fs:changedBatch', b); }, 150);
     });
   } catch (e) { log(`watch: ${e}`); }
 });
@@ -196,7 +215,7 @@ function buildMenu() {
     ] },
     { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F')] },
     { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P')] },
-    { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('showMemory', 'Memory'), cmd('toggleTerminal', 'Terminal', 'Ctrl+`')] },
+    { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('showMemory', 'Memory'), cmd('toggleTerminal', 'Terminal', 'Ctrl+`'), cmd('togglePreview', 'Preview Panes', 'CmdOrCtrl+Shift+E')] },
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

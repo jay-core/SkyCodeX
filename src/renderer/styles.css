@@ -48,6 +48,7 @@ input, select { font: inherit; color: var(--bright); }
 .wctl button { width: 36px; height: 30px; color: var(--dim); font: 300 13px var(--ui); }
 .wctl button:hover { color: var(--bright); }
 .wctl button.x:hover { color: var(--err); }
+.wctl svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; vertical-align: middle; overflow: visible; }
 
 /* panes */
 .body { flex: 1; min-height: 0; display: flex; }
@@ -106,7 +107,7 @@ input, select { font: inherit; color: var(--bright); }
 .call-mark { text-underline-offset: 4px; }
 
 /* previews */
-.prev { background: var(--prev); }
+.prev { background: var(--prev); overflow: hidden; }
 .pcol { position: absolute; top: 36px; bottom: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .pcol::-webkit-scrollbar { display: none; }
 .pcol-in { padding: 2px 10px 40px 22px; display: flex; flex-direction: column; gap: 10px; }
@@ -153,7 +154,27 @@ input, select { font: inherit; color: var(--bright); }
 .set .pv button { font: 300 52px var(--ui); color: #2b2e2b; letter-spacing: -.02em; }
 .set .pv button.on { color: var(--bright); }
 .set .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px 56px; max-width: 1200px; }
-.ctl { margin-bottom: 20px; }
+.ctl { margin-bottom: 20px; position: relative; }
+.ctl.idle { opacity: .45; }
+.ctl .rst { margin-left: 10px; font: 300 12px var(--ui); color: #4f564f; }
+.ctl .rst:hover { color: var(--accent); }
+.numrow { position: absolute; right: 0; top: -3px; display: flex; align-items: baseline; gap: 6px; }
+.ctl .numrow input.num { width: 56px; margin: 0; background: transparent; border: 0; border-bottom: 1px solid #2c2f2c; padding: 1px 2px; text-align: right; font: 300 15px var(--ui); color: var(--bright); outline: none; }
+.ctl .numrow input.num:hover { border-bottom-color: #4f564f; }
+.ctl .numrow input.num:focus { border-bottom-color: var(--accent); }
+.numrow .unit { font: 300 12px var(--ui); color: #4f564f; white-space: nowrap; }
+.slide { position: relative; }
+.slide .bubble { position: absolute; top: 25px; transform: translateX(-50%); padding: 1px 7px; background: var(--pop); font: 300 12.5px var(--ui); color: var(--bright); pointer-events: none; white-space: nowrap; }
+.combo { position: relative; margin-top: 6px; }
+.combo input[type=text] { margin-top: 0; padding-right: 30px; }
+.combo .caret { position: absolute; right: 10px; top: 4px; color: #5f665f; cursor: pointer; font: 300 15px var(--ui); }
+.combo-list { position: absolute; left: 0; right: 0; top: 100%; max-height: 300px; overflow-y: auto; background: var(--pop); z-index: 5; box-shadow: 0 18px 40px rgba(0, 0, 0, .5); padding: 4px 0; scrollbar-width: thin; scrollbar-color: #3a3f3a transparent; }
+.combo-list button { display: block; width: 100%; text-align: left; padding: 4px 12px; font-size: 15px; color: #a9aea6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; content-visibility: auto; contain-intrinsic-size: auto 28px; }
+.combo-list button.hi { background: rgba(255, 255, 255, .05); color: var(--bright); }
+.combo-list button.on { color: var(--accent); }
+.combo-g { padding: 8px 12px 3px; font: 300 11.5px var(--ui); color: #4f564f; letter-spacing: .04em; }
+.pathrow { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+.pathrow input[type=text] { margin-top: 0; flex: 1; min-width: 0; }
 .ctl .lab { font: 300 15px var(--ui); color: #8b9189; display: flex; }
 .ctl .lab .v { margin-left: auto; color: var(--bright); }
 .ctl .doc { font: 300 12px var(--ui); color: #454b45; }
@@ -204,7 +225,14 @@ input, select { font: inherit; color: var(--bright); }
 .mlink:hover { text-decoration: underline; }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
-.card .cm-scroller { overflow-x: hidden !important; }
+.card .cm-scroller { overflow-x: auto !important; scrollbar-width: thin; scrollbar-color: #2f332f transparent; }
+.card .cm-scroller::-webkit-scrollbar { height: 5px; }
+.card .cm-scroller::-webkit-scrollbar-thumb { background: #2f332f; }
+.card .cm-scroller::-webkit-scrollbar-track { background: transparent; }
+.psplit { position: absolute; top: 0; bottom: 40px; width: 6px; cursor: col-resize; z-index: 5; }
+.psplit:hover, .psplit.drag { background: rgba(115, 150, 150, .12); }
+.pnote .lnk { color: var(--link); }
+.pnote .lnk:hover { text-decoration: underline; }
 .card.lit { background: #222320; box-shadow: inset 2px 0 var(--accent); transition: background .2s, box-shadow .2s; }
 .card.lit .cm-editor, .card.lit .cm-gutters { background: #222320 !important; }
 .card.lit .card-h .nm { color: var(--bright); }
@@ -219,23 +247,23 @@ input, select { font: inherit; color: var(--bright); }
 .tabx { font: 300 16px var(--ui) !important; color: transparent !important; margin-left: 4px; width: 16px; }
 .tab:hover .tabx { color: #4f564f !important; }
 .tab .tabx:hover { color: var(--err) !important; }
-.appmenu { position: fixed; right: 12px; bottom: 36px; background: var(--pop); box-shadow: 0 18px 44px rgba(0, 0, 0, .6); padding: 6px 0; z-index: 35; min-width: 240px; }
+.appmenu { position: fixed; left: 14px; bottom: 48px; background: var(--pop); box-shadow: 0 18px 44px rgba(0, 0, 0, .6); padding: 6px 0; z-index: 35; min-width: 240px; }
 .appmenu button { display: flex; width: 100%; padding: 6px 18px; font: 300 15px var(--ui); color: #8b9189; text-align: left; }
 .appmenu button:hover { background: rgba(255, 255, 255, .05); color: var(--bright); }
 .appmenu button span { margin-left: auto; padding-left: 24px; font-size: 12px; color: var(--dim); }
 .appmenu hr { border: 0; height: 1px; background: #2a2d2a; margin: 5px 0; }
 .std-act { display: flex; gap: 18px; padding: 2px 12px 8px; font: 300 12.5px var(--ui); }
-.std-act button { color: var(--link); }
+.std-act button { color: var(--link); white-space: nowrap; flex: none; }
 .std-act button:hover { text-decoration: underline; }
 .barbtn { border: 1px solid #3a3f3a; height: 22px; padding: 0 10px; font: 300 13px var(--ui); color: #8b9189; }
 .barbtn:hover { border-color: var(--accent); color: var(--bright); }
 .barbtn.on { color: var(--bright); border-color: #5f665f; }
 .tt .gear { height: 22px; width: 24px; }
 .cindex { position: absolute; left: 0; top: 36px; bottom: 40px; background: #131413; overflow: hidden; z-index: 1; }
-.ix { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 30px; padding: 0 6px 0 12px; cursor: pointer; }
+.ix { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 30px; padding: 0 6px 0 34px; cursor: pointer; }
 .ix:hover { background: rgba(255, 255, 255, .03); }
 .ix .n { position: absolute; left: 12px; font: 11px var(--mono); color: #3f453f; }
-.ix .nm { font: 12px var(--mono); color: #9ea39b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.ix .nm { font: 12px var(--mono); color: #9ea39b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ix .dot { width: 5px; height: 5px; border-radius: 50%; flex: none; }
 .ix .ixa { width: 10px; flex: none; font: 300 12px var(--ui); opacity: .85; }
 .ix.off .nm { color: #5f665f; }
@@ -243,3 +271,6 @@ input, select { font: inherit; color: var(--bright); }
 .ix.lit { background: #222320; }
 .ix.lit .nm { color: #c3c8c0; }
 .ixhint { position: absolute; left: 12px; right: 10px; bottom: 12px; font: 300 11.5px/1.5 var(--ui); color: #3f453f; }
+.appsep { height: 1px; flex: none; margin: 8px 14px 0; background: rgba(255, 255, 255, .06); }
+.appbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px; }
+.appbar .gear { margin-top: 0; height: 22px; width: 24px; }

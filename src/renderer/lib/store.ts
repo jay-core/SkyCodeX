@@ -85,13 +85,19 @@ export async function openFile(path: string, at?: { line: number; character: num
 const bufferTimers = new Map<string, number>();
 export function onDocChanged(path: string, state: EditorState) {
   states.set(path, state);
-  const text = state.doc.toString();
-  const dirty = text !== saved.get(path);
+  // the length check makes the common case free; the full comparison only runs when lengths match
+  const base = saved.get(path) ?? '';
+  const dirty = state.doc.length !== base.length || state.doc.toString() !== base;
   const i = files.list.findIndex((f) => f.path === path);
   if (i >= 0 && files.list[i].dirty !== dirty) setFiles('list', i, 'dirty', dirty);
-  changeDoc(path, text);
+  changeDoc(path, () => states.get(path)?.doc.toString() ?? '');
   clearTimeout(bufferTimers.get(path));
-  bufferTimers.set(path, window.setTimeout(() => { dirty ? api.buffers.save(path, text) : api.buffers.drop(path); }, 1000));
+  bufferTimers.set(path, window.setTimeout(() => {
+    const st = states.get(path);
+    if (!st) return;
+    const text = st.doc.toString();
+    text !== saved.get(path) ? api.buffers.save(path, text) : api.buffers.drop(path);
+  }, 1000));
   const s = settings();
   if (dirty && s['editor.autosave'] === 'delay') {
     clearTimeout(autosaveTimers.get(path));

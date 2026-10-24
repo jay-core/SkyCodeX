@@ -4,7 +4,8 @@ import { root, files, openFile, openFolder } from '../lib/store';
 
 const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
 const [listVersion, setListVersion] = createSignal(0);
-export const refreshTree = () => setListVersion((n) => n + 1);
+let treeTimer: number | undefined;
+export const refreshTree = () => { clearTimeout(treeTimer); treeTimer = window.setTimeout(() => setListVersion((n) => n + 1), 250); };
 
 function Dir(props: { path: string; depth: number }) {
   const [entries] = createResource(() => [props.path, listVersion()] as const, async ([p]) => (await api.fs.list(p)) as DirEntry[]);

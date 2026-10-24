@@ -1,5 +1,5 @@
 import { onMount, onCleanup, createEffect, on } from 'solid-js';
-import { EditorView, Decoration, DecorationSet, keymap } from '@codemirror/view';
+import { EditorView, Decoration, DecorationSet, keymap, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { EditorState, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { editorExtensions, posToOffset, offsetToPos } from '../lib/cm';
 import { completionFor, hoverFor, lintSupport, attachView, definitionAt, indexEpoch } from '../lib/lsp';
@@ -19,13 +19,9 @@ const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
     if (m === v.m) return { m, deco: v.deco.map(tr.changes) };
     const doc = tr.state.doc;
     const ranges: { from: number; to: number; d: Decoration }[] = [];
-    if (m.dim) {
-      const [a, b] = m.dim;
-      for (let n = 1; n <= doc.lines; n++) if (n < a || n > b) { const l = doc.line(n); ranges.push({ from: l.from, to: l.from, d: Decoration.line({ class: 'cm-dimmed' }) }); }
-    }
     for (const c of m.calls) if (c.to <= doc.length && c.to > c.from) ranges.push({ from: c.from, to: c.to, d: Decoration.mark({ attributes: { style: `text-decoration: underline ${c.color} 1.5px; text-underline-offset: 4px` } }) });
     if (m.link && m.link[1] <= doc.length) ranges.push({ from: m.link[0], to: m.link[1], d: Decoration.mark({ class: 'cmd-link' }) });
-    ranges.sort((x, y) => x.from - y.from || (x.d.spec.class === 'cm-dimmed' ? -1 : 1));
+    ranges.sort((x, y) => x.from - y.from);
     const b = new RangeSetBuilder<Decoration>();
     for (const r of ranges) b.add(r.from, r.to, r.d);
     return { m, deco: b.finish() };
@@ -35,6 +31,25 @@ const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
 
 /** Toolchain and SDK locations: files there are shown read-only. */
 export const SYSTEM_PATH = /^(\/usr\/|\/Library\/Developer\/|\/Applications\/Xcode|\/opt\/homebrew\/|[A-Za-z]:[\\/]Program Files)|[\\/](c\+\+|include)[\\/]v\d[\\/]/;
+
+/** Focus dimming: only the lines on screen are decorated, so a huge file costs the same as a small one. */
+const dimLine = Decoration.line({ class: 'cm-dimmed' });
+const dimPlugin = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+  constructor(view: EditorView) { this.decorations = this.build(view); }
+  update(u: ViewUpdate) {
+    if (u.docChanged || u.viewportChanged || u.startState.field(marksField).m.dim !== u.state.field(marksField).m.dim) this.decorations = this.build(u.view);
+  }
+  build(view: EditorView) {
+    const dim = view.state.field(marksField).m.dim;
+    if (!dim) return Decoration.none;
+    const b = new RangeSetBuilder<Decoration>(), doc = view.state.doc;
+    for (const { from, to } of view.visibleRanges) {
+      for (let n = doc.lineAt(from).number; n <= doc.lineAt(to).number; n++) if (n < dim[0] || n > dim[1]) b.add(doc.line(n).from, doc.line(n).from, dimLine);
+    }
+    return b.finish();
+  }
+}, { decorations: (p) => p.decorations });
 
 export function wordAt(view: EditorView, pos: number): [number, number] | null {
   const w = view.state.wordAt(pos);
@@ -64,7 +79,7 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
       doc: text,
       extensions: [
         editorExtensions({ tabSize: s['editor.tab_size'] ?? 4, wrap: !!s['editor.word_wrap'] }),
-        completionFor(() => file), hoverFor(() => file), lintSupport, marksField,
+        completionFor(() => file), hoverFor(() => file), lintSupport, marksField, dimPlugin,
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
         // standard-library and SDK headers open read-only
         SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : [],

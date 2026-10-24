@@ -52,13 +52,16 @@ export function openDoc(file: string, text: string): void {
   api.lsp.notify('textDocument/didOpen', { textDocument: { uri: fileToUri(file), languageId: /\.c$/i.test(file) ? 'c' : 'cpp', version: 1, text } });
 }
 const changeTimers = new Map<string, number>();
-export function changeDoc(file: string, text: string): void {
-  if (!versions.has(file)) return openDoc(file, text);
+/** Text may be passed lazily, so a burst of keystrokes costs one copy of the document, when it is actually sent. */
+export function changeDoc(file: string, text: string | (() => string)): void {
+  const get = typeof text === 'function' ? text : () => text;
+  if (!versions.has(file)) return openDoc(file, get());
   clearTimeout(changeTimers.get(file));
   changeTimers.set(file, window.setTimeout(() => {
+    changeTimers.delete(file);
     const v = versions.get(file)! + 1;
     versions.set(file, v);
-    api.lsp.notify('textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text }] });
+    api.lsp.notify('textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text: get() }] });
   }, 150));
 }
 /** Sends any pending change immediately (before a request that depends on the latest text). */
@@ -181,9 +184,16 @@ export async function definitionAt(file: string, pos: Pos): Promise<Loc | null> 
   return { file: uriToFile(uri), line: range.start.line, character: range.start.character };
 }
 
+const symCache = new Map<string, { v: number; syms: DocSymbol[] }>();
 export async function symbols(file: string): Promise<DocSymbol[]> {
   await ensureOpen(file);
-  try { return ((await req('textDocument/documentSymbol', { textDocument: { uri: fileToUri(file) } })) as DocSymbol[]) ?? []; } catch { return []; }
+  const v = versions.get(file) ?? -1, hit = symCache.get(file);
+  if (hit && hit.v === v && !changeTimers.has(file)) return hit.syms;
+  try {
+    const syms = ((await req('textDocument/documentSymbol', { textDocument: { uri: fileToUri(file) } })) as DocSymbol[]) ?? [];
+    if (syms.length) symCache.set(file, { v, syms });   // an empty answer may just mean clangd is still parsing
+    return syms;
+  } catch { return []; }
 }
 
 /** The innermost function, method or constructor whose body contains pos. */
@@ -240,10 +250,17 @@ export async function resolveDefinition(item: CallItem): Promise<CallItem> {
 const HEADER = /\.(h|hh|hpp|hxx|inl|ipp)$/i;
 
 /** Widens an item's range to the whole function definition (signature to closing brace) using the parser. */
+const parsedLib = new Map<string, { text: string; tree: ReturnType<typeof parseCpp> }>();
 export async function withBody(item: CallItem): Promise<CallItem> {
-  let text = '';
-  try { text = (await api.fs.read(uriToFile(item.uri))) as string; } catch { return item; }
-  const tree = parseCpp(text);
+  const file = uriToFile(item.uri);
+  let hit = parsedLib.get(file);
+  if (!hit) {
+    let text = '';
+    try { text = (await api.fs.read(file)) as string; } catch { return item; }
+    hit = { text, tree: parseCpp(text) };
+    if (!inProject(file)) { if (parsedLib.size > 30) parsedLib.clear(); parsedLib.set(file, hit); }
+  }
+  const { text, tree } = hit;
   const off = offsetOf(text, item.selectionRange.start.line, item.selectionRange.start.character);
   for (let n: any = tree.resolveInner(off, 1); n; n = n.parent) {
     if (n.name === 'FunctionDefinition') {

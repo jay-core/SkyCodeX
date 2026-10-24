@@ -38,9 +38,9 @@ export default function Header() {
         <span>{indexing() ?? (lspState() === 'ready' ? 'clangd ready' : lspState() === 'starting' ? 'clangd starting…' : lspState() === 'failed' ? 'clangd unavailable' : '')}</span>
       </div>
       <div class="wctl">
-        <button title="Minimise" onClick={() => api.win.minimize()}>—</button>
-        <button title="Maximise" onClick={() => api.win.maximize()}>□</button>
-        <button class="x" title="Close" onClick={() => api.win.close()}>×</button>
+        <button title="Minimise" onClick={() => api.win.minimize()}><svg viewBox="0 0 10 10"><path d="M0 5.5h10" /></svg></button>
+        <button title="Maximise" onClick={() => api.win.maximize()}><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" /></svg></button>
+        <button class="x" title="Close" onClick={() => api.win.close()}><svg viewBox="0 0 10 10"><path d="M.5 .5l9 9M9.5 .5l-9 9" /></svg></button>
       </div>
     </div>
   );
