@@ -17,6 +17,8 @@ const api = {
   },
   fs: {
     pickFolder: () => invoke('fs:pickFolder'),
+    pickFile: (dir: string) => invoke('fs:pickFile', dir),
+    saveDialog: (defaultPath: string) => invoke('fs:saveDialog', defaultPath),
     list: (dir: string) => invoke('fs:list', dir),
     sources: (root: string) => invoke('fs:sources', root),
     read: (file: string) => invoke('fs:read', file),
@@ -56,6 +58,7 @@ const api = {
     close: () => invoke('win:close'),
     onMaximized: (cb: (m: boolean) => void) => on('win:maximized', cb),
   },
+  menu: { onCommand: (cb: (id: string) => void) => on('menu:command', cb) },
   smoke: {
     capture: (name: string) => invoke('smoke:capture', name),
     done: (report: unknown) => invoke('smoke:done', report),

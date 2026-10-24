@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { api } from '../lib/api';
 import { root, settings, terminalOpen, setTerminalOpen, setSettingsOpen } from '../lib/store';
 import { GEAR } from './Header';
+import { setMenuOpen, menuOpen } from './AppMenu';
 
 interface Session { id: number; name: string; term: XTerm; fit: FitAddon; el: HTMLDivElement }
 let nextId = 1;
@@ -64,6 +65,12 @@ export default function TerminalPane() {
 
   onMount(() => { ro.observe(host); add(); });
   onCleanup(() => { ro.disconnect(); offData(); offExit(); for (const s of sessions()) { api.pty.kill(s.id); s.term.dispose(); } });
+  // every terminal moves to the folder that is open in the editor
+  const cdCommand = (shell: string, dir: string) =>
+    /powershell|pwsh/i.test(shell) ? `Set-Location -LiteralPath '${dir.replace(/'/g, "''")}'\r`
+      : /^cmd/i.test(shell) ? `cd /d "${dir}"\r`
+      : ` cd '${dir.replace(/'/g, `'\\''`)}'\r`;
+  createEffect(on(root, (r) => { if (r) for (const s of sessions()) api.pty.write(s.id, cdCommand(s.name, r)); }, { defer: true }));
   createEffect(on(terminalOpen, (o) => { if (o) queueMicrotask(fitAll); }, { defer: true }));
   createEffect(on(() => settings()['terminal.font_size'], (fs) => { for (const s of sessions()) s.term.options.fontSize = fs; fitAll(); }, { defer: true }));
 
@@ -73,7 +80,8 @@ export default function TerminalPane() {
         <For each={sessions()}>{(s) => <button classList={{ on: active() === s.id }} onClick={() => show(s.id)}>{s.name}</button>}</For>
         <button onClick={add} title="New terminal">+</button>
         <span class="grow" />
-        <button onClick={() => setTerminalOpen(!terminalOpen())} title="Show or hide the terminal (⌃`)">{terminalOpen() ? 'hide terminal' : 'terminal'}</button>
+        <button class="barbtn" classList={{ on: terminalOpen() }} onClick={() => setTerminalOpen(!terminalOpen())} title="Show or hide the terminal (⌃`)">{terminalOpen() ? 'hide terminal' : 'terminal'}</button>
+        <button class="barbtn" classList={{ on: menuOpen() }} title="Options" onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenuOpen(!menuOpen())}>options</button>
         <button class="gear" style={{ 'margin-top': '0' }} title="Settings (⌘/Ctrl ,)" onClick={() => setSettingsOpen(true)}>{GEAR}</button>
       </div>
       <div class="xt" ref={host} style={{ display: terminalOpen() ? 'block' : 'none' }} />

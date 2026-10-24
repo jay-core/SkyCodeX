@@ -32,7 +32,7 @@ describe('flow core', () => {
     expect(loopsAt(tree, SRC, at('return a'), 'f')).toEqual([]);
   });
   it('lists function definitions with the line of their name', () => {
-    expect(functionDefs(tree, SRC).map((d) => [d.name, d.line])).toEqual([['Server::start', 0], ['helper', 10], ['Server::~Server', 11]]);
+    expect(functionDefs(tree, SRC).map((d) => [d.name, d.line, d.endLine])).toEqual([['Server::start', 0, 9], ['helper', 10, 10], ['Server::~Server', 11, 11]]);
   });
   it('offsets and lines agree', () => {
     expect(lineOf(SRC, offsetOf(SRC, 4, 4))).toBe(4);

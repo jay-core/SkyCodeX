@@ -1,18 +1,20 @@
 import { For, Index, Show, createEffect, on, onMount, onCleanup, createSignal } from 'solid-js';
-import { levels, win, focusCard, shiftRight, shiftHome, canShift, busy, mainFn, Level } from '../lib/preview';
+import { levels, setLevels, win, setWin, setMainFn, focusCard, shiftRight, shiftHome, canShift, busy, mainFn, Level } from '../lib/preview';
 import Card, { cardViews } from './Card';
-import { PAL, Link, linkSvg } from '../lib/lines';
-import { getMainView, settings, cursorPos } from '../lib/store';
+import { PAL, Link, linkSvg, curveSvg } from '../lib/lines';
+import { getMainView, settings, cursorPos, root } from '../lib/store';
 import { posToOffset } from '../lib/cm';
 import { lspState, lspMessage, indexing } from '../lib/lsp';
 
 const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)', IN = 'cubic-bezier(0.55, 0, 1, 0.45)';
+const IDX = 196;   // the call index between the code and the cards
 
 export default function Preview(props: { overlay: () => SVGSVGElement | undefined; bodyEl: () => HTMLElement | undefined; codeEl: () => HTMLElement | undefined; registerRedraw: (f: () => void) => void }) {
   let area!: HTMLDivElement;
   const cols: HTMLDivElement[] = [];
+  const ix: HTMLDivElement[] = [];
   const [colW, setColW] = createSignal(360);
-  const ro = new ResizeObserver(() => { setColW(Math.max(220, area.clientWidth / 2)); redraw(); });
+  const ro = new ResizeObserver(() => { setColW(Math.max(200, (area.clientWidth - IDX) / 2)); redraw(); });
   onMount(() => { ro.observe(area); props.registerRedraw(redraw); });
   onCleanup(() => ro.disconnect());
 
@@ -27,6 +29,8 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     if (!svg || !body) return;
     const br = body.getBoundingClientRect();
     const links: Link[] = [];
+    let curves = '';
+    const stack = new Map<string, number>();
     const ls = levels(), w = win();
     const ar = area.getBoundingClientRect();
     const colRect = (i: number) => cols[i]?.getBoundingClientRect();
@@ -35,49 +39,80 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       if (!lv) continue;
       const cr = colRect(li);
       if (!cr || cr.left >= ar.right - 2 || cr.right <= ar.left + 2) continue;
-      // where the calls are: the main editor for level 1, the focused card of the previous column otherwise
-      let srcView: any = null, srcLead = 0, lineBase = 0;
-      if (li === 0) {
-        const v = getMainView(); const code = props.codeEl();
-        if (!v || !code) continue;
-        srcView = v; srcLead = code.getBoundingClientRect().right - br.left; lineBase = 0;
-      } else {
-        const prev = ls[li - 1];
-        if (c === 0 || prev.focus < 0) continue;
-        srcView = cardViews.get(`${li - 1}:${prev.focus}`);
-        const pr = colRect(li - 1);
-        if (!srcView || !pr) continue;
-        srcLead = pr.right - br.left - 14; lineBase = prev.cards[prev.focus].startLine;
+      if (c === 0) {
+        // left column: call site → its name in the index → the card's colour dot
+        const v = li === 0 ? getMainView() : null, code = props.codeEl();
+        const scroller = v?.scrollDOM.getBoundingClientRect();
+        lv.cards.forEach((card, k) => {
+          const entry = ix[k];
+          if (!entry) return;
+          const nm = entry.querySelector('.nm')!.getBoundingClientRect(), dot = entry.querySelector('.dot')!.getBoundingClientRect();
+          const ey = (nm.top + nm.bottom) / 2 - br.top;
+          const head = cols[li]?.querySelector(`[data-card="${li}:${k}"] .card-h`) as HTMLElement | null;
+          const hr = head?.getBoundingClientRect();
+          const off: 0 | -1 | 1 = !hr ? 1 : hr.bottom < cr.top + 4 ? -1 : hr.top > cr.bottom - 44 ? 1 : 0;
+          entry.querySelector('.ixa')!.textContent = off < 0 ? '↑' : off > 0 ? '↓' : '';
+          entry.classList.toggle('off', off !== 0);
+          if (!off && head) {
+            const sw = head.querySelector('.sw')!.getBoundingClientRect();
+            curves += curveSvg(dot.right - br.left + 22, ey, sw.left - br.left - 1, (sw.top + sw.bottom) / 2 - br.top, PAL[k % PAL.length]);
+          }
+          if (!v || !code || !scroller) return;
+          for (const r of card.fromRanges) {
+            const doc = v.state.doc;
+            if (r.end.line >= doc.lines) continue;
+            const p = v.coordsAtPos(posToOffset(doc, r.end.line, r.end.character));
+            if (!p || p.top < scroller.top || p.bottom > scroller.bottom) continue;
+            const endP = v.coordsAtPos(doc.line(r.end.line + 1).to);
+            links.push({
+              from: { x: p.right - br.left, y: (p.top + p.bottom) / 2 - br.top }, textEnd: (endP?.right ?? p.right) - br.left,
+              lead: code.getBoundingClientRect().right - br.left - 6, to: { x: nm.left - br.left - 12, y: ey },
+              color: PAL[k % PAL.length], edge: 0, name: card.name,
+            });
+          }
+        });
+        continue;
       }
+      // right column: the focused card on the left → the cards it calls
+      const prev = ls[li - 1];
+      if (prev.focus < 0) continue;
+      const srcView: any = cardViews.get(`${li - 1}:${prev.focus}`);
+      const pr = colRect(li - 1);
+      if (!srcView || !pr) continue;
+      const srcLead = pr.right - br.left - 14, lineBase = prev.cards[prev.focus].startLine;
       const scrollerRect = srcView.scrollDOM.getBoundingClientRect();
       lv.cards.forEach((card, k) => {
         const head = cols[li]?.querySelector(`[data-card="${li}:${k}"] .card-h`) as HTMLElement | null;
         if (!head) return;
         const hr = head.getBoundingClientRect();
-        let y2 = hr.top + hr.height / 2 - br.top, edge: 0 | -1 | 1 = 0;
+        const sw = head.querySelector('.sw')!.getBoundingClientRect();
+        let y2 = (sw.top + sw.bottom) / 2 - br.top, edge: 0 | -1 | 1 = 0;
         const top = cr.top - br.top + 10, bottom = cr.bottom - br.top - 50;
-        if (y2 < top) { y2 = top; edge = -1; } else if (y2 > bottom) { y2 = bottom; edge = 1; }
+        // off-screen cards point at the column edge; several of them stack instead of overlapping
+        if (y2 < top) { edge = -1; y2 = top + 15 * (stack.get(`${li}:-1`) ?? 0); stack.set(`${li}:-1`, (stack.get(`${li}:-1`) ?? 0) + 1); }
+        else if (y2 > bottom) { edge = 1; y2 = bottom - 15 * (stack.get(`${li}:1`) ?? 0); stack.set(`${li}:1`, (stack.get(`${li}:1`) ?? 0) + 1); }
         for (const r of card.fromRanges) {
           const doc = srcView.state.doc;
           const line = r.end.line - lineBase;
           if (line < 0 || line >= doc.lines) continue;
-          const off = posToOffset(doc, line, r.end.character);
-          const p = srcView.coordsAtPos(off);
+          const p = srcView.coordsAtPos(posToOffset(doc, line, r.end.character));
           if (!p || p.top < scrollerRect.top || p.bottom > scrollerRect.bottom) continue;
           const endP = srcView.coordsAtPos(doc.line(line + 1).to);
           links.push({
             from: { x: p.right - br.left, y: (p.top + p.bottom) / 2 - br.top },
             textEnd: (endP?.right ?? p.right) - br.left, lead: srcLead,
-            to: { x: hr.left - br.left, y: y2 }, color: PAL[k % PAL.length], edge, name: card.name,
+            to: { x: (edge ? hr.left : sw.left - 1) - br.left, y: y2 }, color: PAL[k % PAL.length], edge, name: card.name, onDot: !edge,
           });
         }
       });
     }
     svg.setAttribute('width', String(br.width)); svg.setAttribute('height', String(br.height));
-    svg.innerHTML = linkSvg(links);
+    svg.innerHTML = linkSvg(links) + curves;
   }
 
   createEffect(on([levels, win, colW], () => queueMicrotask(redraw)));
+  // a new folder starts with empty previews
+  createEffect(on(root, () => { setLevels([]); setMainFn(null); setWin(0); }, { defer: true }));
 
   // ---- shift with the Windows Phone motion: turnstile out, slide over, slide in ----
   let animating = false;
@@ -147,6 +182,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       }
     });
     cols[0]?.querySelectorAll('.card.lit').forEach((e) => { if (e.getAttribute('data-card') !== `0:${hit}`) e.classList.remove('lit'); });
+    ix.forEach((e, k) => e?.classList.toggle('lit', k === hit));
     if (hit < 0) return;
     const el = cols[0]?.querySelector(`[data-card="0:${hit}"]`) as HTMLElement | null;
     if (!el || el.classList.contains('lit')) return;
@@ -155,12 +191,19 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     if (top < col.scrollTop || top + el.offsetHeight > col.scrollTop + col.clientHeight - 40) col.scrollTo({ top, behavior: reduce() ? 'auto' : 'smooth' });
   }
 
+  function reveal(k: number) {
+    const col = cols[win()], el = col?.querySelector(`[data-card="${win()}:${k}"]`) as HTMLElement | null;
+    if (!el) return;
+    col.scrollTo({ top: el.offsetTop - 8, behavior: reduce() ? 'auto' : 'smooth' });
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 900);
+  }
   const title = (lv: Level | undefined, i: number) => (lv ? (i === 0 ? lv.caller.name : lv.caller.name) : '');
   const levelCount = () => levels().length;
 
   return (
     <div class="pane prev" style={{ flex: 1 }} ref={area}>
       <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 2, padding: 0 }}>
+        <span style={{ width: `${IDX}px`, 'padding-left': '14px', 'font-size': '13px', color: '#4f564f', flex: 'none' }}>{levels()[win()] ? `calls · ${levels()[win()].cards.length}` : ''}</span>
         <For each={[0, 1]}>{(c) => (
           <span style={{ width: `${colW()}px`, 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>
             {title(levels()[win() + c], win() + c) || (c === 0 ? 'preview' : '')}
@@ -169,7 +212,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       </div>
       <Index each={levels()}>{(lv, li) => (
         <div class="pcol" ref={(el) => (cols[li] = el)} onScroll={redraw}
-          style={{ left: '0px', width: `${colW()}px`, transform: `translateX(${(li - win()) * colW()}px)`, visibility: Math.abs(li - win() - 0.5) < 2 ? 'visible' : 'hidden' }}>
+          style={{ left: `${IDX}px`, width: `${colW()}px`, transform: `translateX(${(li - win()) * colW()}px)`, visibility: Math.abs(li - win() - 0.5) < 2 ? 'visible' : 'hidden' }}>
           <div class="pcol-in">
             <For each={lv().cards}>{(card, k) => (
               <Card card={card} id={`${li}:${k()}`} color={PAL[k() % PAL.length]} focus={lv().focus === k()} onFocus={() => focusCard(li, k())} />
@@ -181,7 +224,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
         </div>
       )}</Index>
       <Show when={levelCount() === 1 || (levelCount() > 0 && !levels()[win() + 1])}>
-        <div class="empty" style={{ position: 'absolute', left: `${colW()}px`, right: 0, top: '36px', bottom: '40px' }}>click into a card<br />to go one level deeper</div>
+        <div class="empty" style={{ position: 'absolute', left: `${IDX + colW()}px`, right: 0, top: '36px', bottom: '40px' }}>click into a card<br />to go one level deeper</div>
       </Show>
       <Show when={!levelCount()}>
         <div class="empty" style={{ position: 'absolute', inset: '36px 0 40px 0' }}>
@@ -189,6 +232,17 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
           <Show when={indexing()}><div class="sub" style={{ 'margin-top': '10px' }}>{indexing()}</div></Show>
         </div>
       </Show>
+      <div class="cindex" style={{ width: `${IDX}px` }}>
+        <For each={levels()[win()]?.cards ?? []}>{(card, k) => (
+          <div class="ix" ref={(el) => (ix[k()] = el)} onClick={() => reveal(k())} title={`${card.name} — click to show its card`}>
+            <span class="n">{k() + 1}</span>
+            <span class="nm">{card.name}</span>
+            <i class="dot" style={{ background: PAL[k() % PAL.length] }} />
+            <span class="ixa" style={{ color: PAL[k() % PAL.length] }} />
+          </div>
+        )}</For>
+        <Show when={levels()[win()]?.cards.length}><div class="ixhint">click a name to show its card</div></Show>
+      </div>
       <div class="shiftbar">
         <button disabled={win() === 0} onClick={() => doShift(0)}>‹ source</button>
         <span style={{ 'font-size': '12.5px', color: '#3a3f3a' }}>{levelCount() ? `levels ${win() + 1}–${win() + 2}` : ''}</span>

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { parseBinary, totals } from '../src/main/binary';
-import { analyze, stripCode, scanHeap } from '../src/main/memory';
+import { analyze, stripCode, scanHeap, findBinaries } from '../src/main/memory';
 import { LspClient, findClangd } from '../src/main/lsp';
 
 const SAMPLE = path.resolve(__dirname, '../samples/tinyhttp');
@@ -51,6 +51,34 @@ describe('binary parsing', () => {
     fs.writeFileSync(path.join(d, 'a.cpp'), '// malloc(3)\nint* p = new int[4];\nvoid* q = malloc(8);\nauto s = std::make_shared<int>(1);\nconst char* t = "free(x)";\n');
     expect(scanHeap(d).map((h) => `${h.line}:${h.call}`)).toEqual(['2:new', '3:malloc', '4:make_shared']);
   });
+});
+
+describe('program search', () => {
+  it('finds linked programs anywhere in the folder, newest first, and skips objects', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'litho-bins-'));
+    fs.mkdirSync(path.join(d, 'tools/deep'), { recursive: true });
+    fs.copyFileSync(path.join(SAMPLE, 'build/tinyhttp'), path.join(d, 'loop'));
+    fs.copyFileSync(path.join(SAMPLE, 'build/tinyhttp'), path.join(d, 'tools/deep/prog.exe'));
+    fs.chmodSync(path.join(d, 'loop'), 0o755);
+    fs.writeFileSync(path.join(d, 'notes.txt'), 'x'.repeat(100));
+    fs.copyFileSync(path.join(SAMPLE, 'build/src_main.cpp.o'), path.join(d, 'loop.o'));
+    const found = findBinaries(d).map((p) => path.relative(d, p)).sort();
+    expect(found).toEqual(['loop', 'tools/deep/prog.exe']);
+  });
+});
+
+describe('clangd restart', () => {
+  it.skipIf(!findClangd('auto', '/x'))('a second start right after the first works (old process exit must not fail the new one)', async () => {
+    const lsp = new LspClient(() => {}, () => {});
+    const clangd = findClangd('auto', '/x')!;
+    const first = lsp.start(clangd, SAMPLE, []).catch(() => 'first-rejected');
+    const second = await lsp.start(clangd, os.tmpdir(), []);
+    expect((second as any).capabilities).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(lsp.running).toBe(true);
+    await first;
+    lsp.stop();
+  }, 30000);
 });
 
 describe('clangd', () => {

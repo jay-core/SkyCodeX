@@ -1,5 +1,5 @@
 // Lithograph main process: window, portable data, settings, files, clangd, terminals, memory analysis.
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveDataDir, ensureLayout } from './datadir';
@@ -90,6 +90,14 @@ ipcMain.handle('fs:pickFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
 });
+ipcMain.handle('fs:pickFile', async (_e, dir: string) => {
+  const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], defaultPath: dir || undefined });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
+  const r = await dialog.showSaveDialog(win!, { defaultPath: defaultPath || undefined });
+  return r.canceled ? null : r.filePath;
+});
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
 ipcMain.handle('fs:read', (_e, file: string) => fs.readFileSync(file, 'utf8'));
@@ -174,5 +182,25 @@ ipcMain.handle('smoke:done', (_e, report: unknown) => {
 
 process.on('uncaughtException', (e) => log(`uncaught: ${e.stack ?? e}`));
 
-app.whenReady().then(createWindow);
+// ---------- menu: the macOS menu bar; on Windows and Linux the same items live in the app's own … menu ----------
+function buildMenu() {
+  const cmd = (id: string, label: string, accel?: string): MenuItemConstructorOptions =>
+    // shortcuts are handled inside the window, so the menu only shows them (registerAccelerator: false)
+    ({ label, accelerator: accel, registerAccelerator: false, click: () => send('menu:command', id) });
+  const template: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ label: 'Lithograph', submenu: [{ role: 'about' }, { type: 'separator' }, cmd('settings', 'Settings…', 'Cmd+,'), { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
+    { label: 'File', submenu: [
+      cmd('newFile', 'New File', 'CmdOrCtrl+N'), cmd('openFile', 'Open File…', 'CmdOrCtrl+Shift+O'), cmd('openFolder', 'Open Folder…', 'CmdOrCtrl+O'),
+      { type: 'separator' }, cmd('save', 'Save', 'CmdOrCtrl+S'), cmd('saveAs', 'Save As…', 'CmdOrCtrl+Shift+S'), cmd('saveAll', 'Save All', 'CmdOrCtrl+Alt+S'),
+      { type: 'separator' }, cmd('closeFile', 'Close File', 'CmdOrCtrl+W'),
+    ] },
+    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F')] },
+    { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P')] },
+    { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('showMemory', 'Memory'), cmd('toggleTerminal', 'Terminal', 'Ctrl+`')] },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+app.whenReady().then(() => { buildMenu(); createWindow(); });
 app.on('window-all-closed', () => { lsp.stop(); for (const p of ptys.values()) p.kill(); app.quit(); });

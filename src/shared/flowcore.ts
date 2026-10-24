@@ -55,7 +55,7 @@ export function loopsAt(tree: Tree, text: string, offset: number, fileKey: strin
   return out;
 }
 
-export interface FnDef { name: string; line: number; from: number; to: number }
+export interface FnDef { name: string; line: number; endLine: number; from: number; to: number }
 
 /** Function definitions in a file, with the line of their name (0-based). */
 export function functionDefs(tree: Tree, text: string): FnDef[] {
@@ -67,7 +67,7 @@ export function functionDefs(tree: Tree, text: string): FnDef[] {
       if (!decl) return false;
       const nameNode = decl.firstChild;
       const name = nameNode ? text.slice(nameNode.from, nameNode.to).replace(/\s+/g, '') : '?';
-      out.push({ name, line: lineOf(text, nameNode?.from ?? decl.from), from: n.from, to: n.to });
+      out.push({ name, line: lineOf(text, nameNode?.from ?? decl.from), endLine: lineOf(text, n.to), from: n.from, to: n.to });
       return false;
     },
   });

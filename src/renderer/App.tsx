@@ -12,7 +12,8 @@ import { files, page, setPage, settingsOpen, setSettingsOpen, terminalOpen, setT
 import { invalidateText } from './lib/preview';
 import { runSmoke } from './smoke';
 import Palette from './components/Palette';
-import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences } from './lib/actions';
+import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences, newFile, openFileDialog, saveAs, closeActive } from './lib/actions';
+import AppMenu from './components/AppMenu';
 
 function Split(props: { onDrag: (dx: number) => void; vertical?: boolean }) {
   let el!: HTMLDivElement;
@@ -28,8 +29,8 @@ function Split(props: { onDrag: (dx: number) => void; vertical?: boolean }) {
 }
 
 export default function App() {
-  const [codeW, setCodeW] = createSignal(Math.round(window.innerWidth * 0.36));
-  const [filesW, setFilesW] = createSignal(200);
+  const [codeW, setCodeW] = createSignal(Math.round(window.innerWidth * 0.31));
+  const [filesW, setFilesW] = createSignal(180);
   const [termH, setTermH] = createSignal(190);
   let body!: HTMLDivElement, overlay!: SVGSVGElement, code!: HTMLDivElement;
   let redraw = () => {};
@@ -53,6 +54,10 @@ export default function App() {
     else if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen(true); }
     else if (mod && e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAll(); }
     else if (mod && e.key.toLowerCase() === 'o' && !e.shiftKey) { e.preventDefault(); api.fs.pickFolder().then((p) => p && openFolder(p as string)); }
+    else if (mod && e.key.toLowerCase() === 'o' && e.shiftKey) { e.preventDefault(); openFileDialog(); }
+    else if (mod && e.key.toLowerCase() === 'n' && !e.shiftKey) { e.preventDefault(); newFile(); }
+    else if (mod && e.key.toLowerCase() === 's' && e.shiftKey && !e.altKey) { e.preventDefault(); saveAs(); }
+    else if (mod && e.key.toLowerCase() === 'w' && !e.shiftKey) { e.preventDefault(); closeActive(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); commandPalette(); }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); quickOpen(); }
     else if (mod && e.key.toLowerCase() === 't') { e.preventDefault(); goToSymbol(); }
@@ -86,6 +91,7 @@ export default function App() {
       <div style={{ height: terminalOpen() ? `${termH()}px` : '30px', flex: 'none' }}><TerminalPane /></div>
       <Show when={settingsOpen()}><Settings /></Show>
       <Show when={palette()}><Palette /></Show>
+      <AppMenu />
       <Show when={toast()}><div style={{ position: 'fixed', right: '18px', bottom: '18px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>

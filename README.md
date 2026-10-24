@@ -12,10 +12,10 @@ Working now:
 - Portable `data/` folder, `settings.toml` with live reload and a settings page (gear at the bottom right, or ⌘/Ctrl ,)
 - C/C++ editing with clangd: errors, completion, hover, ⌘/Ctrl-click to definition, rename (F2), fixes and refactorings (⌘/Ctrl .), references (⇧F12)
 - Quick open (⌘/Ctrl P), symbol search (⌘/Ctrl T), command palette (⌘/Ctrl ⇧ P), save (⌘/Ctrl S), save all (⌘/Ctrl ⌥ S), atomic saves, unsaved edits survive crashes
-- Preview panes: calls of the function under the cursor, two levels, *shift preview* (⌥/Alt →, ⌥/Alt ←), connector lines, edge arrows, cursor-follow highlight
-- Flow view: box-and-arrow overview from `main`, execution-order numbers, loops, threads, unreached files, hover and click to preview
-- Memory view: RAM and storage from the built program (ELF, Mach-O, PE), budgets, largest first, stack usage from `-fstack-usage`, heap call sites
-- Integrated terminal
+- Preview panes: calls of the function under the cursor, two levels, *shift preview* (⌥/Alt →, ⌥/Alt ←), a call index column (call → name → card), off-screen markers, cursor-follow highlight, standard-library cards with *show source*
+- Flow view: box-and-arrow overview from every `main`, execution-order numbers per entry point, loops, threads, unreached files (also hoverable and selectable), hover and click to preview
+- Memory view: finds built programs anywhere in the folder (or browse), RAM and storage (ELF, Mach-O, PE), budgets, largest first, stack usage from `-fstack-usage`, heap call sites
+- Integrated terminal that follows the opened folder; *options* menu (new / open file / open folder / save as / close …) and the macOS menu bar; closable tabs
 
 Not built yet: build view, debugger, git, atlas / book / board, compliance packs, packaging into a download.
 

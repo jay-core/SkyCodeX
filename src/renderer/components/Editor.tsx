@@ -33,6 +33,9 @@ const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
 
+/** Toolchain and SDK locations: files there are shown read-only. */
+export const SYSTEM_PATH = /^(\/usr\/|\/Library\/Developer\/|\/Applications\/Xcode|\/opt\/homebrew\/|[A-Za-z]:[\\/]Program Files)|[\\/](c\+\+|include)[\\/]v\d[\\/]/;
+
 export function wordAt(view: EditorView, pos: number): [number, number] | null {
   const w = view.state.wordAt(pos);
   return w ? [w.from, w.to] : null;
@@ -63,6 +66,8 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
         editorExtensions({ tabSize: s['editor.tab_size'] ?? 4, wrap: !!s['editor.word_wrap'] }),
         completionFor(() => file), hoverFor(() => file), lintSupport, marksField,
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
+        // standard-library and SDK headers open read-only
+        SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : [],
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onDocChanged(file, u.state);
           else states.set(file, u.state);

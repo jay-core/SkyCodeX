@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createEffect, on, onMount } from 'solid-js';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { buildFlow, FlowGraph, FlowBox, shortName } from '../lib/flow';
+import { buildFlow, FlowGraph, FlowBox, shortName, fileToUri } from '../lib/flow';
 import { root, settings } from '../lib/store';
 import { indexEpoch, lspState } from '../lib/lsp';
 import { api } from '../lib/api';
@@ -35,7 +35,7 @@ export default function Flow() {
     const g = await buildFlow(root(), (n) => setStatus(`tracing calls from main… ${n} functions`));
     setGraph(g);
     await layout(g);
-    setStatus(g.note || `${g.fns.length} functions · ${g.boxes.filter((b) => !b.dead).length} files${g.truncated ? ' · stopped at 400 functions' : ''}`);
+    setStatus(g.note || `${g.entries.length > 1 ? `${g.entries.length} entry points · ` : ''}${g.fns.length} functions · ${g.boxes.filter((b) => !b.dead).length} files${g.truncated ? ' · stopped at 400 functions' : ''}`);
     // clangd may still be loading its index: rebuild until every call resolves to a definition (30 s at most)
     if (g.unresolved && Date.now() - firstBuild < 30000) setTimeout(rebuild, 2000);
   }
@@ -46,7 +46,7 @@ export default function Flow() {
     const res = await elk.layout({
       id: 'root',
       layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.layered.spacing.nodeNodeBetweenLayers': '120', 'elk.spacing.nodeNode': '56', 'elk.edgeRouting': 'SPLINES', 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES' },
-      children: live.map((b) => ({ id: b.file, width: BW, height: BH + (b.loops.length ? 20 : 0) })),
+      children: live.map((b) => ({ id: b.file, width: BW, height: BH + (b.loops.length ? 44 : 0) })),   // room for a two-line loop note under the box
       edges: g.edges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),
     } as any);
     const pos = new Map((res.children ?? []).map((c: any) => [c.id, c]));
@@ -81,10 +81,15 @@ export default function Flow() {
   // ---- select a box: its functions open in the preview pane, in execution order ----
   createEffect(on(sel, async (file) => {
     const g = graph();
-    if (!file || !g) { setSelCards([]); return; }
+    const box = g?.boxes.find((b) => b.file === file);
+    if (!file || !g || !box) { setSelCards([]); return; }
     const text = ((await api.fs.read(file).catch(() => '')) as string).split('\n');
-    const list = g.fns.filter((f) => f.file === file).sort((a, b) => (a.num.startsWith('t') ? 1e6 : 0) + parseInt(a.num.replace('t', '')) - ((b.num.startsWith('t') ? 1e6 : 0) + parseInt(b.num.replace('t', ''))));
-    setSelCards(list.map((f) => ({ key: f.key, item: f.item, file, name: f.item.name, startLine: f.item.range.start.line, text: text.slice(f.item.range.start.line, f.item.range.end.line + 1).join('\n'), fromRanges: [], std: false })));
+    const rows = box.dead ? box.fns : box.fns.filter((f) => f.num);
+    setSelCards(rows.map((f) => {
+      const pos = { line: f.line, character: 0 };
+      const item = { name: f.name, kind: 12, uri: fileToUri(file), range: { start: pos, end: { line: f.endLine, character: 0 } }, selectionRange: { start: pos, end: pos } };
+      return { key: `${file}#${f.line}`, item, file, name: f.name, startLine: f.line, text: text.slice(f.line, f.endLine + 1).join('\n'), fromRanges: [], std: false, num: f.num } as CardData & { num: string };
+    }));
   }));
 
   // ---- pan and zoom ----
@@ -127,13 +132,13 @@ export default function Flow() {
             <For each={placed()}>{(p, i) => (
               <div class="fbox" classList={{ dead: p.box.dead, on: sel() === p.box.file }}
                 style={{ left: `${p.x}px`, top: `${p.y}px`, width: `${BW}px`, height: `${BH}px`, animation: reduce() ? 'none' : `fadeUp .45s cubic-bezier(.16,1,.3,1) ${i() * 60}ms backwards` }}
-                onMouseEnter={() => !p.box.dead && setHover(p.box.file)} onMouseLeave={() => setHover(null)}
-                onClick={() => !p.box.dead && setSel(sel() === p.box.file ? null : p.box.file)}>
-                <Show when={p.box.entry}><span class="start">start ▸</span></Show>
+                onMouseEnter={() => setHover(p.box.file)} onMouseLeave={() => setHover(null)}
+                onClick={() => setSel(sel() === p.box.file ? null : p.box.file)}>
+                <Show when={p.box.entries.length}><span class="start">{p.box.entries.length > 1 ? `start ▸ ${p.box.entries.length}` : 'start ▸'}</span></Show>
                 <Show when={p.box.thread}><span class="tag">thread</span></Show>
                 <div class="t">{shortName(root(), p.box.file)}</div>
                 <div class="s">{p.box.fns.length} functions · {p.box.dead ? 'none run' : `${run(p.box)} run`}</div>
-                <Show when={p.box.loops.length && hover() !== p.box.file}><div class="loop">{p.box.loops[0]}{p.box.loops.length > 1 ? ` · +${p.box.loops.length - 1}` : ''}</div></Show>
+                <Show when={p.box.loops.length && hover() !== p.box.file}><div class="loop" title={p.box.loops.join('\n')}>{p.box.loops[0]}{p.box.loops.length > 1 ? ` · +${p.box.loops.length - 1}` : ''}</div></Show>
                 <Show when={hover() === p.box.file}>
                   <div class="hpop" style={{ left: '-1px', top: `${BH + 6}px` }}>
                     <For each={p.box.fns}>{(f) => <div><span class="n">{f.num}</span><span classList={{ no: !f.num }}>{f.name}</span></div>}</For>
@@ -150,12 +155,12 @@ export default function Flow() {
         <Show when={sel()} fallback={<div class="empty">click a box to see what’s inside</div>}>
           <div style={{ padding: '14px 20px 0' }}>
             <div style={{ font: '300 28px var(--ui)', color: 'var(--bright)' }}>{shortName(root(), sel()!)}</div>
-            <div class="sub" style={{ margin: '2px 0 12px' }}>{selCards().length} of {placed().find((p) => p.box.file === sel())?.box.fns.length ?? 0} functions run in this flow · in execution order</div>
+            <div class="sub" style={{ margin: '2px 0 12px' }}>{placed().find((p) => p.box.file === sel())?.box.dead ? `not reached from any entry point · ${selCards().length} functions, in file order` : `${selCards().length} of ${placed().find((p) => p.box.file === sel())?.box.fns.length ?? 0} functions run in this flow · in execution order`}</div>
           </div>
           <div class="pcol" style={{ position: 'relative', top: 0, flex: 1 }}>
             <div class="pcol-in">
-              <For each={selCards()}>{(c, k) => <Card card={c} id={`flow:${k()}`} color={PAL[k() % PAL.length]} focus={false} num={graph()?.fns.find((f) => f.key === c.key)?.num} onFocus={() => {}} />}</For>
-              <For each={placed().find((p) => p.box.file === sel())?.box.fns.filter((f) => !f.num) ?? []}>{(f) => <div class="pnote">{f.name} — not run in this flow</div>}</For>
+              <For each={selCards()}>{(c, k) => <Card card={c} id={`flow:${k()}`} color={PAL[k() % PAL.length]} focus={false} num={(c as any).num || undefined} onFocus={() => {}} />}</For>
+              <For each={placed().find((p) => p.box.file === sel() && !p.box.dead)?.box.fns.filter((f) => !f.num) ?? []}>{(f) => <div class="pnote">{f.name} — not run in this flow</div>}</For>
             </div>
           </div>
         </Show>

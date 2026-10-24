@@ -22,9 +22,12 @@ export default function Header() {
         </Show>
         <For each={files.list}>{(f) => (
           <>
-            <button classList={{ on: page() === 'editor' && files.active === f.path, dirty: f.dirty }} title={f.path}
-              onClick={() => { setPage('editor'); setFiles('active', f.path); }}
-              onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{basename(f.path)}</button>
+            <span class="tab">
+              <button classList={{ on: page() === 'editor' && files.active === f.path, dirty: f.dirty }} title={f.path}
+                onClick={() => { setPage('editor'); setFiles('active', f.path); }}
+                onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{basename(f.path)}</button>
+              <button class="tabx" title="Close (⌘/Ctrl W)" onClick={() => closeFile(f.path)}>×</button>
+            </span>
             <Show when={page() === 'editor' && files.active === f.path && crumb()}><span class="crumb">{crumb()}</span></Show>
           </>
         )}</For>

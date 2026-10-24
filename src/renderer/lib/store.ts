@@ -112,6 +112,16 @@ export async function save(path = files.active) {
 }
 export async function saveAll() { for (const f of files.list) if (f.dirty) await save(f.path); }
 
+/** Closes without asking (used after Save As, where the text now lives in the new file). */
+export function forgetFile(path: string) {
+  const i = files.list.findIndex((x) => x.path === path);
+  setFiles('list', (l) => l.filter((x) => x.path !== path));
+  states.delete(path); saved.delete(path);
+  api.buffers.drop(path);
+  if (files.active === path) setFiles('active', files.list[Math.min(i, files.list.length - 1)]?.path ?? '');
+  persistSession();
+}
+
 export function closeFile(path: string) {
   const f = files.list.find((x) => x.path === path);
   if (f?.dirty && !confirm(`${basename(path)} has unsaved changes. Close it anyway? The changes stay recoverable in data/state until you edit it again.`)) return;

@@ -55,12 +55,14 @@ export class LspClient {
     p.stdout!.on('data', (d: Buffer) => this.onData(d));
     p.stderr!.on('data', (d: Buffer) => this.onLog(d.toString()));
     p.on('exit', (code) => {
+      if (this.proc !== p) return;
       this.onLog(`clangd exited (${code})`);
-      for (const q of this.pending.values()) q.reject(new Error('clangd exited'));
+      for (const q of this.pending.values()) q.reject(new Error(`clangd exited (${code})`));
       this.pending.clear();
-      if (this.proc === p) this.proc = null;
+      this.proc = null;
       this.onNotify('$/exit', { code });
     });
+    p.on('error', (e) => { this.onLog(`clangd failed to start: ${e.message}`); });
     const rootUri = pathToFileURL(root).href;
     this.ready = this.request('initialize', {
       processId: process.pid,
@@ -91,10 +93,18 @@ export class LspClient {
   }
 
   stop(): void {
-    if (!this.proc) return;
+    const p = this.proc;
+    if (!p) return;
     try { this.notify('exit', null); } catch { /* already gone */ }
-    this.proc.kill();
+    // Detach the old process first: its late exit must not fail requests sent to the next one.
+    p.removeAllListeners('exit');
+    p.stdout?.removeAllListeners('data');
+    p.stderr?.removeAllListeners('data');
+    p.kill();
     this.proc = null;
+    for (const q of this.pending.values()) q.reject(new Error('clangd restarted'));
+    this.pending.clear();
+    this.buf = Buffer.alloc(0);
   }
 
   get running(): boolean { return !!this.proc; }

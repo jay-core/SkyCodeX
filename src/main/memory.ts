@@ -23,29 +23,30 @@ export interface MemoryReport {
 
 const MAGIC = [0x7f454c46, 0xcffaedfe, 0xcefaedfe, 0xcafebabe];
 
-/** Linked programs under the usual build folders, newest first. */
-export function findBinaries(root: string): string[] {
+/** Linked programs anywhere under root (ELF, Mach-O, PE), newest first. Object files and libraries are left out. */
+export function findBinaries(root: string, maxDirs = 3000): string[] {
   const out: { p: string; t: number }[] = [];
+  let dirs = 0;
+  const skip = new Set(['.git', 'node_modules', '.cache', 'CMakeFiles', '.idea', '.vscode', '__pycache__']);
   const walk = (d: string, depth: number) => {
-    if (depth > 5) return;
+    if (depth > 8 || ++dirs > maxDirs) return;
     let entries: fs.Dirent[] = [];
     try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       const p = path.join(d, e.name);
-      if (e.isDirectory()) { if (!e.name.startsWith('.') && e.name !== 'CMakeFiles' && e.name !== 'node_modules') walk(p, depth + 1); continue; }
-      if (!e.isFile() || /\.(o|obj|a|lib|so|dylib|dll)$/i.test(e.name)) continue;
+      if (e.isDirectory()) { if (!skip.has(e.name) && !e.name.startsWith('.')) walk(p, depth + 1); continue; }
+      if (!e.isFile() || /\.(o|obj|a|lib|so|dylib|dll|d|su|json|txt|c|cc|cpp|h|hpp|md)$/i.test(e.name)) continue;
       try {
         const st = fs.statSync(p);
         if (st.size < 64) continue;
-        const exe = process.platform === 'win32' ? /\.exe$/i.test(e.name) : (st.mode & 0o111) !== 0 || /\.elf$/i.test(e.name);
-        if (!exe) continue;
+        const named = /\.(elf|axf|out|exe)$/i.test(e.name);
+        if (!named && !(st.mode & 0o111)) continue;
         const fd = fs.openSync(p, 'r'); const head = Buffer.alloc(4); fs.readSync(fd, head, 0, 4, 0); fs.closeSync(fd);
         if (MAGIC.includes(head.readUInt32BE(0)) || head.toString('latin1', 0, 2) === 'MZ') out.push({ p, t: st.mtimeMs });
       } catch { /* unreadable entries are skipped */ }
     }
   };
-  for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : [])
-    if (e.isDirectory() && /^(build|out|bin|cmake-build-|debug|release)/i.test(e.name)) walk(path.join(root, e.name), 0);
+  walk(root, 0);
   return out.sort((a, b) => b.t - a.t).map((x) => x.p);
 }
 

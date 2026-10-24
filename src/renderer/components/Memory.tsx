@@ -48,7 +48,9 @@ function Region(props: { name: string; used: number; budgetKb: number; parts: [s
 }
 
 export default function Memory() {
-  const [bins] = createResource(() => root(), async (r) => (r ? ((await api.memory.binaries(r)) as string[]) : []));
+  const [scan, setScan] = createSignal(0);
+  const [bins] = createResource(() => [root(), scan()] as const, async ([r]) => (r ? ((await api.memory.binaries(r)) as string[]) : []));
+  const browse = async () => { const f = (await api.fs.pickFile(root())) as string | null; if (f) { setBin(f); setReport(null); } };
   const [bin, setBin] = createSignal('');
   const [which, setWhich] = createSignal<'ram' | 'storage'>('ram');
   const [err, setErr] = createSignal('');
@@ -73,16 +75,19 @@ export default function Memory() {
       <div class="ph" style={{ padding: '0 30px', gap: '18px' }}>
         <span>program</span>
         <select style={{ background: 'transparent', border: 0, color: 'var(--bright)', 'max-width': '520px', font: '300 14px var(--ui)' }} value={chosen()} onChange={(e) => setBin(e.currentTarget.value)}>
+          <Show when={bin() && !(bins() ?? []).includes(bin())}><option value={bin()}>{relPath(root(), bin())}</option></Show>
           <For each={bins() ?? []}>{(b) => <option value={b}>{relPath(root(), b)}</option>}</For>
         </select>
         <button class="chip on" onClick={run} disabled={!chosen()}>analyse</button>
+        <button class="chip" onClick={browse}>browse…</button>
+        <button class="chip" onClick={() => setScan(scan() + 1)}>rescan</button>
         <span class="grow" />
         <Show when={report()}><span class="sub">{report()!.format} · {report()!.arch}{report()!.note ? ` · ${report()!.note}` : ''}</span></Show>
       </div>
       <div class="mem">
-        <Show when={!bins()?.length && root()}><div class="empty">No built program found under build/ or out/.<br />Build your project in the terminal, then come back.</div></Show>
+        <Show when={!bins()?.length && !bin() && root()}><div class="empty">No built program found in this folder yet.<br />Build in the terminal and press rescan, or choose any file with browse….</div></Show>
         <Show when={err()}><div class="alert">{err()}</div></Show>
-        <Show when={bins()?.length && !report()}><div class="empty">Choose a program and press <b style={{ color: 'var(--bright)', 'font-weight': 400 }}>analyse</b>.<br />Budgets are set in settings → memory.</div></Show>
+        <Show when={(bins()?.length || bin()) && !report()}><div class="empty">Choose a program and press <b style={{ color: 'var(--bright)', 'font-weight': 400 }}>analyse</b>.<br />Budgets are set in settings → memory.</div></Show>
         <Show when={report()}>{(r) => (
           <>
             <Show when={overMsg()}><div class="alert">{overMsg()}</div></Show>

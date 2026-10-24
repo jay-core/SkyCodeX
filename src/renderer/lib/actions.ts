@@ -2,7 +2,9 @@
 import { createSignal } from 'solid-js';
 import { api, fileToUri, uriToFile, relPath, Range } from './api';
 import { lspState, diagnosticsFor, ensureOpen } from './lsp';
-import { files, states, openFile, onDocChanged, getMainView, root, flash, save, saveAll, setPage, setSettingsOpen, setTerminalOpen, terminalOpen, openFolder } from './store';
+import { files, states, openFile, onDocChanged, getMainView, root, flash, save, saveAll, setPage, setSettingsOpen, setTerminalOpen, terminalOpen, openFolder, closeFile, forgetFile } from './store';
+import { undo, redo, selectAll } from '@codemirror/commands';
+import { openSearchPanel } from '@codemirror/search';
 import { posToOffset, offsetToPos } from './cm';
 
 export interface PaletteItem { label: string; detail?: string; run: () => void }
@@ -119,9 +121,68 @@ export async function goToSymbol() {
 export let symbolQuery: ((q: string) => Promise<PaletteItem[]>) | null = null;
 export const clearSymbolQuery = () => { symbolQuery = null; };
 
+// ---------- file commands ----------
+export function newFile() {
+  if (!root()) { saveAsNew(); return; }
+  setPalette({
+    placeholder: 'new file — path inside the folder',
+    prompt: {
+      value: 'untitled.cpp',
+      accept: async (rel) => {
+        rel = rel.trim();
+        if (!rel) return;
+        const path = `${root()}/${rel.replace(/^[\\/]+/, '')}`;
+        if (await api.fs.exists(path)) { flash(`${rel} already exists — opening it`); return openFile(path); }
+        try { await api.fs.write(path, ''); } catch (e) { flash(`couldn't create ${rel}: ${e}`); return; }
+        await openFile(path);
+      },
+    },
+  });
+}
+async function saveAsNew() {
+  const p = (await api.fs.saveDialog('untitled.cpp')) as string | null;
+  if (!p) return;
+  await api.fs.write(p, '');
+  await openFile(p);
+}
+export async function openFileDialog() {
+  const p = (await api.fs.pickFile(root())) as string | null;
+  if (p) await openFile(p);
+}
+export async function openFolderDialog() {
+  const p = (await api.fs.pickFolder()) as string | null;
+  if (p) await openFolder(p);
+}
+export async function saveAs() {
+  const old = files.active;
+  const st = states.get(old);
+  if (!st) return;
+  const p = (await api.fs.saveDialog(old)) as string | null;
+  if (!p || p === old) { if (p === old) await save(old); return; }
+  try { await api.fs.write(p, st.doc.toString()); } catch (e) { flash(`couldn't save: ${e}`); return; }
+  await openFile(p);
+  forgetFile(old);   // the edits now live in the new file; the old file on disk is unchanged
+}
+export const closeActive = () => { if (files.active) closeFile(files.active); };
+const withView = (f: (v: any) => boolean) => () => { const v = getMainView(); if (v && files.active) { v.focus(); f(v); } };
+
+/** Every command reachable from the menus, by id. */
+export const COMMANDS: Record<string, () => void> = {
+  newFile, openFile: openFileDialog, openFolder: openFolderDialog, save: () => save(), saveAs, saveAll, closeFile: closeActive,
+  undo: withView(undo), redo: withView(redo), selectAll: withView(selectAll), find: withView(openSearchPanel),
+  quickOpen, goToSymbol: () => goToSymbol(), commandPalette: () => commandPalette(),
+  showEditor: () => setPage('editor'), showFlow: () => setPage('flow'), showMemory: () => setPage('memory'),
+  toggleTerminal: () => setTerminalOpen(!terminalOpen()), settings: () => setSettingsOpen(true),
+};
+api.menu.onCommand((id) => COMMANDS[id]?.());
+
 export function commandPalette() {
   const cmds: [string, string, () => void][] = [
-    ['Open folder…', '⌘/Ctrl O', () => api.fs.pickFolder().then((p) => p && openFolder(p as string))],
+    ['New file', '⌘/Ctrl N', newFile],
+    ['Open file…', '⌘/Ctrl ⇧ O', openFileDialog],
+    ['Open folder…', '⌘/Ctrl O', openFolderDialog],
+    ['Save as…', '⌘/Ctrl ⇧ S', saveAs],
+    ['Close file', '⌘/Ctrl W', closeActive],
     ['Quick open file', '⌘/Ctrl P', quickOpen],
     ['Go to symbol in project', '⌘/Ctrl T', goToSymbol],
     ['Save', '⌘/Ctrl S', () => save()],
