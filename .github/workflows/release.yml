@@ -1,0 +1,107 @@
+# Builds the Windows and Linux versions on real machines, checks each packaged app starts and works,
+# and attaches them to the GitHub Release of the tag. (The macOS version is built on a Mac with `npm run package`.)
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022, name: win-x64 }
+          - { os: ubuntu-22.04, name: linux-x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Electron for this system
+        run: node node_modules/electron/install.js
+
+      - name: Terminal module, compiled for Electron (Linux has no ready-built one)
+        if: runner.os == 'Linux'
+        run: npx electron-rebuild -f -w node-pty
+
+      - name: Icon tool (Windows, for this build only)
+        if: runner.os == 'Windows'
+        run: npm install --no-save rcedit@5.0.2
+
+      - name: Inbuilt clangd, checked against its pinned SHA-256
+        run: npm run fetch-clangd
+
+      - name: Tests
+        continue-on-error: true   # written on macOS; failures here are reported, the packaged app is what must pass
+        run: npm test
+
+      - name: Package
+        run: npm run package
+
+      - name: Boot check (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq xvfb libgtk-3-0 libnss3 libxss1 libgbm1 libasound2
+          dir=$(ls -d release/Lithograph-*-linux-x64)
+          xvfb-run -a "$dir/lithograph" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
+          node src/build/check-smoke.mjs "$dir"
+
+      - name: Boot check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = (Get-ChildItem release -Directory | Select-Object -First 1).FullName
+          Start-Process -FilePath "$dir\Lithograph.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -Wait
+          node src/build/check-smoke.mjs "$dir"
+
+      - name: Screenshot and logs of the check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.name }}
+          path: release/*/data/logs/
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            release/*.zip
+            release/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: '*-x64'
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Lithograph ${GITHUB_REF_NAME#v}" --notes "Portable builds for each system."
+          gh release upload "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --clobber

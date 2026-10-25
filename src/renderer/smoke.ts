@@ -50,6 +50,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'extras') return extrasDemo(report);
   if (info()?.scenario === 'defs') return defsDemo(report);
   if (info()?.scenario === 'anyheader') return anyHeaderDemo(report);
+  if (info()?.scenario === 'boot') return bootCheck(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -709,6 +710,37 @@ async function anyHeaderDemo(report: Record<string, unknown>) {
     out.tccLanguage = langOf(`${dir}/impl.tcc`);
     Object.assign(report, out);
   } catch (e) { errors.push(`anyheader: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario boot`: the quick check run on each system's packaged app: engine, previews, flow, terminal. */
+async function bootCheck(report: Record<string, unknown>) {
+  try {
+    const ci = (await api.compiler.info()) as any;
+    report.platform = info()?.platform;
+    report.clangd = { active: ci.active, version: ci.activeVersion, inbuilt: !!ci.inbuilt && ci.active === ci.inbuilt.path };
+    report.lsp = (await until(() => lspState() === 'ready', 60000)) ? 'ready' : lspState();
+    const src = (await api.fs.sources(root()) as string[]).find((f) => /server\.cpp$/.test(f));
+    if (src) {
+      await openFile(src);
+      const v = getMainView()!, lines = v.state.doc.toString().split('\n');
+      const at = lines.findIndex((l) => /Response Server::handle/.test(l));
+      v.dispatch({ selection: { anchor: v.state.doc.line(at + 3).from + 4 } });
+      await until(() => document.querySelectorAll('.pcol .card').length > 0, 60000);
+      report.previewCards = document.querySelectorAll('.pcol .card').length;
+      report.definition = !!(await definitionAt(src, { line: at, character: lines[at].indexOf('handle') + 1 }));
+    }
+    // the terminal: a shell started and printed something
+    await until(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim().length > 0, 20000);
+    report.terminal = (document.querySelector('.xterm-rows')?.textContent ?? '').trim().length > 0;
+    setPage('flow');
+    await until(() => document.querySelectorAll('.fbox').length > 0, 60000);
+    report.flowBoxes = document.querySelectorAll('.fbox').length;
+    setPage('editor');
+    await sleep(500);
+    await api.smoke.capture('boot');
+  } catch (e) { errors.push(`boot: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }
