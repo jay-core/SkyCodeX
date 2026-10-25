@@ -1,11 +1,12 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
-import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings } from './lib/store';
+import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, page, cursorPos } from './lib/store';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
 import { lspState } from './lib/lsp';
 import { quickOpen, palette, setPalette, applyWorkspaceEdit, COMMANDS } from './lib/actions';
 import { setMenuOpen } from './components/AppMenu';
+import { cardViews } from './components/Card';
 import { files, states } from './lib/store';
 import { offsetToPos } from './lib/cm';
 
@@ -14,6 +15,16 @@ window.addEventListener('error', (e) => errors.push(String(e.message)));
 window.addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Frame times while an animation runs: a dropped frame is one over 25 ms. */
+async function frames(run: () => unknown, ms: number) {
+  const d: number[] = [];
+  let last = performance.now(), on = true;
+  const tick = (t: number) => { d.push(t - last); last = t; if (on) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  await run(); await sleep(ms); on = false;
+  const f = d.slice(1);
+  return { frames: f.length, worstMs: +Math.max(...f).toFixed(1), dropped: f.filter((x) => x > 25).length, avgMs: +(f.reduce((a, b) => a + b, 0) / f.length).toFixed(1) };
+}
 async function until(cond: () => boolean, ms: number, tick?: () => void) {
   const end = Date.now() + ms;
   while (!cond() && Date.now() < end) { tick?.(); await sleep(250); }
@@ -43,8 +54,16 @@ export async function runSmoke() {
     v.dispatch({ selection: { anchor: callAt } });
     await sleep(900);
     report.litCard = document.querySelector('.card.lit .nm')?.textContent ?? null;
-    report.indexEntries = [...document.querySelectorAll('.cindex .ix .nm')].map((e) => e.textContent);
-    report.indexLit = document.querySelector('.cindex .ix.lit .nm')?.textContent ?? null;
+    const ixs = [...document.querySelectorAll('.cindex .ix')] as HTMLElement[];
+    report.indexSquares = ixs.length;
+    report.indexLit = levels()[0]?.cards[ixs.findIndex((e) => e.classList.contains('lit'))]?.name ?? null;
+    report.dimmedCards = document.querySelectorAll('.pcol.haslit .card:not(.lit)').length;
+    report.hotLinks = [...document.querySelectorAll('svg.links path')].filter((p) => p.getAttribute('stroke-width') === '2').length;
+    ixs[1]?.dispatchEvent(new MouseEvent('mouseenter'));
+    await sleep(250);
+    report.indexTip = document.querySelector('.ixtip')?.textContent ?? null;
+    await api.smoke.capture('1c-index-tip');
+    ixs[1]?.dispatchEvent(new MouseEvent('mouseleave'));
     report.connectors = document.querySelectorAll('svg.links path').length;
     await api.smoke.capture('1b-cursor-on-call');
 
@@ -55,13 +74,51 @@ export async function runSmoke() {
       await sleep(700);
       report.level2 = levels()[1]?.cards.map((c) => c.name);
       await api.smoke.capture('2-level-two');
+      // a cursor on a call inside the pane-1 card lights its card in pane 2; scrolling keeps both highlights
+      const cv = cardViews.get(`0:${idx}`)!;
+      const callIn = cv.state.doc.toString().indexOf('split(') + 2;
+      cv.dispatch({ selection: { anchor: callIn } });
+      await sleep(600);
+      report.pane2Lit = document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null;
+      const c1 = document.querySelectorAll('.pcol')[1] as HTMLElement;
+      c1.scrollTop += 200; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop += 150;
+      await sleep(400);
+      report.litAfterScroll = { pane1: document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null, pane2: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null, index: levels()[0]?.cards[[...document.querySelectorAll('.cindex .ix')].findIndex((e) => e.classList.contains('lit'))]?.name ?? null };
+      await api.smoke.capture('2b-pane2-lit');
+      c1.scrollTop = 0; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop = 0;
     }
-    (document.querySelector('.shiftbar button:last-child') as HTMLButtonElement)?.click();
-    await sleep(1300);
+    report.motion = {} as Record<string, unknown>;
+    (report.motion as any).shift = await frames(() => (document.querySelector('.shiftbar button:last-child') as HTMLButtonElement)?.click(), 1300);
     report.afterShift = levels().length;
     await api.smoke.capture('3-shifted');
-    (document.querySelector('.shiftbar button:first-child') as HTMLButtonElement)?.click();
-    await sleep(1100);
+    (report.motion as any).shiftBack = await frames(() => (document.querySelector('.shiftbar button:first-child') as HTMLButtonElement)?.click(), 1100);
+    // clicking a square glides its card into view; a lit card scrolled away stays connected
+    const pc0 = document.querySelector('.pcol') as HTMLElement;
+    pc0.scrollTop = pc0.scrollHeight;
+    await sleep(300);
+    const sq0 = document.querySelector('.cindex .ix') as HTMLElement;
+    (report.motion as any).squareScroll = await frames(() => sq0.click(), 900);
+    const sqh = pc0.querySelector('[data-card="0:0"] .card-h')!.getBoundingClientRect(), pcr = pc0.getBoundingClientRect();
+    report.squareClickReveals = sqh.top >= pcr.top - 1 && sqh.bottom <= pcr.bottom;
+    // the clicked square's card stays lit until a click elsewhere
+    await sleep(400);
+    const pinnedLit = () => ({ card: document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null, square: [...document.querySelectorAll('.cindex .ix')].findIndex((e) => e.classList.contains('lit')) });
+    const held = pinnedLit();
+    pc0.scrollTop += 120; await sleep(300);
+    const afterScroll = pinnedLit();
+    document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(300);
+    report.squarePin = { held, afterScroll, afterClickElsewhere: pinnedLit(), cursorCard: levels()[0]?.cards.findIndex((c) => c.name === 'record') };
+    v.dispatch({ selection: { anchor: callAt } });   // "record" lit again
+    await sleep(500);
+    pc0.scrollTop = 0; await sleep(50); pc0.scrollTop = pc0.scrollHeight; await sleep(50);
+    const litEl = pc0.querySelector('.card.lit') as HTMLElement;
+    pc0.scrollTop = litEl.offsetTop > pc0.clientHeight ? 0 : pc0.scrollHeight;
+    await sleep(400);
+    const stub = [...document.querySelectorAll('svg.links text')].map((t) => t.textContent);
+    report.offLitConnected = { litOff: document.querySelector('.cindex .ix.lit.off') !== null, hotPaths: [...document.querySelectorAll('svg.links path')].filter((p) => p.getAttribute('stroke-width') === '2').length, stub: stub.find((t) => t === 'record') ?? null };
+    await api.smoke.capture('3c-lit-offscreen');
+    pc0.scrollTop = 0;
 
     // quick open and rename (the rename is never saved)
     await quickOpen(); await sleep(400);
@@ -72,8 +129,7 @@ export async function runSmoke() {
     const edit = await api.lsp.request('textDocument/rename', { textDocument: { uri: 'file://' + encodeURI(file) }, position: offsetToPos(v.state.doc, kaAt), newName: 'wants_keep_alive' }) as any;
     report.renameFiles = await applyWorkspaceEdit(edit);
     report.renameApplied = [...states.entries()].filter(([, st]) => st.doc.toString().includes('wants_keep_alive')).map(([f]) => f.split('/').pop());
-    setSettingsOpen(true);
-    await sleep(1200);
+    (report.motion as any).settingsOpen = await frames(() => setSettingsOpen(true), 1200);
     await api.smoke.capture('4-settings');
     // settings: installed fonts, typed numbers, live slider value
     const fonts = await installedFonts();
@@ -108,7 +164,7 @@ export async function runSmoke() {
     await until(() => document.querySelectorAll('.set .weights button').length > 0, 3000);
     const wBtns = [...document.querySelectorAll('.set .ctl')].find((c) => c.querySelector('.lab')?.textContent?.startsWith('code weight'))!.querySelectorAll('.weights button');
     report.codeWeights = [...wBtns].map((x) => x.textContent);
-    ([...wBtns].find((x) => x.textContent === 'light') as HTMLButtonElement).click();
+    ([...wBtns].find((x) => x.firstChild?.textContent === 'light') as HTMLButtonElement).click();
     await sleep(400);
     report.editorWeight = getComputedStyle(document.querySelector('.cm-scroller')!).fontWeight;
     await api.smoke.capture('4g-settings-weight');
@@ -174,6 +230,20 @@ export async function runSmoke() {
     await until(() => !!document.querySelector('.mrow'), 10000);
     await sleep(500);
     report.memoryRows = document.querySelectorAll('.mrow').length;
+    report.memoryNames = [...document.querySelectorAll('.mrow.go .n')].slice(0, 6).map((e) => e.textContent);
+    // hover a symbol: its definition shows; click: it opens there
+    const mrow = [...document.querySelectorAll('.mrow.go')].find((e) => /Server|Metrics|main|Router|config/i.test(e.textContent ?? '')) as HTMLElement | undefined;
+    mrow?.dispatchEvent(new MouseEvent('mouseenter'));
+    await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 6000);
+    report.memoryTip = document.querySelector('.memtip')?.textContent ?? null;
+    { const t = document.querySelector('.memtip') as HTMLElement | null; const r = t?.getBoundingClientRect(); report.memoryTipBox = r ? [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height), getComputedStyle(t!).opacity] : null; }
+    await api.smoke.capture('8b-memory-tip');
+    mrow?.click();
+    await until(() => page() === 'editor', 4000);
+    await sleep(300);
+    report.memoryOpened = page() === 'editor' ? `${files.active.split('/').pop()}:${cursorPos().line}` : null;
+    await openFile(file);   // back to the file the rest of the run works in
+    setPage('memory'); await sleep(300);
     await api.smoke.capture('8-memory');
     setPage('editor');
     await sleep(400);
@@ -189,7 +259,7 @@ export async function runSmoke() {
     report.stdSourceShown = (stdCard?.querySelectorAll('.cm-line').length ?? 0) > 1;
     // the preview splits: drag the handle between the two card columns, pan a card sideways
     const col0 = document.querySelector('.pcol') as HTMLElement, w0 = col0.offsetWidth;
-    const handle = document.querySelectorAll('.psplit')[1] as HTMLElement, hx = handle.getBoundingClientRect().left + 3;
+    const handle = document.querySelector('.psplit') as HTMLElement, hx = handle.getBoundingClientRect().left + 3;
     handle.dispatchEvent(new MouseEvent('mousedown', { clientX: hx, bubbles: true }));
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: hx + 120 }));
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: hx + 120 }));

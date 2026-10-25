@@ -134,19 +134,21 @@ export async function focusCard(levelIdx: number, cardIdx: number) {
 /** True when shifting right would land on a pair of levels that has content. */
 export const canShift = () => levels().length > win() + 2 || (levels()[win() + 1]?.cards.some((c) => !c.std) ?? false);
 
-export async function shiftRight(): Promise<boolean> {
+/** Builds the level a right shift would bring in, without moving; false when there is none. */
+export async function prepareShiftRight(): Promise<boolean> {
   const w = win();
-  let ls = levels();
+  const ls = levels();
   if (!ls[w + 1]) return false;
-  if (!ls[w + 2]) {
-    const right = ls[w + 1];
-    let idx = right.focus >= 0 ? right.focus : right.cards.findIndex((c) => !c.std);
-    if (idx < 0) return false;
-    await focusCard(w + 1, idx);
-    ls = levels();
-    if (!ls[w + 2]) return false;
-  }
-  setWin(w + 1);
+  if (ls[w + 2]) return true;
+  const right = ls[w + 1];
+  const idx = right.focus >= 0 ? right.focus : right.cards.findIndex((c) => !c.std);
+  if (idx < 0) return false;
+  await focusCard(w + 1, idx);
+  return !!levels()[w + 2];
+}
+export async function shiftRight(): Promise<boolean> {
+  if (!(await prepareShiftRight())) return false;
+  setWin(win() + 1);
   return true;
 }
 export function shiftHome() { setWin(0); }

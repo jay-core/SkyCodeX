@@ -1,5 +1,6 @@
 import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { COMMANDS } from '../lib/actions';
+import { afterPaint } from '../lib/motion';
 
 export const [menuOpen, setMenuOpen] = createSignal(false);
 
@@ -38,7 +39,10 @@ export default function AppMenu() {
 function MenuPanel(props: { close: () => void }) {
   let el!: HTMLDivElement;
   // animate once the panel is attached; an animation started on a detached node never runs
-  onMount(() => requestAnimationFrame(() => el.animate([{ transform: 'translateY(12px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(0.16,1,0.3,1)' })));
+  onMount(() => {
+    const a = el.animate([{ transform: 'translate3d(0,12px,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' });
+    a.pause(); afterPaint().then(() => a.play());
+  });
   return (
     <div class="appmenu" ref={el} onMouseDown={(e) => e.stopPropagation()}>
       <For each={ITEMS}>{(it) => it ? <button onClick={() => { props.close(); COMMANDS[it[1]]?.(); }}>{it[0]}<span>{it[2]}</span></button> : <hr />}</For>

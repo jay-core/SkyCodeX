@@ -15,6 +15,7 @@ import Palette from './components/Palette';
 import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences, newFile, openFileDialog, saveAs, closeActive } from './lib/actions';
 import AppMenu from './components/AppMenu';
 import AppBar from './components/AppBar';
+import { preloadFonts } from './lib/motion';
 
 function Split(props: { onDrag: (dx: number) => void; vertical?: boolean }) {
   let el!: HTMLDivElement;
@@ -40,6 +41,7 @@ export default function App() {
   createEffect(on(previewOn, (on) => { if (!on && overlay) overlay.innerHTML = ''; }, { defer: true }));
 
   onMount(async () => {
+    preloadFonts();
     const i = await api.info();
     setInfo(i as any);
     const s = (await api.settings.get()) as any;

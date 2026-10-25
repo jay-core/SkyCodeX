@@ -3,6 +3,7 @@ import { SETTINGS, SettingDef } from '../../shared/settings-schema';
 import { api } from '../lib/api';
 import { settings, problems, setSettingsOpen, openFile, info, flash, applySettings } from '../lib/store';
 import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
+import { afterPaint } from '../lib/motion';
 
 const PAGES: { name: string; sections: string[] }[] = [
   { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion'] },
@@ -144,7 +145,7 @@ function WeightCtl(props: { d: SettingDef; family: () => string }) {
       <div class="choices weights">
         <For each={list()}>{(w) => (
           <button classList={{ on: cur() === w, synth: !!ws()?.length && !ws()!.includes(w) }} style={{ 'font-family': `"${props.family().replace(/"/g, '')}", var(--mono)`, 'font-weight': w }}
-            title={`${w}`} onClick={() => set(props.d.key, w)}>{WEIGHT_NAMES[w] ?? w}</button>
+            onClick={() => set(props.d.key, w)}>{WEIGHT_NAMES[w] ?? w}<span class="w">{w}</span></button>
         )}</For>
       </div>
       <div class="doc">{ws.loading ? 'reading the font…' : ws()?.length ? `${props.family()} has ${ws()!.length} weight${ws()!.length > 1 ? 's' : ''} · ${props.d.doc}` : `${props.d.doc} · this font's weights couldn't be read, the nearest is drawn`}</div>
@@ -164,7 +165,7 @@ function Control(props: { d: SettingDef }) {
   if (d.type === 'boolean') return (
     <div class="ctl" style={{ display: 'flex', 'align-items': 'center' }}>
       <div><Lab /><Show when={d.doc !== 'true | false'}><div class="doc">{d.doc}</div></Show></div>
-      <button class="tog" onClick={() => set(d.key, !v())}><b style={{ width: v() ? '44px' : '0' }} /><i style={{ left: v() ? '38px' : '-2px' }} /></button>
+      <button class="tog" classList={{ on: !!v() }} onClick={() => set(d.key, !v())}><b /><i /></button>
     </div>
   );
   if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{x}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{d.doc}</div></Show></>);
@@ -209,9 +210,12 @@ export default function Settings() {
   onMount(() => {
     window.addEventListener('keydown', onKey);
     if (settings()['motion.reduce']) return;
-    [...el.querySelectorAll('.si')].forEach((k, i) => (k as HTMLElement).animate(
-      [{ transform: 'perspective(1400px) rotateY(70deg) translateX(60px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
-      { duration: 600, delay: 80 + i * 60, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' }));
+    // held at the first frame until the page has been laid out, then played: the entrance never starts with a stall
+    const anims = [...el.querySelectorAll('.si')].map((k, i) => (k as HTMLElement).animate(
+      [{ transform: 'perspective(1400px) rotateY(70deg) translate3d(60px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 620, delay: 40 + i * 60, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' }));
+    anims.forEach((a) => a.pause());
+    afterPaint().then(() => anims.forEach((a) => a.play()));
   });
   onCleanup(() => window.removeEventListener('keydown', onKey));
   const defs = () => SETTINGS.filter((d) => PAGES[pg()].sections.includes(sectionOf(d.key)));

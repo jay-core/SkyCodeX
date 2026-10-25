@@ -103,3 +103,20 @@ describe('files', () => {
     expect(listSources(d).map((p) => path.relative(d, p)).sort()).toEqual(['src/a.cpp', 'src/a.h']);
   });
 });
+
+import { symbolQuery } from '../src/shared/symname';
+describe('memory symbols → source names', () => {
+  it('drops parameters, templates and qualifiers, keeps the scope', () => {
+    expect(symbolQuery('HexMatrixProcessor::mapMemoryBoundaries()')).toEqual({ leaf: 'mapMemoryBoundaries', scope: 'HexMatrixProcessor' });
+    expect(symbolQuery('ns::Box<int, std::vector<char>>::get(unsigned long) const')).toEqual({ leaf: 'get', scope: 'ns::Box' });
+    expect(symbolQuery('int add<int>(int, int)')).toEqual({ leaf: 'add', scope: '' });
+    expect(symbolQuery('vtable for Server')).toEqual({ leaf: 'Server', scope: '' });
+    expect(symbolQuery('(anonymous namespace)::counter')).toEqual({ leaf: 'counter', scope: '' });
+    expect(symbolQuery('Fn::operator()(int)')).toEqual({ leaf: 'operator()', scope: 'Fn' });
+  });
+  it('leaves compiler-made symbols alone', () => {
+    expect(symbolQuery('_GLOBAL__sub_I_main.cpp')).toBeNull();
+    expect(symbolQuery('.str.1')).toBeNull();
+    expect(symbolQuery('ltmp0')).toBeNull();
+  });
+});

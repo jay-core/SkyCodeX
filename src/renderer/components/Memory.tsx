@@ -1,6 +1,7 @@
 import { For, Show, createSignal, createResource, createMemo } from 'solid-js';
 import { api, relPath } from '../lib/api';
-import { root, settings, openFile } from '../lib/store';
+import { root, settings, openFile, flash } from '../lib/store';
+import { locateSymbol, SymbolLoc } from '../lib/memloc';
 
 interface Report {
   binary: string; format: string; arch: string; note?: string; storage: number; ram: number;
@@ -44,6 +45,39 @@ function Region(props: { name: string; used: number; budgetKb: number; parts: [s
         <For each={props.parts}>{([n, v, c]) => <span><i style={{ display: 'inline-block', width: '8px', height: '8px', background: c, 'margin-right': '6px' }} />{n} {kb(v)}</span>}</For>
       </div>
     </div>
+  );
+}
+
+type Tip = { x: number; y: number; title: string; loc: SymbolLoc | null | 'looking' | 'none' };
+const [tip, setTip] = createSignal<Tip | null>(null);
+const at = (e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; };
+
+/** Hovering a symbol looks up its definition; clicking opens it. */
+function hoverSymbol(e: MouseEvent, name: string, kind: string) {
+  const p = at(e);
+  setTip({ ...p, title: name, loc: 'looking' });
+  locateSymbol(name, kind).then((loc) => setTip((t) => (t && t.title === name ? { ...t, loc: loc ?? 'none' } : t)));
+}
+async function openSymbol(name: string, kind: string) {
+  const loc = await locateSymbol(name, kind);
+  if (!loc) { flash(`${name} isn't in the indexed source — it is made by the compiler or comes from a library`, 5000); return; }
+  setTip(null);
+  openFile(loc.file, { line: loc.line, character: loc.character });
+}
+/** Stack rows already carry "file:line" relative to the folder. */
+const splitLoc = (s: string) => { const m = s.match(/^(.*):(\d+)$/); return m ? { file: m[1], line: Number(m[2]) } : { file: s, line: 1 }; };
+const absPath = (rel: string) => (/^([\\/]|[A-Za-z]:)/.test(rel) ? rel : `${root()}/${rel}`);
+
+function MemTip() {
+  return (
+    <Show when={tip()}>{(t) => (
+      <div class="memtip" style={{ left: `${t().x}px`, top: `${t().y}px` }}>
+        <div class="nm">{t().title}</div>
+        <div class="loc">{t().loc === 'looking' ? 'finding it in the source…'
+          : t().loc === 'none' ? 'not in the indexed source — compiler-made or from a library'
+          : (() => { const l = t().loc as SymbolLoc; return `${l.inProject ? relPath(root(), l.file) : l.file.split('/').slice(-2).join('/')}:${l.line + 1}${l.inProject ? '' : ' · library, read-only'} · click to open`; })()}</div>
+      </div>
+    )}</Show>
   );
 }
 
@@ -101,14 +135,20 @@ export default function Memory() {
                   <span style={{ 'margin-left': 'auto' }} class="sub">largest first{r().symbolSizesExact ? '' : ' · sizes derived from symbol addresses'}</span>
                 </div>
                 <For each={rows().slice(0, 40)}>{(s) => (
-                  <div class="mrow"><span class="n" title={s.name}>{s.name}</span><span><div class="b" style={{ width: `${(s.size / maxRow()) * 100}%` }} /></span><span class="s">{kb(s.size)}</span></div>
+                  <div class="mrow go" onMouseEnter={(e) => hoverSymbol(e, s.name, s.kind)} onMouseLeave={() => setTip(null)} onClick={() => openSymbol(s.name, s.kind)}>
+                    <span class="n">{s.name}</span><span><div class="b" style={{ width: `${(s.size / maxRow()) * 100}%` }} /></span><span class="s">{kb(s.size)}</span>
+                  </div>
                 )}</For>
               </div>
               <div>
                 <div class="label">stack · per function</div>
                 <Show when={r().stack.length} fallback={<div class="sub">{r().stackNote}</div>}>
                   <For each={r().stack.slice(0, 12)}>{(s) => (
-                    <div class="mrow" style={{ 'grid-template-columns': '1fr 70px' }}><span class="n" title={`${s.fn} · ${s.file}`}>{s.fn}</span><span class="s">{s.bytes} B</span></div>
+                    <div class="mrow go" style={{ 'grid-template-columns': '1fr 70px' }}
+                      onMouseEnter={(e) => { const l = splitLoc(s.file); setTip({ ...at(e), title: s.fn, loc: { file: absPath(l.file), line: l.line - 1, character: 0, inProject: true } }); }} onMouseLeave={() => setTip(null)}
+                      onClick={() => { const l = splitLoc(s.file); setTip(null); openFile(absPath(l.file), { line: l.line - 1, character: 0 }); }}>
+                      <span class="n">{s.fn}</span><span class="s">{s.bytes} B</span>
+                    </div>
                   )}</For>
                 </Show>
                 <div class="label" style={{ 'margin-top': '22px' }}>heap · allocation sites ({r().heap.length})</div>
@@ -116,7 +156,7 @@ export default function Memory() {
                 <For each={r().heap.slice(0, 30)}>{(h) => (
                   <div style={{ font: '12.5px var(--mono)', 'line-height': '1.8' }}>
                     <span style={{ color: 'var(--err)', display: 'inline-block', width: '110px' }}>{h.call}</span>
-                    <span class="mlink" onClick={() => openFile(`${root()}/${h.file}`, { line: h.line - 1, character: 0 })}>{h.file}:{h.line}</span>
+                    <span class="mlink" onClick={() => { setTip(null); openFile(`${root()}/${h.file}`, { line: h.line - 1, character: 0 }); }}>{h.file}:{h.line}</span>
                   </div>
                 )}</For>
               </div>
@@ -124,6 +164,7 @@ export default function Memory() {
           </>
         )}</Show>
       </div>
+      <MemTip />
     </div>
   );
 }
