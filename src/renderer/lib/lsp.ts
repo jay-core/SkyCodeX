@@ -6,7 +6,7 @@ import { setDiagnostics, Diagnostic as CmDiagnostic, linter } from '@codemirror/
 import { api, fileToUri, uriToFile, CallItem, OutgoingCall, DocSymbol, Diagnostic, Pos, FN_KINDS } from './api';
 import { posToOffset, offsetToPos } from './cm';
 import { parseCpp, offsetOf, lineOf } from '../../shared/flowcore';
-import { serverLang } from './langs';
+import { serverLang, langOf } from './langs';
 import * as other from './langlsp';
 
 export const [lspState, setLspState] = createSignal<'off' | 'starting' | 'ready' | 'failed'>('off');
@@ -46,7 +46,8 @@ api.lsp.onNotify((method, params) => {
   }
 });
 
-const isCpp = (f: string) => /\.(c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|ipp|inl)$/i.test(f);
+// C and C++ files, including standard headers that have no extension (<ostream>, <ios>, <thread> …)
+const isCpp = (f: string) => langOf(f) === 'cpp';
 
 export function openDoc(file: string, text: string): void {
   if (serverLang(file)) return other.openDoc(file, text);

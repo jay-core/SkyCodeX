@@ -17,6 +17,7 @@ import { setHelpTopic } from './components/Help';
 import { startTour } from './components/Tour';
 import { setStyleOpen } from './components/StyleWindow';
 import { setRunOpen } from './components/RunWindow';
+import { definitionAt } from './lib/lsp';
 import { openReference, todoList } from './lib/extras';
 
 const errors: string[] = [];
@@ -46,6 +47,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'compiler') return compilerDemo(report);
   if (info()?.scenario === 'fonts') return fontsDemo(report);
   if (info()?.scenario === 'extras') return extrasDemo(report);
+  if (info()?.scenario === 'defs') return defsDemo(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -625,6 +627,52 @@ async function extrasDemo(report: Record<string, unknown>) {
   } catch (e) {
     errors.push(`extras demo: ${e}`);
   }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario defs`: go to definition into standard headers, by request and by ⌘-click. */
+async function defsDemo(report: Record<string, unknown>) {
+  try {
+    await until(() => lspState() === 'ready', 20000);
+    const src = (await api.fs.sources(root()) as string[]).find((f) => /server\.cpp$/.test(f))!;
+    await openFile(src);
+    await sleep(1500);
+    const doc = getMainView()!.state.doc;
+    const lines = doc.toString().split('\n');
+    const inc = lines.findIndex((l) => /#include <thread>/.test(l));
+    const use = lines.findIndex((l) => /std::thread/.test(l));
+    const r1 = await definitionAt(src, { line: inc, character: lines[inc].indexOf('thread') + 1 });
+    const r2 = await definitionAt(src, { line: use, character: lines[use].indexOf('thread') + 1 });
+    report.byRequest = { include: r1, symbol: r2 };
+    // ⌘-click on std::thread
+    const v = getMainView()!;
+    const off = doc.line(use + 1).from + lines[use].indexOf('thread') + 2;
+    v.dispatch({ selection: { anchor: off }, scrollIntoView: true });
+    await sleep(300);
+    const c = v.coordsAtPos(off)!;
+    v.contentDOM.dispatchEvent(new MouseEvent('mousedown', { clientX: c.left + 2, clientY: c.top + 4, metaKey: true, bubbles: true, button: 0 }));
+    await sleep(2500);
+    report.afterClick = { active: files.active, cursor: cursorPos(), lines: getMainView()?.state.doc.lines, firstLine: getMainView()?.state.doc.line(1).text };
+    await api.smoke.capture('d1-after-click');
+    if (r1) {
+      await openFile(r1.file, { line: r1.line, character: r1.character }); await sleep(800); report.openInclude = { active: files.active, lines: getMainView()?.state.doc.lines }; await api.smoke.capture('d2-include');
+      // from inside <ostream> (no extension): the last #include (in the active branch) and a use of a std name in code
+      const os = r1.file.replace(/thread$/, 'ostream');
+      await openFile(os);
+      await sleep(1500);
+      const hl = getMainView()!.state.doc.toString().split('\n');
+      const end = hl.findIndex((l) => l.includes('*/'));
+      const incs = hl.map((l, k) => [l, k] as const).filter(([l, k]) => k > end && /#\s*include\s*</.test(l) && !/__cxx03/.test(l));
+      const [il, hi] = incs[incs.length - 1];
+      const hs = hl.findIndex((l, k) => k > end && /\b(basic_ostream|operator<<|char_traits)\b/.test(l) && !/^\s*#|^\s*\/\//.test(l));
+      report.insideHeader = {
+        file: os,
+        include: [il.trim(), await definitionAt(os, { line: hi, character: il.indexOf('<') + 3 })],
+        symbol: hs >= 0 ? [hl[hs].trim(), await definitionAt(os, { line: hs, character: hl[hs].search(/\b(basic_ostream|operator<<|char_traits)\b/) + 2 })] : null,
+      };
+    }
+  } catch (e) { errors.push(`defs: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }
