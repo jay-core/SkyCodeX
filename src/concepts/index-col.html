@@ -192,17 +192,17 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px}
 .metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
 .big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkl.ttf');font-weight:300}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksl.ttf');font-weight:350}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawk.ttf');font-weight:400}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksb.ttf');font-weight:600}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkb.ttf');font-weight:700}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-ExtraLight.otf');font-weight:200}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Light.otf');font-weight:300}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Regular.otf');font-weight:400}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Medium.otf');font-weight:500}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Semibold.otf');font-weight:600}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Bold.otf');font-weight:700}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawkl.ttf');font-weight:300}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawksl.ttf');font-weight:350}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawk.ttf');font-weight:400}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawksb.ttf');font-weight:600}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawkb.ttf');font-weight:700}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-ExtraLight.otf');font-weight:200}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Light.otf');font-weight:300}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Regular.otf');font-weight:400}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Medium.otf');font-weight:500}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Semibold.otf');font-weight:600}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Bold.otf');font-weight:700}
 :root{--mono:'ArX F1',ui-monospace,monospace;--ui:'Selawik',-apple-system,sans-serif}
 html,body{overflow:hidden;background:#171817;color:var(--fg)}
 .card .code{font-size:11px;line-height:17.5px}
@@ -399,209 +399,89 @@ const mainCards=(focusParse)=>cards(
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
 try{
-/* ---------- preview shift: deterministic animation, driven by seek(t) ---------- */
+/* ---------- concept: thin call index between the code and the preview cards ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
-const ST=(pos='45:42',p='no problems')=>`<span>${pos}</span><span>clangd ready</span><span>${p}</span>`;
-const COLW=372, TRAIL_H=46;
-const cv=(s,map)=>Object.entries(map).reduce((a,[k,v])=>a.split(k).join(v),s);
-const L1C=[
-  card('parse_headers','http/headers.cpp:12',cv(C_PARSE,{'«c:split|':'«c:L2-split|','«c:trim|':'«c:L2-trim|'}),{id:'L1-parse_headers',focus:true,c:{start:12,params:['raw'],active:18}}),
-  card('route','router.cpp:31',C_ROUTE,{id:'L1-route',c:{start:31,params:['path','routes']}}),
-  card('send_response','net/io.cpp:58',C_SEND,{id:'L1-send_response',c:{start:58,params:['s','r']}})];
-const L2C=[card('split','util/strings.cpp:8',C_SPLIT,{id:'L2-split',c:{start:8,params:['s','delim']}}),
-  card('trim','util/strings.cpp:27',cv(C_TRIM,{'«c:is_space|':'«c:L3-is_space|'}),{id:'L2-trim',focus:true,c:{start:27,params:['s'],active:31}})];
-const L3C=[card('is_space','util/chars.hpp:5',R`constexpr bool is_space(char c) noexcept {
-    return «c:L4-ascii_class|ascii_class»(c) & kSpace;«cur|»
-}`,{id:'L3-is_space',focus:true,c:{start:5,params:['c'],active:6}}),`<div class="cnote" style="color:#3f453f;padding:4px 2px">2 std calls hidden — remove_prefix, remove_suffix</div>`];
-const L4C=[card('ascii_class','util/chars.hpp:12',R`constexpr uint8_t ascii_class(char c) noexcept {
-    auto u = static_cast<unsigned char>(c);
-    return u < 128 ? «c:L5-class_table|class_table»()[u] : 0;«cur|»
-}`,{id:'L4-ascii_class',focus:true,c:{start:12,params:['c'],active:14}})];
-const L5C=[card('class_table','util/chars.hpp:20',R`constexpr const Table& class_table() noexcept {
-    static constexpr Table t = {
-        /* 0x00 */ 0, 0, 0, 0, 0, 0, 0, 0,
-        /* 0x08 */ 0, S, S, S, S, S, 0, 0,
-        /* 0x20 */ S, P, P, P, P, P, P, P,
-        /* 0x30 */ D, D, D, D, D, D, D, D,
-    };
-    return t;
-}`,{id:'L5-class_table',c:{start:20}}),`<div class="cnote" style="color:#3f453f;padding:4px 2px">end of chain — no further calls</div>`];
-const COLS=[L1C,L2C,L3C,L4C,L5C];
-const TRAIL=['Server::handle','parse_headers','trim','is_space','ascii_class'];
-
-const html=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
-  <div class="hdr">${PV('server.cpp',['headers.cpp','strings.cpp'],'Server::handle')}<span class="right">${ST()}</span></div>
-  <div style="flex:1;display:flex;min-height:0">
-    <div class="pane" style="width:500px;flex:none" id="codep">${code(cv(MAIN.replace('«pin:2|»',''),{'«c:parse_headers|':'«c:L1-parse_headers|','«c:route|':'«c:L1-route|','«c:send_response|':'«c:L1-send_response|'}),{start:30,active:45,params:['req']})}</div>
-    <div id="pva" style="flex:1;position:relative;overflow:hidden;background:var(--prev)">
-      <div id="trail" style="position:absolute;left:0;top:0;height:${TRAIL_H}px;right:0">${TRAIL.map((t,i)=>`<span class="tr" data-i="${i}" style="position:absolute;top:10px;left:${22+i*COLW}px;font:300 21px var(--ui);white-space:nowrap">${t}</span>`).join('')}</div>
-      ${COLS.map((items,i)=>`<div class="colm" data-i="${i}" style="position:absolute;top:${TRAIL_H}px;left:12px;width:${COLW}px;bottom:46px">${items.map(x=>`<div class="it" style="margin:0 10px 10px 10px">${x}</div>`).join('')}</div>`).join('')}
-      <div id="bar" style="position:absolute;left:0;right:0;bottom:0;height:46px;display:flex;align-items:center;gap:26px;padding:0 22px;font:300 14px var(--ui);color:#4f564f;background:var(--prev)">
-        <span id="bsrc">‹ source</span><span id="blvl" style="font-size:12.5px;color:#3a3f3a">levels 1–2 of 5</span><span style="flex:1"></span><span id="bshift">shift preview ›</span></div>
-    </div>
-    <div class="pane files" style="width:190px;flex:none">${tree(TREE_MAIN)}</div>
-  </div><svg id="lk" style="position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible" width="1440" height="900"></svg></div>`;
-document.getElementById('root').innerHTML=html;
-
-const cols=[...document.querySelectorAll('.colm')].map(c=>[...c.children]);
-const trs=[...document.querySelectorAll('.tr')];
-const clamp=x=>Math.max(0,Math.min(1,x));
-const expo=p=>p>=1?1:1-Math.pow(2,-10*p);
-const inC=p=>p*p*p;
-const mix=(a,b,p)=>{const A=a.match(/\w\w/g).map(h=>parseInt(h,16)),B=b.match(/\w\w/g).map(h=>parseInt(h,16));return '#'+A.map((x,i)=>Math.round(x+(B[i]-x)*p).toString(16).padStart(2,'0')).join('');};
-// colours per card, by order in its column
-const colour={};cols.forEach(items=>{let k=0;items.forEach(it=>{const c=it.querySelector('[data-card]');if(!c)return;colour[c.dataset.card]=PAL[k++%PAL.length];c.querySelector('.sw').style.background=colour[c.dataset.card];});});
-
-function setItem(it,x,o,rot=0){it.style.transformOrigin='left center';it.style.transform=`translateX(${x}px)`+(rot?` perspective(900px) rotateY(${rot}deg)`:'');it.style.opacity=o;}
-function layoutStatic(v){cols.forEach((items,i)=>{const s=i-v;items.forEach(it=>setItem(it,s*COLW,(s===0||s===1)?1:0));});}
-function trailAt(off,v){trs.forEach((t,i)=>{t.style.transform=`translateX(${-off}px)`;const inWin=i===Math.round(v)||i===Math.round(v)+1;t.style.color=inWin?'#a3a8a0':'#2f332f';});}
-function trailBlend(off,a,b,p){trs.forEach((t,i)=>{t.style.transform=`translateX(${-off}px)`;const wa=(i===a||i===a+1)?1:0,wb=(i===b||i===b+1)?1:0;t.style.color=mix('#2f332f','#a3a8a0',wa+(wb-wa)*p);});}
-
-function drawLinks2(v,alpha){
-  const svg=document.getElementById('lk');if(alpha<=0){svg.innerHTML='';return;}
-  document.querySelectorAll('.call').forEach(c=>{c.style.textDecoration='none';});
-  const wr=document.querySelector('.win').getBoundingClientRect();let out='';
-  const srcs=v===0?[...document.querySelectorAll('#codep .call')]:[];
-  cols[v].forEach(it=>it.querySelectorAll('.card.focus .call').forEach(c=>srcs.push(c)));
-  srcs.forEach(el=>{const id=el.dataset.call;const t=document.querySelector(`[data-card="${id}"]`);if(!t)return;const col=colour[id];
-    const a=el.getBoundingClientRect(),hold=el.closest('.colm')||el.closest('.pane');const pr=hold.getBoundingClientRect();
-    const rg=document.createRange();rg.selectNodeContents(el.closest('.t'));const tr=rg.getBoundingClientRect();
-    const b=t.querySelector('.card-h').getBoundingClientRect();
-    const xe=Math.min(pr.right,document.getElementById('pva').getBoundingClientRect().right)-wr.left-(el.closest('.colm')?14:0);
-    const y1=a.top+a.height/2-wr.top,x1=Math.min(Math.max(a.right-wr.left+2,tr.right-wr.left+8),xe),x2=b.left-wr.left,y2=b.top+b.height/2-wr.top;
-    el.style.textDecoration=`underline ${col}`;el.style.textUnderlineOffset='4px';
-    const k=Math.max(26,(x2-xe)*.55);
-    if(xe-x1>2)out+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${col}" stroke-width="1.2" stroke-dasharray="2 4" opacity=".5" fill="none"/><circle cx="${x1}" cy="${y1}" r="2.4" fill="${col}"/>`;
-    out+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${col}" stroke-width="1.5" opacity=".8" fill="none"/><circle cx="${x2}" cy="${y2}" r="3" fill="${col}"/>`;});
-  svg.innerHTML=out;svg.style.opacity=alpha;}
-
-// timeline
-const SHIFT=0.85,BACK=0.95;
-const EV=[{t:1.0,k:'f',v:0},{t:2.75,k:'f',v:1},{t:4.5,k:'f',v:2},{t:6.4,k:'b',v:3}];
-window.TOTAL=8.3;
-function press(id,t,t0){const p=t-(t0-0.14);const on=p>=0&&p<0.32;const el=document.getElementById(id);el.style.color=on?'#c9b98f':'';el.style.background=on?'rgba(255,255,255,.045)':'';el.style.padding='6px 10px';el.style.margin='0 -10px';}
-window.seek=function(t){
-  let v=0,act=null;
-  for(const e of EV){if(t>=e.t+(e.k==='f'?SHIFT:BACK))v=e.k==='f'?e.v+1:0;else if(t>=e.t){act=e;break;}else break;}
-  press('bshift',t,EV.find(e=>e.k==='f'&&t<e.t+0.3&&t>e.t-0.2)?.t??-9);
-  press('bsrc',t,EV[3].t);
-  const lv=act?(act.k==='f'?(t-act.t>SHIFT*0.5?act.v+1:act.v):(t-act.t>BACK*0.5?0:act.v)):v;
-  document.getElementById('blvl').textContent=`levels ${lv+1}–${lv+2} of 5`;
-  document.getElementById('bshift').style.opacity=lv>=3?.35:1;
-  document.getElementById('bsrc').style.opacity=lv===0?.35:1;
-  if(!act){layoutStatic(v);trailAt(v*COLW,v);drawLinks2(v,1);return;}
-  const tau=t-act.t,a=act.v;
-  if(act.k==='f'){
-    cols.forEach((items,i)=>{const s=i-a;items.forEach((it,k)=>{
-      if(s===0){const p=clamp((tau-0.03*k)/0.22),e=inC(p);setItem(it,-30*e,Math.max(0,1-p*1.4),-80*e);}
-      else if(s===1){const e=expo(clamp((tau-0.17-0.035*k)/0.55));setItem(it,COLW*(1-e),1);}
-      else if(s===2){const p=clamp((tau-0.27-0.05*k)/0.55),e=expo(p);setItem(it,COLW+170*(1-e),Math.min(1,p*1.7));}
-      else setItem(it,0,0);});});
-    const pt=expo(clamp((tau-0.04)/0.75));trailBlend((a+pt)*COLW,a,a+1,pt);
-    if(tau<0.12)drawLinks2(a,1-tau/0.12);else if(tau>0.74){layoutStatic(a+1);drawLinks2(a+1,clamp((tau-0.74)/0.11));
-      cols.forEach((items,i)=>{const s=i-a;items.forEach((it,k)=>{if(s===2){const p=clamp((tau-0.27-0.05*k)/0.55),e=expo(p);setItem(it,COLW+170*(1-e),Math.min(1,p*1.7));}});});}
-    else drawLinks2(a,0);
-  }else{
-    cols.forEach((items,i)=>{const s=i-a;const n=i;items.forEach((it,k)=>{
-      if(s===0||s===1){const e=inC(clamp((tau-0.03*k-0.03*s)/0.28));setItem(it,s*COLW+90*e,1-e);}
-      else if(n===0||n===1){const p=clamp((tau-0.22-0.045*k-0.07*n)/0.6),e=expo(p);setItem(it,n*COLW-170*(1-e),Math.min(1,p*1.7));}
-      else setItem(it,0,0);});});
-    const pt=expo(clamp((tau-0.1)/0.75));trailBlend(a*COLW*(1-pt),a,0,pt);
-    if(tau<0.1)drawLinks2(a,1-tau/0.1);else if(tau>0.8){drawLinks2(0,clamp((tau-0.8)/0.15));}else drawLinks2(0,0);
+const SRC=R`Response Server::handle(const Request& req) {
+    auto headers = «c:i0|parse_headers»(req.raw);
+    if (headers.empty())
+        return Response::bad_request();
+    auto handler = «c:i1|route»(req.path, routes_);
+    Response res = handler(req, headers);
+    «c:i2|apply_cors»(res, allowed_origins_);
+    if («c:i3|keep_alive»(req))
+        res.headers.set("Connection", "keep-alive");
+    «c:i4|compress»(res, req.accept_encoding);«cur|»
+    «c:i5|send_response»(socket_, res);
+    metrics_.«c:i6|record»(req.path, res.status);
+    socket_.«c:i7|close»();
+    return res;
+}`;
+const NAMES=['parse_headers','route','apply_cors','keep_alive','compress','send_response','record','close'];
+const VISIBLE=new Set([2,3,4,5]);   // the column is scrolled so cards 3–6 are in view
+const COL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b','#8f9aa8','#9aa86f'];
+const CARDS={2:[`apply_cors`,'http/cors.cpp:8',R`void apply_cors(Response& r, const Origins& o) {
+    if (o.empty()) return;
+    r.headers.set("Access-Control-Allow-Origin", o.front());
+}`,8],3:[`keep_alive`,'http/headers.cpp:40',R`bool keep_alive(const Request& req) {
+    auto c = req.headers.get("Connection");
+    return c ? iequals(*c, "keep-alive")
+             : req.version >= Http11;
+}`,40],4:[`compress`,'http/gzip.cpp:15',R`void compress(Response& r, sv accept) {
+    if (r.body.size() < 1024 || !accepts_gzip(accept))
+        return;
+    r.body = gzip(r.body);
+    r.headers.set("Content-Encoding", "gzip");
+}`,15],5:[`send_response`,'net/io.cpp:58',R`void send_response(Socket& s, const Response& r) {
+    auto bytes = r.serialize();
+    write_all(s, bytes.data(), bytes.size());
+}`,58]};
+const idx=NAMES.map((n,i)=>{const vis=VISIBLE.has(i),above=i<2,lit=i===4;
+  return `<div class="ix" id="ix${i}" style="position:relative;display:flex;align-items:center;justify-content:flex-end;gap:8px;height:30px;padding:0 6px 0 12px;${lit?'background:#222320;box-shadow:inset -2px 0 '+COL[i]+';':''}">
+    <span style="position:absolute;left:12px;font:11px var(--mono);color:#3f453f">${i+1}</span>
+    <span class="nm" style="font:12px var(--mono);color:${lit?'#c3c8c0':vis?'#9ea39b':'#5f665f'};white-space:nowrap">${n}</span>
+    <i class="dot" style="width:5px;height:5px;border-radius:50%;background:${COL[i]};flex:none;opacity:${vis?1:.55}"></i>
+    <span style="width:10px;flex:none;font:300 12px var(--ui);color:${COL[i]};opacity:.85">${vis?'':above?'↑':'↓'}</span></div>`;}).join('');
+const cards=[2,3,4,5].map(i=>{const [n,loc,src,start]=CARDS[i];const lit=i===4;
+  return `<div class="card${lit?' focus':''}" id="cd${i}" style="${lit?'box-shadow:inset 2px 0 '+COL[i]+';background:#222320':''}"><div class="card-h"><span class="sw" style="background:${COL[i]}"></span><span class="nm"${lit?' style="color:#c3c8c0"':''}>${n}</span><span class="loc">${loc}</span></div>${code(src,{start,params:['r','o','req','accept','s']})}</div>`;}).join('');
+document.getElementById('root').innerHTML=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+ <div class="hdr">${PV('server.cpp',['headers.cpp'],'Server::handle')}<span class="right" style="margin-right:112px"><span>33:31</span><span>clangd ready</span></span></div>
+ <div style="flex:1;display:flex;min-height:0;position:relative" id="body">
+  <div class="pane" style="width:520px;flex:none" id="codep">${code(SRC,{start:24,active:33,params:['req'],dim:[24,38]})}</div>
+  <div id="index" style="width:196px;flex:none;background:#131413;position:relative">
+    <div class="ph" style="font-size:13px">calls · 8</div>
+    <div style="position:absolute;top:36px;left:0;right:0">${idx}</div>
+    <div style="position:absolute;left:12px;right:10px;bottom:52px;font:300 11.5px/1.5 var(--ui);color:#3f453f">click a name to scroll<br>its card into view</div>
+  </div>
+  <div class="pane prev" style="flex:1;align-self:stretch;position:relative" id="pva">
+    <div class="ph"><span style="font-size:18px;color:var(--bright);text-transform:none">Server::handle</span><span class="grow"></span><span style="font-size:12px;color:#3f453f">cards 3–6 of 8</span></div>
+    <div id="cards" style="position:absolute;top:36px;left:0;right:0;bottom:40px;overflow:hidden"><div class="cards" style="padding-left:40px;padding-top:6px">${cards}</div></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:40px;display:flex;align-items:center;gap:24px;padding:0 22px;font:300 13.5px var(--ui);color:#4f564f"><span style="opacity:.35">‹ source</span><span style="font-size:12.5px;color:#3a3f3a">levels 1–2</span><span style="flex:1"></span><span>shift preview ›</span></div>
+  </div>
+  <div class="pane files" style="width:190px;flex:none">${tree(TREE_MAIN.replace('server.cpp|act|mod','server.cpp|act'))}</div>
+  <svg id="lk" style="position:absolute;left:0;top:0;pointer-events:none;overflow:visible" width="1440" height="900"></svg>
+ </div>
+ <div class="term" style="height:30px;border:0"><div class="tt"><span class="on">zsh</span><span>+</span><span class="grow"></span><span>hide terminal</span><span style="font-size:16px">···</span></div></div></div>`;
+// connectors: call site → its name in the index → its card (when the card is in view)
+const B=document.getElementById('body').getBoundingClientRect(), rel=(r)=>({l:r.left-B.left,r:r.right-B.left,t:r.top-B.top,b:r.bottom-B.top,cy:(r.top+r.bottom)/2-B.top});
+const codeR=rel(document.getElementById('codep').getBoundingClientRect()), idxR=rel(document.getElementById('index').getBoundingClientRect());
+let svg='';
+NAMES.forEach((n,i)=>{
+  const call=document.querySelector(`[data-call="i${i}"]`), item=document.getElementById('ix'+i);
+  const c=rel(call.getBoundingClientRect()), it=rel(item.getBoundingClientRect());
+  const rg=document.createRange(); rg.selectNodeContents(call.closest('.t')); const te=rel(rg.getBoundingClientRect());
+  call.style.textDecoration=`underline ${COL[i]} 1.5px`; call.style.textUnderlineOffset='4px';
+  const nm=rel(item.querySelector('.nm').getBoundingClientRect()), dot=rel(item.querySelector('.dot').getBoundingClientRect());
+  const x1=Math.max(c.r+4,te.r+12), xe=codeR.r-6, x2=nm.l-12, y1=c.cy, y2=it.cy, k=Math.max(22,(x2-xe)*.5);
+  svg+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${COL[i]}" stroke-width="0.8" stroke-dasharray="1.5 4" opacity=".45" fill="none"/><circle cx="${x1}" cy="${y1}" r="1.8" fill="${COL[i]}"/>`;
+  svg+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${COL[i]}" stroke-width="0.9" opacity=".7" fill="none"/><circle cx="${x2}" cy="${y2}" r="1.6" fill="${COL[i]}" opacity=".8"/>`;
+  if (VISIBLE.has(i)) {
+    // the line ends on the card's own colour dot, so the eye lands on the right card at once
+    const sw=rel(document.querySelector(`#cd${i} .card-h .sw`).getBoundingClientRect());
+    const a=dot.r+22, b=sw.l-1, yb=sw.cy, kk=Math.max(22,(b-a)*.5);
+    svg+=`<path d="M${a} ${y2} C${a+kk} ${y2} ${b-kk} ${yb} ${b} ${yb}" stroke="${COL[i]}" stroke-width="1" opacity=".75" fill="none"/>`;
   }
-};
-seek(0);
-
-/* ---------- walkthrough: wraps the shift page with intro, settings and captions ---------- */
-const shiftSeek=window.seek;
-const W=document.querySelector('.win'),HDR=W.querySelector('.hdr'),BODY=HDR.nextElementSibling;
-const GEAR=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.4"/>${[...Array(8)].map((_,i)=>`<line x1="12" y1="2.6" x2="12" y2="6.2" transform="rotate(${i*45} 12 12)" stroke-width="3" stroke-linecap="butt"/>`).join('')}<circle cx="12" cy="12" r="6.6"/></svg>`;
-HDR.querySelector('.right').insertAdjacentHTML('beforeend',`<span id="gear" style="display:grid;place-items:center;width:24px;height:24px;border:1px solid #3a3f3a;color:#7b8279;margin:-5px 0 0 4px">${GEAR}</span>`);
-document.getElementById('pva').insertAdjacentHTML('beforeend',`<div id="empty" style="position:absolute;inset:0 0 46px 0;display:grid;place-items:center;font:300 15px var(--ui);color:#3a3f3a">outside any function — nothing to preview</div>`);
-const slider=(id,lab,val,lo,hi)=>`<div style="margin:0 0 26px"><div style="display:flex;font:300 15px var(--ui);color:#8b9189"><span>${lab}</span><span id="${id}v" style="margin-left:auto;color:#a3a8a0">${val}</span></div>
-  <div style="position:relative;height:26px;margin-top:6px"><div style="position:absolute;top:12px;left:0;right:0;height:2px;background:#2c2f2c"></div><div id="${id}f" style="position:absolute;top:12px;left:0;height:2px;background:#739696"></div><div id="${id}t" style="position:absolute;top:2px;width:10px;height:22px;background:#a3a8a0;margin-left:-5px"></div></div>
-  <div style="display:flex;font:300 11.5px var(--ui);color:#3a3f3a"><span>${lo}</span><span style="margin-left:auto">${hi}</span></div></div>`;
-const toggle=(id,lab,sub)=>`<div style="display:flex;align-items:center;margin:0 0 22px"><div><div style="font:300 15px var(--ui);color:#8b9189">${lab}</div><div style="font:300 12px var(--ui);color:#454b45">${sub}</div></div>
-  <div id="${id}" style="margin-left:auto;position:relative;width:52px;height:22px;border:2px solid #4f564f"><div class="tf" style="position:absolute;left:2px;top:2px;bottom:2px;width:0;background:#4e6a6a"></div><div class="tk" style="position:absolute;top:-2px;width:12px;height:22px;background:#a3a8a0;left:-2px"></div></div></div>`;
-const pick=(lab,val)=>`<div style="margin:0 0 22px"><div style="font:300 15px var(--ui);color:#8b9189;margin-bottom:6px">${lab}</div><div style="border:2px solid #3a3f3a;padding:6px 10px;font:300 16px var(--ui);color:#a3a8a0">${val}</div></div>`;
-W.insertAdjacentHTML('beforeend',`<div id="set" style="position:absolute;inset:0;background:#171817;z-index:20;padding:26px 44px;opacity:0;pointer-events:none">
-  <div class="si" style="font:600 11px var(--ui);letter-spacing:.14em;color:#4f564f">LITHOGRAPH</div>
-  <div class="si" style="display:flex;align-items:baseline;gap:30px;margin:4px 0 30px;white-space:nowrap"><span style="font:300 52px var(--ui);color:#a3a8a0;letter-spacing:-.02em">appearance</span>${['editor','preview','clangd','keys','files'].map(x=>`<span style="font:300 52px var(--ui);color:#2b2e2b;letter-spacing:-.02em">${x}</span>`).join('')}</div>
-  <div style="display:grid;grid-template-columns:330px 330px 1fr;gap:56px">
-    <div class="si">${pick('code font','ArX F1')}${slider('fs','code size','12.5','8','24')}${slider('lh','line height','1.6','1.2','2.2')}${pick('interface font','Selawik')}</div>
-    <div class="si">${pick('theme','charcoal')}${slider('ct','contrast','6.9 : 1','soft','crisp')}${toggle('ew','evening warmth','warmer, dimmer after sunset')}${toggle('fd','focus dimming','fade code outside the function')}</div>
-    <div class="si"><div style="font:300 15px var(--ui);color:#4f564f;margin-bottom:8px">preview</div><div id="spv" style="background:#151615;padding:6px 0">${code(MAIN.split('\n').slice(9,19).join('\n').replace(/«[^|»]*\|([^»]*)»/g,'$1'),{start:39,params:['req'],active:45})}</div>
-      <div style="font:300 12.5px var(--ui);color:#3f453f;margin-top:14px">every change here is written to <span style="color:#7b8279">data/settings.toml</span><span id="saved" style="margin-left:10px;color:#5f8a6a;opacity:0">saved</span></div></div>
-  </div></div>
-  <div id="cap" style="position:absolute;left:40px;bottom:34px;z-index:30;font:300 17px var(--ui);color:#7b8279"></div>`);
-const SI=[...document.querySelectorAll('#set .si')];
-const curEl=document.querySelector('#codep .cur'),ln=n=>document.querySelector(`#codep .ln[data-n="${n}"]`);
-function cursorAt(n){ln(37).classList.toggle('act',n===37);ln(45).classList.toggle('act',n===45);ln(n).querySelector('.t').appendChild(curEl);}
-function setSlider(id,p,txt){document.getElementById(id+'t').style.left=(p*100)+'%';document.getElementById(id+'f').style.width=(p*100)+'%';document.getElementById(id+'v').textContent=txt;}
-function setToggle(id,p){const e=document.getElementById(id);e.querySelector('.tk').style.left=(-2+p*40)+'px';e.querySelector('.tf').style.width=(p*44)+'px';}
-function codeSize(px){document.querySelectorAll('#codep .code').forEach(c=>{c.style.fontSize=px+'px';c.style.lineHeight=(px*1.6)+'px';});}
-const CAPS=[[0,3,'move into a function — its calls appear'],[3,10.6,'shift preview — a full level per press'],[10.6,16.4,'settings — one square, every option'],[16.4,99,'applied live · saved to data/settings.toml']];
-function caption(t){const c=CAPS.find(([a,b])=>t>=a&&t<b);const el=document.getElementById('cap');el.textContent=c[2];const f=Math.min(clamp((t-c[0])/0.35),clamp((c[1]-t)/0.35));el.style.opacity=f;el.style.transform=`translateX(${(1-expo(clamp((t-c[0])/0.6)))*40}px)`;}
-function pageT(el,e,dir){el.style.transformOrigin='left center';el.style.transform=`perspective(1400px) rotateY(${dir*e}deg)`;el.style.opacity=1-Math.min(1,Math.abs(e)/60);}
-window.TOTAL=18.6;
-window.seek=function(t){
-  caption(t);
-  const set=document.getElementById('set');
-  const fsP=t<12.3?0:expo(clamp((t-12.3)/1.0))*0.991, fs=12.5+1.5*Math.min(1,fsP/0.991);
-  setSlider('fs',(fs-8)/16,fs.toFixed(1));setSlider('lh',.4/1,'1.6');
-  const ctP=expo(clamp((t-14.3)/0.8));const ctv=6.9-0.7*ctP;setSlider('ct',0.62-0.12*ctP,ctv.toFixed(1)+' : 1');
-  setToggle('ew',expo(clamp((t-13.7)/0.3)));setToggle('fd',1);
-  document.querySelectorAll('#spv .code').forEach(c=>{c.style.fontSize=fs+'px';c.style.lineHeight=(fs*1.6)+'px';});
-  document.getElementById('saved').style.opacity=(t>13.4&&t<14.0)||(t>14.0&&t<14.6)||(t>15.1&&t<15.6)?1:0;
-  const gp=t>10.62&&t<10.95;const g=document.getElementById('gear');g.style.background=gp?'#2a2d2a':'';g.style.color=gp?'#c9b98f':'#7b8279';g.style.borderColor=gp?'#7d6f50':'#3a3f3a';
-  codeSize(t>=15.6?14:12.5);
-  if(t<3){
-    shiftSeek(0.4);cursorAt(t<1.2?37:45);
-    const items=cols.flat();
-    if(t<1.2){cols.forEach(c=>c.forEach(it=>setItem(it,0,0)));trs.forEach(x=>x.style.opacity=0);document.getElementById('lk').style.opacity=0;document.getElementById('empty').style.opacity=1;}
-    else{const tau=t-1.2;document.getElementById('empty').style.opacity=1-clamp(tau/0.15);
-      [0,1].forEach(i=>cols[i].forEach((it,k)=>{const p=clamp((tau-0.06*k-0.12*i)/0.6),e=expo(p);setItem(it,i*COLW+170*(1-e),Math.min(1,p*1.7));}));
-      trs.forEach(x=>x.style.opacity=clamp(tau/0.4));
-      const la=clamp((tau-0.75)/0.2);if(la>0){drawLinks2(0,la);}else document.getElementById('lk').style.opacity=0;}
-    pageT(BODY,0,1);pageT(HDR,0,1);set.style.opacity=0;return;}
-  document.getElementById('empty').style.opacity=0;trs.forEach(x=>x.style.opacity=1);cursorAt(45);
-  if(t<10.6){shiftSeek(t-2.6);pageT(BODY,0,1);pageT(HDR,0,1);set.style.opacity=0;return;}
-  shiftSeek(8.0);
-  if(t<11.0){pageT(BODY,0,1);pageT(HDR,0,1);set.style.opacity=0;return;}
-  if(t<15.6){ // editor out, settings in
-    const eo=inC(clamp((t-11.0)/0.28));pageT(HDR,-70*eo,1);pageT(BODY,-70*inC(clamp((t-11.04)/0.28)),1);
-    if(eo>0)document.getElementById('lk').style.opacity=0;
-    set.style.opacity=1;SI.forEach((s,k)=>{const p=clamp((t-11.22-0.06*k)/0.55),e=expo(p);s.style.transformOrigin='left center';s.style.transform=`perspective(1400px) rotateY(${70*(1-e)}deg) translateX(${60*(1-e)}px)`;s.style.opacity=Math.min(1,p*1.6);});
-    return;}
-  // settings out, editor back in
-  SI.forEach((s,k)=>{const p=clamp((t-15.6-0.04*k)/0.26),e=inC(p);s.style.transform=`perspective(1400px) rotateY(${-75*e}deg)`;s.style.opacity=1-Math.min(1,p*1.3);});
-  set.style.opacity=t>16.0?0:1;
-  const bi=p=>expo(clamp(p));pageT(HDR,70*(1-bi((t-15.85)/0.55)),1);pageT(BODY,70*(1-bi((t-15.92)/0.55)),1);
-  const la=clamp((t-16.45)/0.2);drawLinks2(0,la);
-};
-seek(0);
-
-/* ---------- horizontal (side-to-side) page transitions for settings ---------- */
-const rotSeek=window.seek;
-window.seek=function(t){
-  rotSeek(t);
-  if(t<11.0)return;
-  const set=document.getElementById('set'),WD=1440,lk=document.getElementById('lk');
-  [HDR,BODY,...SI].forEach(e=>e.style.opacity=1);set.style.background='none';
-  if(t<15.6){
-    const p=(k,d=0.6)=>expo(clamp((t-11.0-k)/d));
-    const e=p(0,0.65);HDR.style.transform=BODY.style.transform=`translateX(${-WD*e}px)`;
-    set.style.opacity=1;
-    SI.forEach((s,k)=>s.style.transform=`translateX(${WD*(1-e)+90*k*(1-e)}px)`);
-    if(p(0)>0)lk.style.opacity=0;
-  }else{
-    const p=(k,d=0.6)=>expo(clamp((t-15.6-k)/d));
-    const e=p(0,0.65);SI.forEach((s,k)=>s.style.transform=`translateX(${WD*e+(SI.length-1-k)*-70*e*(1-e)}px)`);
-    set.style.opacity=e>0.999?0:1;
-    HDR.style.transform=BODY.style.transform=`translateX(${-WD*(1-e)-90*(1-e)*e}px)`;
-  }
-};
-seek(0);
+});
+document.getElementById('lk').innerHTML=svg;
 
 }catch(e){window.__err=e.message+" | "+e.stack;}
 </script></body></html>

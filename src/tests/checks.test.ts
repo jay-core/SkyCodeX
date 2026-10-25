@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { parseSanitizer, profileFromCov, projectSources, runWithChecks } from '../src/main/checks';
-import { redact } from '../src/main/report';
+import { parseSanitizer, profileFromCov, projectSources, runWithChecks } from '../main/checks';
+import { redact } from '../main/report';
 
 const TSAN = `==================
 WARNING: ThreadSanitizer: data race (pid=4242)

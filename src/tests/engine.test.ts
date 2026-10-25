@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { parseBinary, totals } from '../src/main/binary';
-import { analyze, stripCode, scanHeap, findBinaries } from '../src/main/memory';
-import { LspClient, findClangd } from '../src/main/lsp';
+import { parseBinary, totals } from '../main/binary';
+import { analyze, stripCode, scanHeap, findBinaries } from '../main/memory';
+import { LspClient, findClangd } from '../main/lsp';
 
-const SAMPLE = path.resolve(__dirname, '../samples/tinyhttp');
+const SAMPLE = path.resolve(__dirname, '../../samples/tinyhttp');
 
 beforeAll(() => {
   if (!fs.existsSync(path.join(SAMPLE, 'build/tinyhttp'))) execFileSync(path.join(SAMPLE, 'build.sh'));

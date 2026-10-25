@@ -8,9 +8,9 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
-import { safeJoin, extractTar, extractZip, extractTarZst } from '../src/main/unpack';
-import { sourceFor, compareVersions, installRelease, listPacks, removePack, Release } from '../src/main/packs';
-import { launchWithPacks } from '../src/main/shellinit';
+import { safeJoin, extractTar, extractZip, extractTarZst } from '../main/unpack';
+import { sourceFor, compareVersions, installRelease, listPacks, removePack, Release } from '../main/packs';
+import { launchWithPacks } from '../main/shellinit';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-packs-'));
 

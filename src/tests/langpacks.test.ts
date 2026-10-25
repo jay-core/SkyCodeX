@@ -7,8 +7,8 @@ import zlib from 'node:zlib';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { rustTarget, pythonTriple, goPlatform, pythonReleases, goReleases, mergeRustComponents, namesFromTitle, buildRefIndex, refIndex, languageBins, languageEnv, serverFor, stepsFor, goEnv } from '../src/main/langpacks';
-import { installRelease, listPacks, removePack, MANIFEST, Release } from '../src/main/packs';
+import { rustTarget, pythonTriple, goPlatform, pythonReleases, goReleases, mergeRustComponents, namesFromTitle, buildRefIndex, refIndex, languageBins, languageEnv, serverFor, stepsFor, goEnv } from '../main/langpacks';
+import { installRelease, listPacks, removePack, MANIFEST, Release } from '../main/packs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-lang-'));
 const put = (p: string, body = 'x', mode = 0o644) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body, { mode }); };

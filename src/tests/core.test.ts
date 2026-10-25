@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parse } from 'smol-toml';
-import { resolveDataDir, portableBase } from '../src/main/datadir';
-import { loadSettings, setSetting, lineOf } from '../src/main/settings';
-import { defaultFileText, defaults, SETTINGS } from '../src/shared/settings-schema';
-import { atomicWrite, saveBuffer, loadBuffers, dropBuffer, listSources } from '../src/main/files';
+import { resolveDataDir, portableBase } from '../main/datadir';
+import { loadSettings, setSetting, lineOf } from '../main/settings';
+import { defaultFileText, defaults, SETTINGS } from '../shared/settings-schema';
+import { atomicWrite, saveBuffer, loadBuffers, dropBuffer, listSources } from '../main/files';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-'));
 
@@ -104,7 +104,7 @@ describe('files', () => {
   });
 });
 
-import { symbolQuery } from '../src/shared/symname';
+import { symbolQuery } from '../shared/symname';
 describe('memory symbols → source names', () => {
   it('drops parameters, templates and qualifiers, keeps the scope', () => {
     expect(symbolQuery('HexMatrixProcessor::mapMemoryBoundaries()')).toEqual({ leaf: 'mapMemoryBoundaries', scope: 'HexMatrixProcessor' });

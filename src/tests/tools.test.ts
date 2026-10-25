@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { findTodos, applyEdits, refMatches, parseStyle, writeStyle, proseWords } from '../src/renderer/lib/tools';
-import { createProject, TEMPLATES } from '../src/main/templates';
+import { findTodos, applyEdits, refMatches, parseStyle, writeStyle, proseWords } from '../renderer/lib/tools';
+import { createProject, TEMPLATES } from '../main/templates';
 
 describe('to-do list', () => {
   it('finds notes in every comment style, with the text after the word', () => {

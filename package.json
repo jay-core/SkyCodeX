@@ -8,12 +8,12 @@
   "private": true,
   "main": "dist/main/main.cjs",
   "scripts": {
-    "build:main": "node scripts/build-main.mjs",
+    "build:main": "node src/build/build-main.mjs",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
     "rebuild-native": "electron-rebuild -f -w node-pty",
-    "fetch-clangd": "node scripts/build-main.mjs && node dist/main/fetch-clangd.cjs",
+    "fetch-clangd": "node src/build/build-main.mjs && node dist/main/fetch-clangd.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "smoke": "npm run build && electron . --smoke samples/tinyhttp"

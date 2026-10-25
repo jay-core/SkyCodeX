@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { KEYS, LISTS } from '../src/renderer/lib/i18n-tables';
-import { HELP, searchHelp, parseHelp, inline } from '../src/renderer/lib/help';
+import { KEYS, LISTS } from '../renderer/lib/i18n-tables';
+import { HELP, searchHelp, parseHelp, inline } from '../renderer/lib/help';
 
 describe('translations', () => {
   it('every language lists one entry per key, in order', () => {

@@ -90,7 +90,7 @@ const aadlBody=`<div style="position:absolute;left:30px;top:8px;width:600px">${a
   <div id="warn" style="position:absolute;left:30px;top:520px;width:690px;background:#1f1d17;padding:12px 16px;font:300 14px/1.6 var(--ui);color:#c9a26a">Model and code disagree: <span style="font-family:var(--mono)">Period => 1000 ms</span>, but <span style="font-family:var(--mono)">Metrics::run</span> sleeps <span style="font-family:var(--mono)">2 s</span> (metrics.cpp:51). Update the model or the code.</div>
   <div id="draft" style="position:absolute;left:30px;top:640px;font:300 12.5px var(--ui);color:#3f453f">draft generated from the code · review before use · open in OSATE ›</div></div>`;
 
-const stills=[['../terminal-press/t3-memory.png'],['../terminal-press/t4-misra.png']];
+const stills=[['../../docs/concepts/terminal-press/t3-memory.png'],['../../docs/concepts/terminal-press/t4-misra.png']];
 document.getElementById('root').innerHTML=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none;background:#171817">
  ${scene('s1',PV('flow',['atlas','book','server.cpp']),'scanning…',flowBody)}
  ${scene('s2',PV('do-178c',['misra','memory','flow']),'router.cpp · tests from ctest run #8',doBody)}

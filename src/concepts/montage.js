@@ -1,9 +1,9 @@
 /* ---------- final preview: walkthrough, then a turnstile tour of every view ---------- */
 const walkSeek=window.seek;
-const SC=[['../final/b02-atlas.png','atlas — the whole codebase as a map'],['../final/b03-book.png','book mode — read a project start to finish'],
-  ['../final/b06-board.png','investigation board — paste a crash, get its stack'],['../terminal-press/t1-terminal.png','terminal — every command a block'],
-  ['../terminal-press/t2-build.png','build — every compile, calm and clear'],['../terminal-press/t3-memory.png','memory — RAM and flash budgets, largest first'],
-  ['../terminal-press/t4-misra.png','misra — precise findings, long before certification']];
+const SC=[['../../docs/concepts/final/b02-atlas.png','atlas — the whole codebase as a map'],['../../docs/concepts/final/b03-book.png','book mode — read a project start to finish'],
+  ['../../docs/concepts/final/b06-board.png','investigation board — paste a crash, get its stack'],['../../docs/concepts/terminal-press/t1-terminal.png','terminal — every command a block'],
+  ['../../docs/concepts/terminal-press/t2-build.png','build — every compile, calm and clear'],['../../docs/concepts/terminal-press/t3-memory.png','memory — RAM and flash budgets, largest first'],
+  ['../../docs/concepts/terminal-press/t4-misra.png','misra — precise findings, long before certification']];
 const T0=18.6,D=3.2,TEND=T0+SC.length*D;
 W.insertAdjacentHTML('beforeend',`<div id="mont" style="position:absolute;inset:0;z-index:40;pointer-events:none">${SC.map(([src],i)=>`<img class="mi" src="${src}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0">`).join('')}
   <div id="endc" style="position:absolute;inset:0;background:#171817;display:grid;place-content:center;text-align:center;opacity:0"><div style="font:300 84px var(--ui);color:#a3a8a0;letter-spacing:-.02em">lithograph</div><div style="font:300 18px var(--ui);color:#5f665f;margin-top:6px">portable · offline · C and C++</div></div>

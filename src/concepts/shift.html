@@ -192,17 +192,17 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px}
 .metro-h{font:300 15px var(--ui);color:#4f564f;text-transform:lowercase}
 .big300{font:300 44px var(--ui);color:#a3a8a0;letter-spacing:-.02em}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkl.ttf');font-weight:300}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksl.ttf');font-weight:350}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawk.ttf');font-weight:400}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawksb.ttf');font-weight:600}
-@font-face{font-family:'Selawik';src:url('../../fonts/Selawik/selawkb.ttf');font-weight:700}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-ExtraLight.otf');font-weight:200}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Light.otf');font-weight:300}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Regular.otf');font-weight:400}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Medium.otf');font-weight:500}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Semibold.otf');font-weight:600}
-@font-face{font-family:'ArX F1';src:url('../../fonts/ArXF1/ArXF1-Bold.otf');font-weight:700}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawkl.ttf');font-weight:300}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawksl.ttf');font-weight:350}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawk.ttf');font-weight:400}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawksb.ttf');font-weight:600}
+@font-face{font-family:'Selawik';src:url('../../assets/fonts/Selawik/selawkb.ttf');font-weight:700}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-ExtraLight.otf');font-weight:200}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Light.otf');font-weight:300}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Regular.otf');font-weight:400}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Medium.otf');font-weight:500}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Semibold.otf');font-weight:600}
+@font-face{font-family:'ArX F1';src:url('../../assets/fonts/ArXF1/ArXF1-Bold.otf');font-weight:700}
 :root{--mono:'ArX F1',ui-monospace,monospace;--ui:'Selawik',-apple-system,sans-serif}
 html,body{overflow:hidden;background:#171817;color:var(--fg)}
 .card .code{font-size:11px;line-height:17.5px}
@@ -399,95 +399,116 @@ const mainCards=(focusParse)=>cards(
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
 try{
-/* ---------- flow as boxes and arrows: hover lists, click opens preview ---------- */
+/* ---------- preview shift: deterministic animation, driven by seek(t) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
-const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-const BX=[['main','main.cpp',40,300,[['1','main'],['','print_usage']],'entry'],
-  ['config','config.cpp',290,120,[['2','Config::load'],['3','read_env'],['','Config::save']]],
-  ['server','server.cpp',290,330,[['4','Server::start'],['6','Server::handle'],['14','Server::stop'],['','Server::reload'],['','Server::~Server']]],
-  ['io','net/io.cpp',560,110,[['5','Socket::accept'],['12','send_response'],['13','write_all'],['','Socket::set_nodelay']]],
-  ['headers','http/headers.cpp',560,300,[['7','parse_headers'],['','parse_cookie'],['','keep_alive']]],
-  ['router','router.cpp',560,480,[['10','route'],['11','match_path'],['','Router::dump']]],
-  ['strings','util/strings.cpp',790,300,[['8','split'],['9','trim'],['','to_lower'],['','join']]],
-  ['metrics','metrics.cpp',290,610,[['t1','Metrics::run'],['t2','Metrics::flush'],['t3','write_file']],'thread'],
-  ['cgi','legacy/cgi.cpp',560,690,[['','cgi_main'],['','cgi_env']],'dead'],['bench','tools/bench.cpp',760,690,[['','bench_main']],'dead']];
-const BW=176,BH=66;
-const AR=[['main','config','2',1],['main','server','4 · 14',2],['server','io','5 · 12',3],['server','headers','7',4],['headers','strings','8 · 9',5],['server','router','10',6],['server','metrics','spawns thread',7,'v']];
-const box=([id,f,x,y,fs,kind])=>{const run=fs.filter(r=>r[0]).length;return `<div class="bx" id="b-${id}" style="position:absolute;left:${x}px;top:${y}px;width:${BW}px;height:${BH}px;border:1.5px solid ${kind==='dead'?'#2a2d2a':'#3f453f'};background:#1a1b1a;padding:9px 12px">
-  ${kind==='entry'?'<div style="position:absolute;left:-30px;top:22px;font:300 12px var(--ui);color:#ad9b6f">start ▸</div>':''}${kind==='thread'?'<div style="position:absolute;left:0;top:-20px;font:300 12px var(--ui);color:#7a6f8a">thread</div>':''}
-  <div style="font:300 16px var(--ui);color:${kind==='dead'?'#4a4f4a':'#a3a8a0'}">${f}</div><div style="font:300 12px var(--ui);color:#4f564f;margin-top:2px">${fs.length} functions · ${kind==='dead'?'none run':run+' run'}</div></div>`;};
-const pop=([id,f,x,y,fs])=>`<div class="hp" id="h-${id}" style="position:absolute;left:${x}px;top:${y+BH+8}px;min-width:${BW+40}px;background:#222422;box-shadow:0 18px 40px rgba(0,0,0,.55);padding:8px 0;z-index:8;opacity:0">
-  ${fs.map(([nm,fn])=>`<div style="display:flex;gap:12px;padding:3px 14px;font:13px var(--mono)"><span style="width:22px;text-align:right;color:${nm?'#c9b98f':'transparent'}">${nm||'·'}</span><span style="color:${nm?'#a3a8a0':'#4a4f4a'}">${fn}</span></div>`).join('')}</div>`;
-const SV=R`void Server::start() {
-    socket_.listen(port_);
-    std::thread(&Metrics::run, &metrics_).detach();
-    while (running_) {
-        auto conn = socket_.accept();
-        handle(conn);
-    }
-}`;
-const SH=R`Response Server::handle(const Request& req) {
-    auto headers = parse_headers(req.raw);
-    if (headers.empty())
-        return Response::bad_request();
-    auto handler = route(req.path, routes_);
-    Response res = handler(req, headers);
-    send_response(socket_, res);
-    return res;
-}`;
-const SS=R`void Server::stop() {
-    running_ = false;
-    socket_.close();
-}`;
-const numCard=(n,name,loc,src,start,params)=>`<div class="pc">${card(name,loc,src,{title:`<span style="font:13px var(--mono);color:#c9b98f;margin-right:10px">${n}</span>${name}`,c:{start,params}})}</div>`;
-const preview=`<div style="padding:14px 20px 0"><div class="pc" style="font:300 30px var(--ui);color:#a3a8a0">server.cpp</div><div class="pc" style="font:300 13px var(--ui);color:#4f564f;margin:2px 0 14px">3 of 5 functions run in this flow · in execution order</div></div>
-  <div class="cards" style="padding-left:20px">${numCard('4','Server::start','server.cpp:30',SV,30,[])}${numCard('6','Server::handle','server.cpp:39',SH,39,['req'])}${numCard('14','Server::stop','server.cpp:61',SS,61,[])}
-  <div class="pc" style="font:300 13px/1.9 var(--ui);color:#3f453f;padding:2px 4px">Server::reload — not run in this flow<br>Server::~Server — not run in this flow</div></div>`;
-document.getElementById('root').innerHTML=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
- <div class="hdr">${PV('flow',['atlas','book','server.cpp'])}<span class="right"><span>tinyhttp · 2 entry points · 2 files not reached</span></span></div>
- <div style="flex:1;display:flex;min-height:0">
-  <div id="cv" style="width:990px;position:relative;flex:none">
-   <svg id="asv" width="990" height="844" style="position:absolute;left:0;top:0;overflow:visible"></svg>
-   ${BX.map(box).join('')}
-   <div id="nr" style="position:absolute;left:560px;top:662px;font:300 13px var(--ui);color:#3f453f">not reached from any entry point</div>
-   <div id="lp" style="position:absolute;left:290px;top:404px;font:300 12.5px var(--ui);color:#5f8a8a">↻ 5–13 repeat until !running_</div>
-   ${BX.map(pop).join('')}
-  </div>
-  <div id="pp" style="flex:1;position:relative;background:var(--prev);overflow:hidden"><div id="ph0" style="position:absolute;inset:0;display:grid;place-items:center;font:300 14px var(--ui);color:#2f332f">click a box to see what’s inside</div><div id="ppc" style="position:absolute;inset:0">${preview}</div></div>
- </div>
- <svg id="ptr" width="22" height="30" viewBox="0 0 22 30" style="position:absolute;z-index:40;left:0;top:0"><path d="M2 2 L2 24 L8 18 L12 28 L16 26 L12 16 L20 16 Z" fill="#e8ebe4" stroke="#171817" stroke-width="1.5"/></svg>
- <div id="cap" style="position:absolute;left:40px;bottom:30px;z-index:30;font:300 17px var(--ui);color:#7b8279"></div></div>`;
-const colour={};$$('#ppc [data-card]').forEach((c,i)=>{c.querySelector('.sw').style.background=PAL[i];});
-const B=id=>{const e=$('#b-'+id),c=$('#cv').getBoundingClientRect(),r=e.getBoundingClientRect();return {l:r.left-c.left,r:r.right-c.left,t:r.top-c.top,b:r.bottom-c.top,cx:(r.left+r.right)/2-c.left,cy:(r.top+r.bottom)/2-c.top};};
-const NS='http://www.w3.org/2000/svg',asv=$('#asv');
-const arrows=AR.map(([a,b,lab,ord,v])=>{const A=B(a),Z=B(b);let d,x2,y2,ang;
-  if(v){d=`M${A.cx} ${A.b} C${A.cx} ${A.b+60} ${Z.cx} ${Z.t-60} ${Z.cx} ${Z.t-2}`;x2=Z.cx;y2=Z.t-2;ang=90;}
-  else{const x1=A.r,y1=A.cy;x2=Z.l-2;y2=Z.cy;const k=Math.max(30,(x2-x1)*.5);d=`M${x1} ${y1} C${x1+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}`;ang=0;}
-  const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('fill','none');p.setAttribute('stroke-width','1.5');if(v)p.setAttribute('stroke-dasharray','5 4');asv.appendChild(p);
-  const L=p.getTotalLength(),mid=p.getPointAtLength(L/2);
-  const head=document.createElementNS(NS,'path');head.setAttribute('d','M0 0 L-9 -5 L-9 5 Z');head.setAttribute('transform',`translate(${x2} ${y2}) rotate(${ang})`);asv.appendChild(head);
-  const g=document.createElement('div');g.className='al';g.textContent=lab;g.style.cssText=`position:absolute;left:${mid.x}px;top:${mid.y}px;transform:translate(-50%,-50%);background:#171817;padding:1px 7px;font:${v?'300 12px var(--ui)':'12.5px var(--mono)'};color:#c9b98f;white-space:nowrap;z-index:3`;$('#cv').appendChild(g);
-  return {a,b,p,head,g,L,ord,v};});
-const PT=[[1060,820,0],[1060,820,4.5],[640,330,5.3],[640,330,6.6],[370,362,7.2],[370,362,8.55],[370,362,99]];
-function ptrAt(t){let i=0;while(i<PT.length-2&&t>PT[i+1][2])i++;const [x0,y0,t0]=PT[i],[x1,y1,t1]=PT[i+1];const p=expo(clamp((t-t0)/Math.max(0.01,(t1-t0))));
-  const x=lerp(x0,x1,p),y=lerp(y0,y1,p)+56;const cl=t>8.55&&t<8.75;$('#ptr').style.transform=`translate(${x}px,${y}px) scale(${cl?0.86:1})`;$('#ptr').style.opacity=t<4.4?0:clamp((t-4.4)/0.3);}
-const CAPS=[[0.3,4.6,'flow as boxes and arrows — the numbers give the order things run in'],[4.6,8.5,'hover a box: its functions, numbered in execution order · no number means it doesn’t run in this flow'],[8.5,99,'click: the box’s contents open in the preview pane, in the same order']];
-window.TOTAL=12.5;
+const ST=(pos='45:42',p='no problems')=>`<span>${pos}</span><span>clangd ready</span><span>${p}</span>`;
+const COLW=372, TRAIL_H=46;
+const cv=(s,map)=>Object.entries(map).reduce((a,[k,v])=>a.split(k).join(v),s);
+const L1C=[
+  card('parse_headers','http/headers.cpp:12',cv(C_PARSE,{'«c:split|':'«c:L2-split|','«c:trim|':'«c:L2-trim|'}),{id:'L1-parse_headers',focus:true,c:{start:12,params:['raw'],active:18}}),
+  card('route','router.cpp:31',C_ROUTE,{id:'L1-route',c:{start:31,params:['path','routes']}}),
+  card('send_response','net/io.cpp:58',C_SEND,{id:'L1-send_response',c:{start:58,params:['s','r']}})];
+const L2C=[card('split','util/strings.cpp:8',C_SPLIT,{id:'L2-split',c:{start:8,params:['s','delim']}}),
+  card('trim','util/strings.cpp:27',cv(C_TRIM,{'«c:is_space|':'«c:L3-is_space|'}),{id:'L2-trim',focus:true,c:{start:27,params:['s'],active:31}})];
+const L3C=[card('is_space','util/chars.hpp:5',R`constexpr bool is_space(char c) noexcept {
+    return «c:L4-ascii_class|ascii_class»(c) & kSpace;«cur|»
+}`,{id:'L3-is_space',focus:true,c:{start:5,params:['c'],active:6}}),`<div class="cnote" style="color:#3f453f;padding:4px 2px">2 std calls hidden — remove_prefix, remove_suffix</div>`];
+const L4C=[card('ascii_class','util/chars.hpp:12',R`constexpr uint8_t ascii_class(char c) noexcept {
+    auto u = static_cast<unsigned char>(c);
+    return u < 128 ? «c:L5-class_table|class_table»()[u] : 0;«cur|»
+}`,{id:'L4-ascii_class',focus:true,c:{start:12,params:['c'],active:14}})];
+const L5C=[card('class_table','util/chars.hpp:20',R`constexpr const Table& class_table() noexcept {
+    static constexpr Table t = {
+        /* 0x00 */ 0, 0, 0, 0, 0, 0, 0, 0,
+        /* 0x08 */ 0, S, S, S, S, S, 0, 0,
+        /* 0x20 */ S, P, P, P, P, P, P, P,
+        /* 0x30 */ D, D, D, D, D, D, D, D,
+    };
+    return t;
+}`,{id:'L5-class_table',c:{start:20}}),`<div class="cnote" style="color:#3f453f;padding:4px 2px">end of chain — no further calls</div>`];
+const COLS=[L1C,L2C,L3C,L4C,L5C];
+const TRAIL=['Server::handle','parse_headers','trim','is_space','ascii_class'];
+
+const html=`<div class="win" style="position:absolute;inset:0;border-radius:0;box-shadow:none">
+  <div class="hdr">${PV('server.cpp',['headers.cpp','strings.cpp'],'Server::handle')}<span class="right">${ST()}</span></div>
+  <div style="flex:1;display:flex;min-height:0">
+    <div class="pane" style="width:500px;flex:none" id="codep">${code(cv(MAIN.replace('«pin:2|»',''),{'«c:parse_headers|':'«c:L1-parse_headers|','«c:route|':'«c:L1-route|','«c:send_response|':'«c:L1-send_response|'}),{start:30,active:45,params:['req']})}</div>
+    <div id="pva" style="flex:1;position:relative;overflow:hidden;background:var(--prev)">
+      <div id="trail" style="position:absolute;left:0;top:0;height:${TRAIL_H}px;right:0">${TRAIL.map((t,i)=>`<span class="tr" data-i="${i}" style="position:absolute;top:10px;left:${22+i*COLW}px;font:300 21px var(--ui);white-space:nowrap">${t}</span>`).join('')}</div>
+      ${COLS.map((items,i)=>`<div class="colm" data-i="${i}" style="position:absolute;top:${TRAIL_H}px;left:12px;width:${COLW}px;bottom:46px">${items.map(x=>`<div class="it" style="margin:0 10px 10px 10px">${x}</div>`).join('')}</div>`).join('')}
+      <div id="bar" style="position:absolute;left:0;right:0;bottom:0;height:46px;display:flex;align-items:center;gap:26px;padding:0 22px;font:300 14px var(--ui);color:#4f564f;background:var(--prev)">
+        <span id="bsrc">‹ source</span><span id="blvl" style="font-size:12.5px;color:#3a3f3a">levels 1–2 of 5</span><span style="flex:1"></span><span id="bshift">shift preview ›</span></div>
+    </div>
+    <div class="pane files" style="width:190px;flex:none">${tree(TREE_MAIN)}</div>
+  </div><svg id="lk" style="position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible" width="1440" height="900"></svg></div>`;
+document.getElementById('root').innerHTML=html;
+
+const cols=[...document.querySelectorAll('.colm')].map(c=>[...c.children]);
+const trs=[...document.querySelectorAll('.tr')];
+const clamp=x=>Math.max(0,Math.min(1,x));
+const expo=p=>p>=1?1:1-Math.pow(2,-10*p);
+const inC=p=>p*p*p;
+const mix=(a,b,p)=>{const A=a.match(/\w\w/g).map(h=>parseInt(h,16)),B=b.match(/\w\w/g).map(h=>parseInt(h,16));return '#'+A.map((x,i)=>Math.round(x+(B[i]-x)*p).toString(16).padStart(2,'0')).join('');};
+// colours per card, by order in its column
+const colour={};cols.forEach(items=>{let k=0;items.forEach(it=>{const c=it.querySelector('[data-card]');if(!c)return;colour[c.dataset.card]=PAL[k++%PAL.length];c.querySelector('.sw').style.background=colour[c.dataset.card];});});
+
+function setItem(it,x,o,rot=0){it.style.transformOrigin='left center';it.style.transform=`translateX(${x}px)`+(rot?` perspective(900px) rotateY(${rot}deg)`:'');it.style.opacity=o;}
+function layoutStatic(v){cols.forEach((items,i)=>{const s=i-v;items.forEach(it=>setItem(it,s*COLW,(s===0||s===1)?1:0));});}
+function trailAt(off,v){trs.forEach((t,i)=>{t.style.transform=`translateX(${-off}px)`;const inWin=i===Math.round(v)||i===Math.round(v)+1;t.style.color=inWin?'#a3a8a0':'#2f332f';});}
+function trailBlend(off,a,b,p){trs.forEach((t,i)=>{t.style.transform=`translateX(${-off}px)`;const wa=(i===a||i===a+1)?1:0,wb=(i===b||i===b+1)?1:0;t.style.color=mix('#2f332f','#a3a8a0',wa+(wb-wa)*p);});}
+
+function drawLinks2(v,alpha){
+  const svg=document.getElementById('lk');if(alpha<=0){svg.innerHTML='';return;}
+  document.querySelectorAll('.call').forEach(c=>{c.style.textDecoration='none';});
+  const wr=document.querySelector('.win').getBoundingClientRect();let out='';
+  const srcs=v===0?[...document.querySelectorAll('#codep .call')]:[];
+  cols[v].forEach(it=>it.querySelectorAll('.card.focus .call').forEach(c=>srcs.push(c)));
+  srcs.forEach(el=>{const id=el.dataset.call;const t=document.querySelector(`[data-card="${id}"]`);if(!t)return;const col=colour[id];
+    const a=el.getBoundingClientRect(),hold=el.closest('.colm')||el.closest('.pane');const pr=hold.getBoundingClientRect();
+    const rg=document.createRange();rg.selectNodeContents(el.closest('.t'));const tr=rg.getBoundingClientRect();
+    const b=t.querySelector('.card-h').getBoundingClientRect();
+    const xe=Math.min(pr.right,document.getElementById('pva').getBoundingClientRect().right)-wr.left-(el.closest('.colm')?14:0);
+    const y1=a.top+a.height/2-wr.top,x1=Math.min(Math.max(a.right-wr.left+2,tr.right-wr.left+8),xe),x2=b.left-wr.left,y2=b.top+b.height/2-wr.top;
+    el.style.textDecoration=`underline ${col}`;el.style.textUnderlineOffset='4px';
+    const k=Math.max(26,(x2-xe)*.55);
+    if(xe-x1>2)out+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${col}" stroke-width="1.2" stroke-dasharray="2 4" opacity=".5" fill="none"/><circle cx="${x1}" cy="${y1}" r="2.4" fill="${col}"/>`;
+    out+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${col}" stroke-width="1.5" opacity=".8" fill="none"/><circle cx="${x2}" cy="${y2}" r="3" fill="${col}"/>`;});
+  svg.innerHTML=out;svg.style.opacity=alpha;}
+
+// timeline
+const SHIFT=0.85,BACK=0.95;
+const EV=[{t:1.0,k:'f',v:0},{t:2.75,k:'f',v:1},{t:4.5,k:'f',v:2},{t:6.4,k:'b',v:3}];
+window.TOTAL=8.3;
+function press(id,t,t0){const p=t-(t0-0.14);const on=p>=0&&p<0.32;const el=document.getElementById(id);el.style.color=on?'#c9b98f':'';el.style.background=on?'rgba(255,255,255,.045)':'';el.style.padding='6px 10px';el.style.margin='0 -10px';}
 window.seek=function(t){
-  const hov=t>=5.3&&t<6.6?'headers':t>=7.2&&t<8.6?'server':null,sel=t>=8.6?'server':null;
-  BX.forEach(([id],k)=>{const e=$('#b-'+id),p=clamp((t-0.2-k*0.09)/0.45);e.style.opacity=p;e.style.transform=`translateY(${(1-expo(p))*16}px)`;
-    const lit=(hov===id||sel===id);e.style.borderColor=lit?'#ad9b6f':'';e.style.background=lit?'#1f201d':'';});
-  arrows.forEach(ar=>{const s=1.3+ar.ord*0.38,p=expo(clamp((t-s)/0.45));const touches=!hov&&!sel?1:(ar.a===(hov||sel)||ar.b===(hov||sel))?1:0.25;
-    const col=touches===1&&(hov||sel)?'#ad9b6f':'#5f665f';
-    ar.p.setAttribute('stroke',col);ar.p.setAttribute('stroke-dashoffset',ar.v?0:ar.L*(1-p));if(!ar.v)ar.p.setAttribute('stroke-dasharray',ar.L);ar.p.style.opacity=(ar.v?p:1)*touches;
-    ar.head.setAttribute('fill',col);ar.head.style.opacity=clamp((p-0.85)/0.15)*touches;ar.g.style.opacity=clamp((t-s-0.25)/0.3)*touches;});
-  $('#nr').style.opacity=clamp((t-3.9)/0.4);$('#lp').style.opacity=clamp((t-4.1)/0.4);
-  BX.forEach(([id])=>{const h=$('#h-'+id),on=hov===id;const p=on?clamp((t-(id==='headers'?5.35:7.25))/0.3):0;h.style.opacity=expo(p);h.style.transform=`translateY(${(1-expo(p))*10}px)`;});
-  ptrAt(t);
-  $('#ph0').style.opacity=t<8.6?1:1-clamp((t-8.6)/0.2);
-  $$('#ppc .pc').forEach((e,k)=>{const p=clamp((t-8.7-k*0.08)/0.55);e.style.opacity=Math.min(1,p*1.6);e.style.transformOrigin='left center';e.style.transform=`perspective(900px) rotateY(${70*(1-expo(p))}deg)`;});
-  const c=CAPS.find(([a,b])=>t>=a&&t<b)||[0,0,''],cap=$('#cap');cap.textContent=c[2];cap.style.opacity=Math.min(clamp((t-c[0])/0.35),clamp((c[1]-t)/0.3));cap.style.transform=`translateX(${(1-expo(clamp((t-c[0])/0.6)))*40}px)`;
+  let v=0,act=null;
+  for(const e of EV){if(t>=e.t+(e.k==='f'?SHIFT:BACK))v=e.k==='f'?e.v+1:0;else if(t>=e.t){act=e;break;}else break;}
+  press('bshift',t,EV.find(e=>e.k==='f'&&t<e.t+0.3&&t>e.t-0.2)?.t??-9);
+  press('bsrc',t,EV[3].t);
+  const lv=act?(act.k==='f'?(t-act.t>SHIFT*0.5?act.v+1:act.v):(t-act.t>BACK*0.5?0:act.v)):v;
+  document.getElementById('blvl').textContent=`levels ${lv+1}–${lv+2} of 5`;
+  document.getElementById('bshift').style.opacity=lv>=3?.35:1;
+  document.getElementById('bsrc').style.opacity=lv===0?.35:1;
+  if(!act){layoutStatic(v);trailAt(v*COLW,v);drawLinks2(v,1);return;}
+  const tau=t-act.t,a=act.v;
+  if(act.k==='f'){
+    cols.forEach((items,i)=>{const s=i-a;items.forEach((it,k)=>{
+      if(s===0){const p=clamp((tau-0.03*k)/0.22),e=inC(p);setItem(it,-30*e,Math.max(0,1-p*1.4),-80*e);}
+      else if(s===1){const e=expo(clamp((tau-0.17-0.035*k)/0.55));setItem(it,COLW*(1-e),1);}
+      else if(s===2){const p=clamp((tau-0.27-0.05*k)/0.55),e=expo(p);setItem(it,COLW+170*(1-e),Math.min(1,p*1.7));}
+      else setItem(it,0,0);});});
+    const pt=expo(clamp((tau-0.04)/0.75));trailBlend((a+pt)*COLW,a,a+1,pt);
+    if(tau<0.12)drawLinks2(a,1-tau/0.12);else if(tau>0.74){layoutStatic(a+1);drawLinks2(a+1,clamp((tau-0.74)/0.11));
+      cols.forEach((items,i)=>{const s=i-a;items.forEach((it,k)=>{if(s===2){const p=clamp((tau-0.27-0.05*k)/0.55),e=expo(p);setItem(it,COLW+170*(1-e),Math.min(1,p*1.7));}});});}
+    else drawLinks2(a,0);
+  }else{
+    cols.forEach((items,i)=>{const s=i-a;const n=i;items.forEach((it,k)=>{
+      if(s===0||s===1){const e=inC(clamp((tau-0.03*k-0.03*s)/0.28));setItem(it,s*COLW+90*e,1-e);}
+      else if(n===0||n===1){const p=clamp((tau-0.22-0.045*k-0.07*n)/0.6),e=expo(p);setItem(it,n*COLW-170*(1-e),Math.min(1,p*1.7));}
+      else setItem(it,0,0);});});
+    const pt=expo(clamp((tau-0.1)/0.75));trailBlend(a*COLW*(1-pt),a,0,pt);
+    if(tau<0.1)drawLinks2(a,1-tau/0.1);else if(tau>0.8){drawLinks2(0,clamp((tau-0.8)/0.15));}else drawLinks2(0,0);
+  }
 };
 seek(0);
 

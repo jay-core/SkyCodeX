@@ -15,7 +15,7 @@ Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
 | Database | `node:sqlite` (built into Node / Electron) | No native module to ship |
 | History | **git** CLI (if installed) | Blame, log, diffs |
 | Build / ASM / deep analysis | System compiler (clang, gcc, MSVC) + `clang --analyze` | Detected, never bundled |
-| Fonts | ArX F1 (code), Selawik (UI) | Bundled in `fonts/` |
+| Fonts | ArX F1 (code), Selawik (UI) | Bundled in `assets/fonts/`, both SIL OFL 1.1 |
 
 ## 2. Processes
 

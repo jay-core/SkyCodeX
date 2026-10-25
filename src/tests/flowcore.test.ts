@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCpp, loopsAt, functionDefs, offsetOf, lineOf, THREAD_RE } from '../src/shared/flowcore';
+import { parseCpp, loopsAt, functionDefs, offsetOf, lineOf, THREAD_RE } from '../shared/flowcore';
 
 const SRC = `void Server::start() {
     for (int i = 0; i < 16; ++i) f(i);

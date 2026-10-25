@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { routeEdges, footprint, overlap, labelSize, folderFrames } from '../src/renderer/lib/flowlayout';
+import { routeEdges, footprint, overlap, labelSize, folderFrames } from '../renderer/lib/flowlayout';
 
 describe('flow labels', () => {
   it('moves a label off a box that sits on the middle of its arrow', () => {
