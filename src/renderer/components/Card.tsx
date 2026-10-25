@@ -38,6 +38,12 @@ function mountCode(host: HTMLElement, text: string, firstLine: number, file: str
   });
 }
 
+const KIND_CHIP: Record<string, string> = { macro: 'macro', assert: 'compile-time', lambda: 'lambda', indirect: 'indirect' };
+const KIND_NOTE: Record<string, string> = {
+  macro: 'macro · replaced by its text before compiling', assert: 'checked by the compiler, never runs',
+  lambda: 'lambda · defined here, called like a function', indirect: 'called through a pointer or std::function · the target is known only at run time',
+};
+
 export default function Card(props: { card: CardData; id: string; color: string; focus: boolean; lit?: boolean; num?: string; onFocus: () => void; onScroll?: () => void }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -56,14 +62,15 @@ export default function Card(props: { card: CardData; id: string; color: string;
         <span class="sw" style={{ background: props.color }} />
         <Show when={props.num}><span class="num">{props.num}</span></Show>
         <span class="nm">{props.card.name}</span>
-        <Show when={props.card.std}><span class="chip">std</span></Show>
+        <Show when={props.card.kind !== 'call'} fallback={<Show when={props.card.std}><span class="chip">std</span></Show>}><span class="chip kind">{KIND_CHIP[props.card.kind]}</span></Show>
         <span class="loc">{props.card.std ? props.card.file.split('/').slice(-2).join('/') : cardLoc(props.card)}</span>
       </div>
       <div ref={host} />
-      <Show when={props.card.std}>
+      <Show when={props.card.std || props.card.kind !== 'call'}>
         <div class="std-act">
           <button onClick={openSrc}>open ›</button>
-          <span style={{ color: '#3f453f' }}>{props.card.declOnly ? 'declaration only — the body is compiled into the library' : 'standard library · read-only'}</span>
+          <span style={{ color: '#3f453f' }}>{props.card.kind !== 'call' ? KIND_NOTE[props.card.kind] + (props.card.std ? ' · library' : '')
+            : props.card.declOnly ? 'declaration only — the body is compiled into the library' : 'standard library · read-only'}</span>
         </div>
       </Show>
     </div>

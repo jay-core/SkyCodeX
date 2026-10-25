@@ -1,6 +1,8 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
-import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, page, cursorPos } from './lib/store';
+import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, page, cursorPos, info } from './lib/store';
+import { locateSymbol } from './lib/memloc';
+import { relPath } from './lib/api';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
 import { lspState } from './lib/lsp';
@@ -33,6 +35,8 @@ async function until(cond: () => boolean, ms: number, tick?: () => void) {
 
 export async function runSmoke() {
   const report: Record<string, unknown> = {};
+  if (info()?.scenario === 'memory') return memoryDemo(report);
+  if (info()?.scenario === 'compiler') return compilerDemo(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -85,6 +89,13 @@ export async function runSmoke() {
       await sleep(400);
       report.litAfterScroll = { pane1: document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null, pane2: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null, index: levels()[0]?.cards[[...document.querySelectorAll('.cindex .ix')].findIndex((e) => e.classList.contains('lit'))]?.name ?? null };
       await api.smoke.capture('2b-pane2-lit');
+      // the thin column between the panes: one square per pane-2 card; a click holds that card lit
+      const idx2 = document.querySelectorAll('.cindex')[1];
+      report.thin2 = { squares: idx2?.querySelectorAll('.ix').length ?? 0, pane2Cards: levels()[1]?.cards.length ?? 0 };
+      const sq2 = idx2?.querySelectorAll('.ix')[2] as HTMLElement | undefined;
+      sq2?.click(); await sleep(700);
+      report.thin2Pin = { clicked: levels()[1]?.cards[2]?.name, lit: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null };
+      document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       c1.scrollTop = 0; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop = 0;
     }
     report.motion = {} as Record<string, unknown>;
@@ -303,6 +314,23 @@ export async function runSmoke() {
     await api.smoke.capture('9c-preview-hidden');
     await api.settings.set('preview.enabled', true); await sleep(800);
     report.previewShownAgain = !!document.querySelector('.cindex');
+    // call-like things after the functions: macros, static_assert, lambdas, calls through pointers
+    const probe = `${root()}/probe/probe.cpp`;
+    if (await api.fs.exists(probe)) {
+      await openFile(probe); await sleep(500);
+      const pvw = getMainView()!, tAt = pvw.state.doc.toString().indexOf('int target()') + 4;
+      pvw.dispatch({ selection: { anchor: tAt } });
+      await until(() => (levels()[0]?.cards ?? []).some((c) => c.kind !== 'call'), 20000, () => refreshForCursor(probe, offsetToPos(pvw.state.doc, tAt), true));
+      await sleep(800);
+      report.callLike = (levels()[0]?.cards ?? []).map((c) => `${c.kind}:${c.name}`);
+      report.dividers = { squares: document.querySelectorAll('.cindex .ixdiv').length, cards: document.querySelectorAll('.pcol .pdiv').length };
+      await api.smoke.capture('9d-call-like');
+      await api.settings.set('preview.include_other', false);
+      await until(() => !(levels()[0]?.cards ?? []).some((c) => c.kind !== 'call'), 8000);
+      report.callLikeHidden = !(levels()[0]?.cards ?? []).some((c) => c.kind !== 'call');
+      await api.settings.set('preview.include_other', true);
+      await openFile(file);
+    }
     // switching folders: clangd must come back up and the terminal must follow
     const sub = `${root()}/src`;
     await openFolder(sub);
@@ -315,6 +343,127 @@ export async function runSmoke() {
     errors.push(`smoke: ${e}`);
   }
   for (const f of files.list) if (f.dirty) await api.buffers.drop(f.path);   // leave no unsaved smoke edits behind
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario memory`: analyse the folder's program, hover symbols of every kind, click through to the source. */
+async function memoryDemo(report: Record<string, unknown>) {
+  try {
+    await until(() => lspState() === 'ready', 20000);
+    // workspace symbols need the background index: wait until a cross-file symbol resolves
+    report.indexReady = await until(() => !!document.body.dataset.idx, 30000, () => { locateSymbol('Sensors::history_', 'bss').then((l) => { if (l) document.body.dataset.idx = '1'; }); });
+    setPage('memory');
+    await until(() => !!document.querySelector('.mem select option') || !!document.querySelector('.ph select option'), 8000);
+    (document.querySelector('.ph .chip.on') as HTMLButtonElement)?.click();
+    await until(() => !!document.querySelector('.mrow.go'), 10000);
+    await sleep(400);
+    const rowsNow = () => [...document.querySelectorAll('.mrow.go')] as HTMLElement[];
+    report.ramRows = rowsNow().map((r) => `${r.querySelector('.n')?.textContent} ${r.querySelector('.s')?.textContent}`);
+    const hover = async (name: string, shot?: string) => {
+      const row = rowsNow().find((r) => r.querySelector('.n')?.textContent === name);
+      if (!row) return `${name}: no row`;
+      row.scrollIntoView({ block: 'nearest' }); await sleep(100);
+      row.dispatchEvent(new MouseEvent('mouseenter'));
+      await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 8000);
+      await sleep(250);
+      const t = document.querySelector('.memtip');
+      const out = t ? [...t.children].map((c) => c.textContent).join(' | ') : 'no tooltip';
+      if (shot) await api.smoke.capture(shot);
+      row.dispatchEvent(new MouseEvent('mouseleave'));
+      return out;
+    };
+    const click = async (name: string, shot: string) => {
+      const row = rowsNow().find((r) => r.querySelector('.n')?.textContent === name);
+      row?.click();
+      await until(() => page() === 'editor', 5000);
+      await sleep(700);
+      const v = getMainView()!, head = v.state.selection.main.head, line = v.state.doc.lineAt(head);
+      const res = `${relPath(root(), files.active)}:${line.number} col ${head - line.from + 1} → ${line.text.trim()}`;
+      await api.smoke.capture(shot);
+      setPage('memory'); await sleep(400);
+      return res;
+    };
+    const tips: Record<string, string> = {};
+    for (const [n, shot] of [['g_frame_buffer', 'm1-hover-bss'], ['Sensors::history_', ''], ['Logger::ring', ''], ['next_id()::issued', 'm2-hover-static-local'], ['dsp::window', ''], ['g_calibration', 'm3-hover-data']] as const) tips[n] = await hover(n, shot || undefined);
+    report.ramTips = tips;
+    report.clickHistory = await click('Sensors::history_', 'm4-click-history');
+    report.clickLocal = await click('next_id()::issued', 'm5-click-static-local');
+    // storage: constants and functions
+    ([...document.querySelectorAll('.mem .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'storage')?.click();
+    await sleep(400);
+    report.storageRows = rowsNow().slice(0, 12).map((r) => `${r.querySelector('.n')?.textContent} ${r.querySelector('.s')?.textContent}`);
+    const st: Record<string, string> = {};
+    for (const [n, shot] of [['kGainTable', 'm6-hover-rodata'], ['Logger::write(char const*)', 'm7-hover-function'], ['Sensors::average() const', '']] as const) st[n] = await hover(n, shot || undefined);
+    report.storageTips = st;
+    report.clickFunction = await click('Logger::write(char const*)', 'm8-click-function');
+    // stack rows open their line too
+    const sRow = ([...document.querySelectorAll('.mrow.go')] as HTMLElement[]).find((r) => r.querySelector('.n')?.textContent?.startsWith('Sensors::sample'));
+    sRow?.dispatchEvent(new MouseEvent('mouseenter'));
+    await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 4000);
+    report.stackTip = [...(document.querySelector('.memtip')?.children ?? [])].map((c) => c.textContent).join(' | ');
+    await api.smoke.capture('m9-hover-stack');
+  } catch (e) {
+    errors.push(`memory demo: ${e}`);
+  }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario compiler`: the compiler window — engine, versions from GitHub, moving, minimising; nothing is installed. */
+async function compilerDemo(report: Record<string, unknown>) {
+  try {
+    await until(() => lspState() === 'ready', 20000);
+    report.lsp = lspState();
+    const ci = (await api.compiler.info()) as any;
+    report.engine = { setting: ci.setting, active: ci.active, version: ci.activeVersion, inbuilt: ci.inbuilt, system: ci.system };
+    report.headers = ci.headers; report.packsDir = ci.packsDir; report.packs = ci.packs.length;
+    (([...document.querySelectorAll('.appbar .barbtn')] as HTMLButtonElement[]).find((b) => b.textContent === 'compiler'))?.click();
+    await until(() => !!document.querySelector('.cwin .cbig'), 5000);
+    await sleep(500);
+    const w = document.querySelector('.cwin') as HTMLElement;
+    report.window = { title: document.querySelector('.cwin-h .t')?.textContent, big: document.querySelector('.cwin .cbig')?.textContent, sub: document.querySelector('.cwin .csub')?.textContent };
+    await api.smoke.capture('c1-compiler');
+    // background clicks don't close it
+    document.querySelector('.body')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    document.body.click();
+    await sleep(200);
+    report.staysOpen = !!document.querySelector('.cwin');
+    // drag by the title bar
+    const r0 = w.getBoundingClientRect(), h = document.querySelector('.cwin-h') as HTMLElement;
+    h.dispatchEvent(new PointerEvent('pointerdown', { clientX: r0.left + 60, clientY: r0.top + 15, bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: r0.left + 60 - 180, clientY: r0.top + 15 + 90 }));
+    window.dispatchEvent(new PointerEvent('pointerup', {}));
+    await sleep(200);
+    const r1 = w.getBoundingClientRect();
+    report.moved = [Math.round(r1.left - r0.left), Math.round(r1.top - r0.top)];
+    // versions straight from the official releases (metadata only)
+    const links = () => [...document.querySelectorAll('.cwin .lnk')] as HTMLButtonElement[];
+    links().find((b) => /check for clangd updates/.test(b.textContent ?? ''))?.click();
+    await until(() => !/looking|check for/.test(document.querySelectorAll('.cwin .crow')[0]?.textContent ?? 'looking'), 15000);
+    report.clangdUpdate = document.querySelectorAll('.cwin .crow')[0]?.textContent;
+    links().find((b) => /install a toolchain/.test(b.textContent ?? ''))?.click();
+    await until(() => document.querySelectorAll('.cwin .cvers button').length > 0 || /couldn/.test(document.querySelector('.cwin .cvers')?.textContent ?? ''), 15000);
+    report.toolchainVersions = [...document.querySelectorAll('.cwin .cvers button')].slice(0, 5).map((b) => b.textContent);
+    (document.querySelector('.cwin .cvers button') as HTMLButtonElement | null)?.click();
+    await sleep(300);
+    report.confirm = document.querySelector('.cwin .cconfirm')?.textContent ?? null;
+    await api.smoke.capture('c2-compiler-versions');
+    ([...document.querySelectorAll('.cwin .cconfirm .lnk')] as HTMLButtonElement[]).find((b) => b.textContent === 'cancel')?.click();
+    // minimise to the title bar, then expand
+    (document.querySelector('.cwin-h button') as HTMLButtonElement).click();
+    await sleep(200);
+    report.minimised = !document.querySelector('.cwin-b');
+    await api.smoke.capture('c3-compiler-minimised');
+    (document.querySelector('.cwin-h button') as HTMLButtonElement).click();
+    await sleep(200);
+    (document.querySelector('.cwin-h button.x') as HTMLButtonElement).click();
+    await sleep(200);
+    report.closedByButton = !document.querySelector('.cwin');
+    try { localStorage.removeItem('litho.compiler.pos'); } catch { /* fine */ }
+  } catch (e) {
+    errors.push(`compiler demo: ${e}`);
+  }
   report.errors = errors;
   await api.smoke.done(report);
 }

@@ -6,10 +6,30 @@ import { pathToFileURL } from 'node:url';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string };
 
-export function findClangd(setting: string, toolsDir: string): string | null {
+const EXE = process.platform === 'win32' ? 'clangd.exe' : 'clangd';
+/** The clangd that ships inside Lithograph (tools/clangd/bin), if this build has one. */
+export function inbuiltClangd(toolsDir: string): string | null {
+  for (const p of [path.join(toolsDir, 'clangd', 'bin', EXE), path.join(toolsDir, 'clangd', EXE)]) if (fs.existsSync(p)) return p;
+  return null;
+}
+
+/**
+ * clangd.path: "auto" (inbuilt, else the system's), "inbuilt", "system", "pack:<id>" (an installed language pack)
+ * or a path to any clangd.
+ */
+export function findClangd(setting: string, toolsDir: string, packsDir?: string): string | null {
+  if (setting === 'inbuilt') return inbuiltClangd(toolsDir);
+  if (setting === 'system') return systemClangd();
+  if (setting?.startsWith('pack:')) {
+    const p = packsDir ? path.join(packsDir, setting.slice(5), 'bin', EXE) : '';
+    return p && fs.existsSync(p) ? p : null;
+  }
   if (setting && setting !== 'auto') return fs.existsSync(setting) ? setting : null;
-  const bundled = path.join(toolsDir, 'clangd', process.platform === 'win32' ? 'clangd.exe' : 'clangd');
-  if (fs.existsSync(bundled)) return bundled;
+  return inbuiltClangd(toolsDir) ?? systemClangd();
+}
+
+/** The clangd installed on the system (Xcode on macOS, PATH elsewhere). */
+export function systemClangd(): string | null {
   try {
     if (process.platform === 'darwin') return execFileSync('xcrun', ['--find', 'clangd'], { encoding: 'utf8' }).trim() || null;
     const which = process.platform === 'win32' ? 'where' : 'which';

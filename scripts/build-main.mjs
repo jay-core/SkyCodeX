@@ -13,3 +13,4 @@ const common = {
 
 await build({ ...common, entryPoints: ['src/main/main.ts'], outfile: 'dist/main/main.cjs' });
 await build({ ...common, entryPoints: ['src/preload/preload.ts'], outfile: 'dist/main/preload.cjs' });
+await build({ ...common, entryPoints: ['src/main/fetch-clangd.ts'], outfile: 'dist/main/fetch-clangd.cjs' });

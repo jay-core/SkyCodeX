@@ -13,6 +13,7 @@
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
     "rebuild-native": "electron-rebuild -f -w node-pty",
+    "fetch-clangd": "node scripts/build-main.mjs && node dist/main/fetch-clangd.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "smoke": "npm run build && electron . --smoke samples/tinyhttp"

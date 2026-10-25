@@ -21,13 +21,24 @@ Not built yet: build view, debugger, git, atlas / book / board, compliance packs
 
 ## Running from source
 
-Needs Node.js 22+ and a clangd (Xcode Command Line Tools, LLVM, or your package manager).
+Needs Node.js 22+.
 
 ```
 npm install
 node node_modules/electron/install.js   # fetches the Electron binary (npm blocks install scripts by default)
+npm run fetch-clangd                    # the inbuilt clangd for this platform, checked against its pinned SHA-256
 npm start
 ```
+
+The inbuilt clangd lives in `tools/clangd/` (kept out of git: its binary is larger than GitHub allows). Without it, Lithograph uses the system's clangd.
+
+### Compiler toolchains and language packs
+
+The **compiler** button (bottom left) opens a window to choose the clangd in use and to install, update or remove packs such as the full LLVM toolchain (llvm-mingw on Windows). Packs go into `language_packs/` beside the app — created empty on first run — and nowhere else:
+
+- files come from the official GitHub releases and are checked against the SHA-256 GitHub publishes; only `.zip` and `.tar.zst` are offered, both unpacked by Lithograph itself (no installer or script runs, and entries that would land outside the folder are refused);
+- an installed toolchain comes first on `PATH` in Lithograph's own terminals only, through start-up files kept in `data/state/shell-init/` that load your usual shell configuration first. Your shell files, system `PATH` and other terminals are never changed;
+- the standard C/C++ headers still come from the system (Xcode Command Line Tools on macOS, the distribution's development packages on Linux); on Windows the llvm-mingw pack brings its own.
 
 `npm test` runs the unit and clangd integration tests. `npm run smoke` drives the real app against `samples/tinyhttp` (build it first with `samples/tinyhttp/build.sh`) and writes screenshots to `data/logs/`.
 

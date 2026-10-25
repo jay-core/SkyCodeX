@@ -1,7 +1,7 @@
 import { For, Show, createSignal, createResource, createMemo } from 'solid-js';
 import { api, relPath } from '../lib/api';
 import { root, settings, openFile, flash } from '../lib/store';
-import { locateSymbol, SymbolLoc } from '../lib/memloc';
+import { locateSymbol, locAt, SymbolLoc, setKnownLocations, warmIndex, clearSymbolLocations } from '../lib/memloc';
 
 interface Report {
   binary: string; format: string; arch: string; note?: string; storage: number; ram: number;
@@ -48,19 +48,28 @@ function Region(props: { name: string; used: number; budgetKb: number; parts: [s
   );
 }
 
-type Tip = { x: number; y: number; title: string; loc: SymbolLoc | null | 'looking' | 'none' };
+type Tip = { x: number; y: number; up?: boolean; title: string; what: string; loc: SymbolLoc | null | 'looking' | 'none' };
+// where each kind of symbol lives once the program is built
+const SECTION: Record<string, string> = {
+  code: 'function · machine code in storage', data: 'initialised variable · RAM, with its starting value kept in storage',
+  bss: 'zero-initialised variable · RAM only, nothing stored', rodata: 'constant · read-only, in storage only',
+};
 const [tip, setTip] = createSignal<Tip | null>(null);
-const at = (e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); return { x: r.left, y: r.bottom + 4 }; };
+/** Below the row, or above it when the row sits near the bottom of the window. */
+const at = (e: MouseEvent) => {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect(), up = r.bottom + 150 > window.innerHeight;
+  return { x: r.left, y: up ? r.top - 4 : r.bottom + 4, up };
+};
 
 /** Hovering a symbol looks up its definition; clicking opens it. */
-function hoverSymbol(e: MouseEvent, name: string, kind: string) {
+function hoverSymbol(e: MouseEvent, name: string, kind: string, size: number) {
   const p = at(e);
-  setTip({ ...p, title: name, loc: 'looking' });
+  setTip({ ...p, title: name, what: `${SECTION[kind] ?? kind} · ${kb(size)}`, loc: 'looking' });
   locateSymbol(name, kind).then((loc) => setTip((t) => (t && t.title === name ? { ...t, loc: loc ?? 'none' } : t)));
 }
 async function openSymbol(name: string, kind: string) {
   const loc = await locateSymbol(name, kind);
-  if (!loc) { flash(`${name} isn't in the indexed source — it is made by the compiler or comes from a library`, 5000); return; }
+  if (!loc) { flash(`${name} couldn't be traced to your source — the compiler made it, or it comes from a library`, 5000); return; }
   setTip(null);
   openFile(loc.file, { line: loc.line, character: loc.character });
 }
@@ -71,11 +80,17 @@ const absPath = (rel: string) => (/^([\\/]|[A-Za-z]:)/.test(rel) ? rel : `${root
 function MemTip() {
   return (
     <Show when={tip()}>{(t) => (
-      <div class="memtip" style={{ left: `${t().x}px`, top: `${t().y}px` }}>
+      <div class="memtip" classList={{ up: !!t().up }} style={{ left: `${t().x}px`, top: `${t().y}px` }}>
         <div class="nm">{t().title}</div>
-        <div class="loc">{t().loc === 'looking' ? 'finding it in the source…'
-          : t().loc === 'none' ? 'not in the indexed source — compiler-made or from a library'
-          : (() => { const l = t().loc as SymbolLoc; return `${l.inProject ? relPath(root(), l.file) : l.file.split('/').slice(-2).join('/')}:${l.line + 1}${l.inProject ? '' : ' · library, read-only'} · click to open`; })()}</div>
+        <div class="what">{t().what}</div>
+        <Show when={typeof t().loc === 'object' && t().loc} fallback={<div class="loc">{t().loc === 'looking' ? 'finding it in the source…' : 'couldn\'t trace this one to your source — the compiler made it, or it comes from a library'}</div>}>
+          {(() => { const l = t().loc as SymbolLoc; return (
+            <>
+              <Show when={l.snippet}><pre class="src"><span class="ln">{l.line + 1}</span>{l.snippet}</pre></Show>
+              <div class="loc">{l.inProject ? relPath(root(), l.file) : l.file.split('/').slice(-2).join('/')}:{l.line + 1}{l.inProject ? '' : ' · library, read-only'} · click to open</div>
+            </>
+          ); })()}
+        </Show>
       </div>
     )}</Show>
   );
@@ -91,7 +106,13 @@ export default function Memory() {
   const chosen = () => bin() || bins()?.[0] || '';
   const run = async () => {
     setErr('');
-    try { setReport((await api.memory.analyze(chosen(), root())) as Report); } catch (e) { setErr(String(e)); }
+    try {
+      const r = (await api.memory.analyze(chosen(), root())) as Report;
+      clearSymbolLocations();
+      setKnownLocations(r.stack.map((s) => { const l = splitLoc(s.file); return { fn: s.fn, file: absPath(l.file), line: l.line - 1 }; }));
+      warmIndex();
+      setReport(r);
+    } catch (e) { setErr(String(e)); }
   };
   const rows = () => (which() === 'ram' ? report()?.largestRam : report()?.largestStorage) ?? [];
   const maxRow = () => rows()[0]?.size || 1;
@@ -135,7 +156,7 @@ export default function Memory() {
                   <span style={{ 'margin-left': 'auto' }} class="sub">largest first{r().symbolSizesExact ? '' : ' · sizes derived from symbol addresses'}</span>
                 </div>
                 <For each={rows().slice(0, 40)}>{(s) => (
-                  <div class="mrow go" onMouseEnter={(e) => hoverSymbol(e, s.name, s.kind)} onMouseLeave={() => setTip(null)} onClick={() => openSymbol(s.name, s.kind)}>
+                  <div class="mrow go" onMouseEnter={(e) => hoverSymbol(e, s.name, s.kind, s.size)} onMouseLeave={() => setTip(null)} onClick={() => openSymbol(s.name, s.kind)}>
                     <span class="n">{s.name}</span><span><div class="b" style={{ width: `${(s.size / maxRow()) * 100}%` }} /></span><span class="s">{kb(s.size)}</span>
                   </div>
                 )}</For>
@@ -145,7 +166,11 @@ export default function Memory() {
                 <Show when={r().stack.length} fallback={<div class="sub">{r().stackNote}</div>}>
                   <For each={r().stack.slice(0, 12)}>{(s) => (
                     <div class="mrow go" style={{ 'grid-template-columns': '1fr 70px' }}
-                      onMouseEnter={(e) => { const l = splitLoc(s.file); setTip({ ...at(e), title: s.fn, loc: { file: absPath(l.file), line: l.line - 1, character: 0, inProject: true } }); }} onMouseLeave={() => setTip(null)}
+                      onMouseEnter={(e) => {
+                        const l = splitLoc(s.file), title = s.fn;
+                        setTip({ ...at(e), title, what: `stack frame · ${s.bytes} bytes${s.qualifier !== 'static' ? ` (${s.qualifier})` : ''}`, loc: 'looking' });
+                        locAt(absPath(l.file), l.line - 1).then((loc) => setTip((t) => (t && t.title === title ? { ...t, loc } : t)));
+                      }} onMouseLeave={() => setTip(null)}
                       onClick={() => { const l = splitLoc(s.file); setTip(null); openFile(absPath(l.file), { line: l.line - 1, character: 0 }); }}>
                       <span class="n">{s.fn}</span><span class="s">{s.bytes} B</span>
                     </div>

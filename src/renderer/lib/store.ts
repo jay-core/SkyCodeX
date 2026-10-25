@@ -11,7 +11,7 @@ export interface Problem { key: string; line: number; message: string }
 
 export const [settings, setSettingsSig] = createSignal<Settings>({});
 export const [problems, setProblems] = createSignal<Problem[]>([]);
-export const [info, setInfo] = createSignal<{ dataDir: string; fallbackReason: string | null; platform: string; version: string; smoke: string | null; settingsFile: string } | null>(null);
+export const [info, setInfo] = createSignal<{ dataDir: string; fallbackReason: string | null; platform: string; version: string; smoke: string | null; scenario?: string | null; settingsFile: string } | null>(null);
 export const [root, setRoot] = createSignal<string>('');
 export const [page, setPage] = createSignal<'editor' | 'flow' | 'memory'>('editor');
 export const [settingsOpen, setSettingsOpen] = createSignal(false);

@@ -88,7 +88,7 @@ export default function Flow() {
     setSelCards(rows.map((f) => {
       const pos = { line: f.line, character: 0 };
       const item = { name: f.name, kind: 12, uri: fileToUri(file), range: { start: pos, end: { line: f.endLine, character: 0 } }, selectionRange: { start: pos, end: pos } };
-      return { key: `${file}#${f.line}`, item, file, name: f.name, startLine: f.line, text: text.slice(f.line, f.endLine + 1).join('\n'), fromRanges: [], std: false, num: f.num } as CardData & { num: string };
+      return { key: `${file}#${f.line}`, item, file, name: f.name, startLine: f.line, text: text.slice(f.line, f.endLine + 1).join('\n'), fromRanges: [], std: false, kind: 'call', num: f.num } as CardData & { num: string };
     }));
   }));
 

@@ -6,7 +6,10 @@ import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers } from './files';
-import { LspClient, findClangd } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd } from './lsp';
+import { resolvePacksDir, listPacks, availableReleases, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
+import { launchWithPacks } from './shellinit';
+import { execFile, execFileSync } from 'node:child_process';
 import { findBinaries, analyze } from './memory';
 
 // ---------- portable data dir: decided before anything else touches the disk ----------
@@ -27,6 +30,8 @@ app.setPath('crashDumps', path.join(data.dir, 'logs', 'crashes'));
 // ---------- smoke mode: scripted run that captures screenshots, used for verification ----------
 const smokeIdx = process.argv.indexOf('--smoke');
 const smoke = smokeIdx > 0 ? path.resolve(process.argv[smokeIdx + 1] ?? '') : null;
+const scenarioIdx = process.argv.indexOf('--scenario');
+const scenario = scenarioIdx > 0 ? process.argv[scenarioIdx + 1] ?? null : null;   // one part of the smoke run only
 // a smoke run keeps its session and unsaved buffers apart, so it never replaces the user's own
 const STATE = smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
 if (smoke) { fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true }); }
@@ -35,6 +40,8 @@ const SETTINGS_FILE = path.join(data.dir, 'settings.toml');
 const BUFFERS = path.join(STATE, 'buffers');
 const SESSION = path.join(STATE, 'session.json');
 const TOOLS = path.join(app.isPackaged ? path.dirname(data.dir) : appRoot, 'tools');
+// language packs live beside the app (the project folder while developing)
+const PACKS = resolvePacksDir(app.isPackaged ? path.dirname(data.dir) : appRoot, data.dir);
 if (!fs.existsSync(SETTINGS_FILE)) atomicWrite(SETTINGS_FILE, defaultFileText());
 
 let settings: Settings;
@@ -81,16 +88,19 @@ fs.watch(path.dirname(SETTINGS_FILE), (_e, name) => {
   }, 120);
 });
 ipcMain.handle('settings:get', () => ({ settings, problems, path: SETTINGS_FILE }));
-ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
+function writeSetting(key: string, value: unknown) {
   atomicWrite(SETTINGS_FILE, setSetting(fs.readFileSync(SETTINGS_FILE, 'utf8'), key, value));
   reloadSettings();
+}
+ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
+  writeSetting(key, value);
   send('settings:changed', { settings, problems });
   return { settings, problems };
 });
 
 ipcMain.handle('app:info', () => ({
   dataDir: data.dir, fallbackReason: data.reason ?? null, platform: process.platform,
-  version: app.getVersion(), smoke, settingsFile: SETTINGS_FILE,
+  version: app.getVersion(), smoke, scenario, settingsFile: SETTINGS_FILE,
 }));
 
 // ---------- files ----------
@@ -149,7 +159,7 @@ ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stri
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
 lsp.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
 ipcMain.handle('lsp:start', async (_e, root: string) => {
-  const clangd = findClangd(String(settings['clangd.path']), TOOLS);
+  const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
   try {
     await lsp.start(clangd, root, settings['clangd.args'] as string[]);
@@ -172,7 +182,11 @@ ipcMain.handle('pty:spawn', (_e, id: number, cwd: string, cols: number, rows: nu
   let nodePty: { spawn: (f: string, a: string[], o: object) => Pty };
   try { nodePty = require('node-pty'); } catch (e) { return { ok: false, message: `terminal unavailable: ${e}` }; }
   const sh = defaultShell();
-  const p = nodePty.spawn(sh.file, sh.args, { name: 'xterm-256color', cols, rows, cwd: fs.existsSync(cwd) ? cwd : process.env.HOME, env: { ...process.env, TERM_PROGRAM: 'Lithograph' } });
+  // the active toolchain pack comes first on PATH in this terminal only (see shellinit.ts)
+  const tc = activeToolchain(), extra: Record<string, string> = { TERM_PROGRAM: 'Lithograph' };
+  if (tc && process.platform === 'darwin') { const sdk = sdkPath(); if (sdk) extra.SDKROOT = sdk; }   // LLVM's clang finds the macOS headers through this
+  const go = launchWithPacks(sh.file, sh.args, tc ? [path.join(PACKS.dir, tc.id, tc.bin)] : [], STATE, extra);
+  const p = nodePty.spawn(go.file, go.args, { name: 'xterm-256color', cols, rows, cwd: fs.existsSync(cwd) ? cwd : process.env.HOME, env: { ...process.env, ...go.env } });
   ptys.set(id, p);
   p.onData((d) => send('pty:data', id, d));
   p.onExit((ev) => { ptys.delete(id); send('pty:exit', id, ev.exitCode); });
@@ -181,6 +195,94 @@ ipcMain.handle('pty:spawn', (_e, id: number, cwd: string, cols: number, rows: nu
 ipcMain.handle('pty:write', (_e, id: number, d: string) => ptys.get(id)?.write(d));
 ipcMain.handle('pty:resize', (_e, id: number, c: number, r: number) => { try { ptys.get(id)?.resize(c, r); } catch { /* exited */ } });
 ipcMain.handle('pty:kill', (_e, id: number) => { ptys.get(id)?.kill(); ptys.delete(id); });
+
+// ---------- compiler window: engines and language packs ----------
+function activeToolchain(): PackManifest | null {
+  const want = String(settings['compiler.toolchain'] ?? 'auto');
+  if (want === 'none') return null;
+  const tcs = listPacks(PACKS.dir).filter((m) => m.kind === 'toolchain' && packExe(PACKS.dir, m, 'clang'));
+  return (want === 'auto' ? tcs[0] : tcs.find((m) => m.id === want)) ?? null;
+}
+let sdk: string | null | undefined;
+function sdkPath(): string | null {
+  if (sdk !== undefined) return sdk;
+  try { sdk = execFileSync('xcrun', ['--show-sdk-path'], { encoding: 'utf8', timeout: 5000 }).trim() || null; } catch { sdk = null; }
+  return sdk;
+}
+/** Whether the standard C/C++ headers a compiler needs are on this machine (they come from the OS, not LLVM). */
+function headersStatus(): { ok: boolean; detail: string } {
+  if (process.platform === 'darwin') {
+    const s = sdkPath();
+    return s && fs.existsSync(path.join(s, 'usr/include/stdio.h')) && fs.existsSync(path.join(s, 'usr/include/c++/v1/vector'))
+      ? { ok: true, detail: `macOS SDK from the Command Line Tools · ${s}` }
+      : { ok: false, detail: 'not found — install the Xcode Command Line Tools (xcode-select --install)' };
+  }
+  if (process.platform === 'win32') {
+    return listPacks(PACKS.dir).some((m) => m.name === 'llvm-mingw')
+      ? { ok: true, detail: 'llvm-mingw carries its own headers and libraries' }
+      : { ok: false, detail: 'install the llvm-mingw pack below (it brings its own), or Visual Studio' };
+  }
+  const cxx = fs.existsSync('/usr/include/c++') && fs.readdirSync('/usr/include/c++').length > 0;
+  return fs.existsSync('/usr/include/stdio.h') && cxx
+    ? { ok: true, detail: 'system headers in /usr/include' }
+    : { ok: false, detail: 'not found — install your distribution\'s C/C++ development packages (e.g. build-essential)' };
+}
+const versions = new Map<string, Promise<string | null>>();
+const clangdVersion = (p: string | null): Promise<string | null> => {
+  if (!p) return Promise.resolve(null);
+  if (!versions.has(p)) versions.set(p, new Promise((res) => execFile(p, ['--version'], { timeout: 8000 }, (_e, out) => res(String(out ?? '').match(/clangd version (\S+)/)?.[1] ?? null))));
+  return versions.get(p)!;
+};
+ipcMain.handle('compiler:info', async () => {
+  const setting = String(settings['clangd.path'] ?? 'auto');
+  const active = findClangd(setting, TOOLS, PACKS.dir), inb = inbuiltClangd(TOOLS), sys = systemClangd();
+  const packs = listPacks(PACKS.dir).map((m) => ({ ...m, clangd: packExe(PACKS.dir, m, 'clangd'), clang: packExe(PACKS.dir, m, 'clang') }));
+  return {
+    setting, active, activeVersion: await clangdVersion(active),
+    inbuilt: inb ? { path: inb, version: await clangdVersion(inb) } : null,
+    system: sys ? { path: sys, version: await clangdVersion(sys) } : null,
+    packs, packsDir: PACKS.dir, packsNote: PACKS.note ?? null,
+    toolchainSetting: String(settings['compiler.toolchain'] ?? 'auto'), toolchain: activeToolchain()?.id ?? null,
+    headers: headersStatus(), installing: installing?.rel.id ?? null,
+  };
+});
+let installing: { ctrl: AbortController; rel: Release } | null = null;
+ipcMain.handle('packs:available', async (_e, kind: PackKind) => {
+  try { return { ok: true, list: await availableReleases(kind) }; } catch (e) { return { ok: false, message: (e as Error).message ?? String(e) }; }
+});
+/** Installs a release; with `replaces`, the older pack is removed afterwards and settings that named it move to the new one. */
+ipcMain.handle('packs:install', async (_e, kind: PackKind, version: string, replaces?: string) => {
+  if (installing) return { ok: false, message: `${installing.rel.id} is still installing` };
+  let rel: Release | undefined;
+  try { rel = (await availableReleases(kind)).find((r) => r.version === version); } catch (e) { return { ok: false, message: (e as Error).message }; }
+  if (!rel) return { ok: false, message: `${kind} ${version} isn't available for this machine` };
+  const ctrl = new AbortController(), r = rel;
+  installing = { ctrl, rel: r };
+  try {
+    const m = await installRelease(r, PACKS.dir, (p) => send('packs:progress', { id: r.id, ...p }), ctrl.signal);
+    if (replaces && replaces !== m.id) {
+      try { removePack(PACKS.dir, replaces); } catch { /* already gone */ }
+      if (settings['clangd.path'] === `pack:${replaces}`) writeSetting('clangd.path', `pack:${m.id}`);
+      if (settings['compiler.toolchain'] === replaces) writeSetting('compiler.toolchain', m.id);
+      send('settings:changed', { settings, problems });
+    }
+    return { ok: true, pack: m };
+  } catch (e) {
+    const cancelled = ctrl.signal.aborted;
+    send('packs:progress', { id: r.id, phase: cancelled ? 'cancelled' : 'failed', done: 0, total: 0, note: (e as Error).message });
+    return { ok: false, message: cancelled ? 'cancelled' : (e as Error).message };
+  } finally { installing = null; }
+});
+ipcMain.handle('packs:cancel', () => installing?.ctrl.abort());
+ipcMain.handle('packs:remove', (_e, id: string) => {
+  if (installing?.rel.id === id) return { ok: false, message: 'it is installing right now' };
+  try { removePack(PACKS.dir, id); } catch (e) { return { ok: false, message: (e as Error).message }; }
+  if (settings['clangd.path'] === `pack:${id}`) writeSetting('clangd.path', 'auto');
+  if (settings['compiler.toolchain'] === id) writeSetting('compiler.toolchain', 'auto');
+  send('settings:changed', { settings, problems });
+  return { ok: true };
+});
+ipcMain.handle('packs:show', () => shell.openPath(PACKS.dir));
 
 // ---------- memory ----------
 ipcMain.handle('memory:binaries', (_e, root: string) => findBinaries(root));

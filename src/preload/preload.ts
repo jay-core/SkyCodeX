@@ -11,6 +11,15 @@ const on = (ch: string, cb: (...a: any[]) => void) => {
 const api = {
   info: () => invoke('app:info'),
   sys: { shells: () => invoke('sys:shells') },
+  compiler: { info: () => invoke('compiler:info') },
+  packs: {
+    available: (kind: string) => invoke('packs:available', kind),
+    install: (kind: string, version: string, replaces?: string) => invoke('packs:install', kind, version, replaces),
+    cancel: () => invoke('packs:cancel'),
+    remove: (id: string) => invoke('packs:remove', id),
+    show: () => invoke('packs:show'),
+    onProgress: (cb: (p: unknown) => void) => on('packs:progress', cb),
+  },
   settings: {
     get: () => invoke('settings:get'),
     set: (key: string, value: unknown) => invoke('settings:set', key, value),

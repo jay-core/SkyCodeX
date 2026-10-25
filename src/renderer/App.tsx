@@ -15,6 +15,7 @@ import Palette from './components/Palette';
 import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences, newFile, openFileDialog, saveAs, closeActive } from './lib/actions';
 import AppMenu from './components/AppMenu';
 import AppBar from './components/AppBar';
+import CompilerWindow, { compilerOpen } from './components/CompilerWindow';
 import { preloadFonts } from './lib/motion';
 
 function Split(props: { onDrag: (dx: number) => void; vertical?: boolean }) {
@@ -102,6 +103,7 @@ export default function App() {
       <Show when={settingsOpen()}><Settings /></Show>
       <Show when={palette()}><Palette /></Show>
       <AppMenu />
+      <Show when={compilerOpen()}><CompilerWindow /></Show>
       <Show when={toast()}><div style={{ position: 'fixed', right: '18px', bottom: '18px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>
