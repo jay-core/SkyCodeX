@@ -120,7 +120,9 @@ Lithograph/
 
 ## 8. Packaging
 
-electron-builder per OS: Windows zip folder, macOS `.app` in a zip (ad-hoc signed — free — not notarised), Linux plain folder in a `.tar.gz` (no AppImage, so no FUSE dependency). CI builds lithograph-clangd for win-x64, mac-arm64, mac-x64, linux-x64 and linux-arm64.
+**Version 1.0 (built):** `npm run package` (`src/build/package.mjs`) assembles the macOS app from Electron's own bundle. It is renamed (helpers included), carries Lithograph's built files, node-pty's ready-built binary for the processor and the inbuilt clangd in `Resources/tools/`, and is ad-hoc signed (free, not notarised). The result is a folder with `Lithograph.app`, a short read-me and the licence, zipped. `data/` and `language_packs/` are created beside the app on first run.
+
+**Planned:** a Windows zip folder (node-pty ships Windows binaries; Electron and clangd for Windows are downloaded at build time) and a Linux folder in a `.tar.gz` (no AppImage, so no FUSE dependency; node-pty must be compiled there).
 
 ### Size budget (no loss of speed or quality)
 
@@ -144,7 +146,7 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 4. clangd: diagnostics, completion, hover, go-to-definition, fix-its, all refactor tweaks.
 5. Fact extractor + preview L1/L2, connector lines, shift preview with animation.
 6. Terminal with command blocks; build view; build & test integration.
-7. Debugger (lldb-dap / gdb).
+7. ~~Debugger~~ — dropped: Lithograph is a hobby project, and the terminal plus run-with-checks cover its needs.
 8. Thread, signal mode, value story, structural zoom, callers.
 9. Deep analysis, assembly view, struct layout, memory view, MISRA engine.
 10. Git write operations, diff view, merge conflicts.
@@ -182,7 +184,9 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 - Keymap presets: Lithograph (default), VS Code, optional Vim mode.
 - Refactors (⌘/Ctrl .): rename, extract variable, extract function, move body header ⇄ source, expand auto, expand macro, populate switch, swap if/else, add using, generate constructors / special members, add missing and remove unused includes.
 
-## 13. Debugger
+## 13. Debugger — not planned
+
+Dropped for version 1 and after: Lithograph is a hobby project. Sanitizer runs (§31) and the profiler (§30) cover finding faults. The notes below are kept only as a record.
 
 - Debug Adapter Protocol. **lldb-dap** bundled (part of LLVM, all three OSes); gdb used when present.
 - Breakpoints (conditional, logpoints), step, variables, watches, data breakpoints.
@@ -223,7 +227,7 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 ## 17. Languages
 
 **Programming languages**
-- C and C++ are first-class (clangd, fact extractor, debugger, build view).
+- C and C++ are first-class (clangd, fact extractor, build view).
 - Syntax colouring and basic editing for CMake, Python, JSON, TOML, YAML, Markdown, shell, Rust, Go, JavaScript/TypeScript via Lezer grammars (a few hundred KB).
 - Any language server can be plugged in by path in `settings.toml` (rust-analyzer, pyright, gopls …): completion, diagnostics, go-to-definition and rename then work for that language. Not bundled, so no size cost. C++-only features (previews from the fact database, value story, layout) stay C/C++; previews fall back to the language server’s call hierarchy where it has one.
 
@@ -243,7 +247,7 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 
 1. Unzip `Lithograph/` anywhere. Run it. No installer, no admin rights, no registry, nothing in the user profile.
 2. First launch creates `data/` beside the executable with `settings.toml` (every option, commented), `keys.toml`, `themes/charcoal.toml`, `state/`, `logs/`. Chromium’s profile, caches, crash dumps and temp files are redirected into `data/` too.
-3. One welcome screen: pick a project folder. Lithograph reports what it found — compile_commands.json, compiler, git, debugger — and offers to import a VS Code theme. Done.
+3. One welcome screen: pick a project folder. Lithograph reports what it found — compile_commands.json, compiler, git — and offers to import a VS Code theme. Done.
 
 Honest caveats:
 - **First launch warnings** (no paid signing, by choice): Windows SmartScreen → *More info → Run anyway*. macOS → *System Settings → Privacy & Security → Open Anyway* (or `xattr -dr com.apple.quarantine Lithograph.app`). Once per machine. The README and the download page say this up front.
@@ -407,7 +411,7 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
   - **Terms stick**: the conditions can’t be removed or weakened by sublicensing.
   - Selling is restricted, so it is *source-available*, not OSI “open source”.
 - The copyright line and the licence are shown in *about*, in `--version`, and at the top of `THIRD_PARTY_NOTICES`.
-- **Bundled third-party parts keep their own licences**, listed in `THIRD_PARTY_NOTICES` and in *about*: Electron, CodeMirror, xterm.js, node-pty (MIT) · clangd, lldb-dap and LLVM libraries (Apache-2.0 with LLVM exception) · elkjs (EPL-2.0, used unmodified) · Selawik (SIL OFL 1.1) · ArX F1 (its own open licence) · SQLite (public domain). Their notices must travel with every copy — the only obligation they impose.
+- **Bundled third-party parts keep their own licences**, listed in `THIRD_PARTY_NOTICES` and in *about*: Electron, CodeMirror, xterm.js, node-pty (MIT) · clangd (Apache-2.0 with LLVM exception) · elkjs (EPL-2.0, used unmodified) · Selawik (SIL OFL 1.1) · ArX F1 (SIL OFL 1.1) · SQLite (public domain). Their notices must travel with every copy — the only obligation they impose.
 - **Nothing GPL is bundled**: cppcheck, Ocarina, gdb, Valgrind and heaptrack are used only when already installed, as separate programs.
 - **Zero cost**: no paid signing certificates, no Apple Developer account, no servers. macOS builds are ad-hoc signed (free, required for Apple silicon) but not notarised. Releases are plain archives.
 
@@ -457,5 +461,5 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
 
 - Serial monitor and plotter.
 - Flashing and on-chip debugging through probe-rs or OpenOCD.
-- Peripheral register view in the debugger from vendor SVD files.
+- Peripheral register view from vendor SVD files.
 - Cross toolchains (e.g. `arm-none-eabi-gcc`) as language packs.

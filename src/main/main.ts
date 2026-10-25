@@ -46,7 +46,9 @@ if (smoke) { fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(pa
 const SETTINGS_FILE = path.join(data.dir, 'settings.toml');
 const BUFFERS = path.join(STATE, 'buffers');
 const SESSION = path.join(STATE, 'session.json');
-const TOOLS = path.join(app.isPackaged ? path.dirname(data.dir) : appRoot, 'tools');
+// the inbuilt clangd: inside the app (Resources/tools) when packaged, else tools/ beside it (or in the project while developing)
+const TOOLS = !app.isPackaged ? path.join(appRoot, 'tools')
+  : [path.join(process.resourcesPath, 'tools'), path.join(path.dirname(data.dir), 'tools')].find((d) => fs.existsSync(path.join(d, 'clangd'))) ?? path.join(process.resourcesPath, 'tools');
 // language packs live beside the app (the project folder while developing)
 const PACKS = resolvePacksDir(app.isPackaged ? path.dirname(data.dir) : appRoot, data.dir);
 if (!fs.existsSync(SETTINGS_FILE)) atomicWrite(SETTINGS_FILE, defaultFileText());

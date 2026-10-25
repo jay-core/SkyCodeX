@@ -6,6 +6,8 @@ node_modules/
 dist/
 build/
 out/
+# packaged apps (npm run package)
+release/
 *.log
 # sample project build output (machine-specific)
 samples/*/build/

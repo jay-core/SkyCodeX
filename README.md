@@ -1,3 +1,5 @@
+<img src="assets/icon/lithograph-1024.png" width="112" alt="Lithograph icon">
+
 # Lithograph
 
 A portable, offline code editor for C and C++ — charcoal, borderless, Metro-style, built for reading and understanding code as much as writing it.
@@ -6,7 +8,7 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 
 ## Status
 
-**Working prototype, macOS tested.** Windows and Linux are designed for but not yet tested, and there is no downloadable build yet. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
+**Version 1.0 for macOS (Apple silicon)**: a portable app built with `npm run package` (see below). Windows and Linux are designed for, but not yet packaged or tested. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
 
 Working now:
 - **Portable and offline:** a `data/` folder beside the app holds `settings.toml` (live reload) and the session. Saves are atomic, and unsaved edits survive crashes.
@@ -41,13 +43,32 @@ Working now:
 - **Terminal** that follows the opened folder, with packs first on `PATH` in Lithograph's terminals only. Also an *options* menu, the macOS menu bar, and closable tabs.
 
 Not built yet:
-- packaging into a portable download, and testing on Windows and Linux
+- Windows and Linux builds (and testing there); an Intel Mac build
 - a real end-to-end install of the full LLVM toolchain
 - build view, terminal command blocks and splits
 - project-wide find and replace, split view, file compare, keymap presets
 - assembly view; atlas, book mode and investigation board
-- debugger, git
+- git
 - compliance packs (set aside for now)
+
+Not planned: a debugger. Lithograph is a hobby project, and run-with-checks plus the profiler cover finding faults.
+
+## Using the release
+
+1. Unzip `Lithograph-1.0.0-mac-arm64.zip` and move the `Lithograph-1.0.0-mac-arm64` folder wherever you like: a projects folder, or a USB drive. While macOS still has it quarantined, don't run it from Downloads; it would run as a read-only copy.
+2. Open `Lithograph.app`. On first launch, see *First launch* below.
+3. Lithograph creates `data/` (settings, session, logs) and `language_packs/` beside the app. Nothing is installed anywhere else, and nothing is sent over the network.
+
+The app is about 630 MB on disk (224 MB zipped): Electron plus the inbuilt clangd, which is most of it. It needs macOS 13 or later on Apple silicon. For C/C++ standard headers, install the Xcode Command Line Tools (`xcode-select --install`).
+
+## Building a release
+
+```
+npm run fetch-clangd   # once: the inbuilt clangd, checked against its pinned SHA-256
+npm run package        # builds, assembles release/Lithograph-<version>-mac-<arch>/ and zips it
+```
+
+`src/build/package.mjs` needs no extra downloads. It renames Electron's own app bundle and adds Lithograph's built files, node-pty's ready-built binary and the inbuilt clangd (inside `Lithograph.app/Contents/Resources/tools/`). It then signs the app ad hoc, which is free. The icon is made from `assets/icon/lithograph-1024.png` (any 1024 × 1024 PNG); `npm run icon` renders it from `assets/icon/lithograph.svg`. Output goes to `release/`, which git ignores.
 
 ## Running from source
 
@@ -93,15 +114,16 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 | `src/preload/` | The bridge between the interface and the main process |
 | `src/renderer/` | The interface (Solid + CodeMirror): editor, previews, flow, memory, windows, help, translations |
 | `src/shared/` | Code used by both sides: settings schema, C++ parsing helpers |
-| `src/build/` | Build script for the main process and preload |
+| `src/build/` | Build scripts: main process and preload, the release package, the icon |
 | `src/tests/` | Unit and integration tests (vitest) |
 | `src/concepts/` | The pages and scripts the concept images were rendered from |
 | `assets/fonts/` | ArX F1 (code) and Selawik (interface), each with its licence |
+| `assets/icon/` | The app icon: its source drawing and the 1024 px image the platform icons are made from |
 | `docs/` | `ARCHITECTURE.md` (the complete design) and `concepts/` (images and videos) |
 | `samples/` | Sample C++ projects used by the tests and the smoke run |
 | `LICENSE`, `THIRD_PARTY.md` | The Lithograph License, and third-party notices |
 
-Created at run time and kept out of git: `data/` (settings and state), `tools/clangd/` (the inbuilt engine), `language_packs/`, `dist/`.
+Created at run time and kept out of git: `data/` (settings and state), `tools/clangd/` (the inbuilt engine), `language_packs/`, `dist/`, `release/`.
 
 ## Licence
 

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Lithograph's icon, from Jatin Aggarwal's design (lithograph-design.svg), set on macOS's icon grid:
+       an 824 px tile with 100 px around it, and a soft shadow beneath.
+       The drawing sits on a 3 × 3 grid (480 units): equal 56-unit margins, true circles, 24-unit bars on the circle centres. -->
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <g transform="translate(100 100) scale(1.7166667)">
+    <path filter="url(#shadow)" fill="#D9D9D9" d="M183.732 0L296.268 0C382.88 0 426.186 0 453.093 26.907C480 53.814 480 97.12 480 183.732L480 296.268C480 382.88 480 426.186 453.093 453.093C426.186 480 382.88 480 296.268 480L183.732 480C97.12 480 53.814 480 26.907 453.093C0 426.186 0 382.88 0 296.268L0 183.732C0 97.12 0 53.814 26.907 26.907C53.814 0 97.12 0 183.732 0Z"/>
+    <g fill="#424242">
+      <!-- the left column: three circles joined -->
+      <rect x="83.5" y="95.5" width="24" height="289"/>
+      <circle cx="95.5" cy="95.5" r="39.5"/>
+      <circle cx="95.5" cy="240" r="39.5"/>
+      <circle cx="95.5" cy="384.5" r="39.5"/>
+      <!-- the bottom row -->
+      <circle cx="240" cy="384.5" r="39.5"/>
+      <circle cx="384.5" cy="384.5" r="39.5"/>
+      <!-- the corner: down the middle column from the top margin, then along the middle row to the right margin -->
+      <rect x="228" y="56" width="24" height="196"/>
+      <rect x="228" y="228" width="196" height="24"/>
+    </g>
+  </g>
+</svg>

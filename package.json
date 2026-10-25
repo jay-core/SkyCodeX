@@ -1,7 +1,7 @@
 {
   "name": "lithograph",
   "productName": "Lithograph",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A portable, offline C/C++ code editor.",
   "author": "Jatin Aggarwal",
   "license": "SEE LICENSE IN LICENSE",
@@ -16,7 +16,9 @@
     "fetch-clangd": "node src/build/build-main.mjs && node dist/main/fetch-clangd.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "smoke": "npm run build && electron . --smoke samples/tinyhttp"
+    "smoke": "npm run build && electron . --smoke samples/tinyhttp",
+    "icon": "electron src/build/make-icon.cjs",
+    "package": "node src/build/package.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",
