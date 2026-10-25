@@ -1,7 +1,7 @@
 # Lithograph — architecture
 
 A portable, offline, C/C++-focused code editor for macOS, Windows and Linux.
-Charcoal, borderless, Metro-style typography; ARX F1 for code, Selawik for UI.
+Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
 
 ## 1. Stack
 
@@ -15,7 +15,7 @@ Charcoal, borderless, Metro-style typography; ARX F1 for code, Selawik for UI.
 | Database | `node:sqlite` (built into Node / Electron) | No native module to ship |
 | History | **git** CLI (if installed) | Blame, log, diffs |
 | Build / ASM / deep analysis | System compiler (clang, gcc, MSVC) + `clang --analyze` | Detected, never bundled |
-| Fonts | ARX F1 (code), Selawik (UI) | Bundled in `fonts/` |
+| Fonts | ArX F1 (code), Selawik (UI) | Bundled in `fonts/` |
 
 ## 2. Processes
 
@@ -231,7 +231,7 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 - All UI text lives in small TOML locale files (`locales/en.toml`, …), a few KB each; community translations can be dropped into `data/locales/`.
 - Right-to-left layouts for Arabic and Hebrew mirror the chrome; code stays left-to-right.
 - Typing: full IME support (Chinese, Japanese, Korean) in editor and terminal; bidirectional text in comments and strings.
-- Fonts: ARX F1 and Selawik cover Latin; other scripts fall back to the OS (Segoe UI / SF / Noto). Chromium’s own locale pack is shipped only for the languages Lithograph ships.
+- Fonts: ArX F1 and Selawik cover Latin; other scripts fall back to the OS (Segoe UI / SF / Noto). Chromium’s own locale pack is shipped only for the languages Lithograph ships.
 
 ## 18. Accessibility, updates, testing
 
@@ -407,7 +407,7 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
   - **Terms stick**: the conditions can’t be removed or weakened by sublicensing.
   - Selling is restricted, so it is *source-available*, not OSI “open source”.
 - The copyright line and the licence are shown in *about*, in `--version`, and at the top of `THIRD_PARTY_NOTICES`.
-- **Bundled third-party parts keep their own licences**, listed in `THIRD_PARTY_NOTICES` and in *about*: Electron, CodeMirror, xterm.js, node-pty (MIT) · clangd, lldb-dap and LLVM libraries (Apache-2.0 with LLVM exception) · elkjs (EPL-2.0, used unmodified) · Selawik (SIL OFL 1.1) · ARX F1 (its own open licence) · SQLite (public domain). Their notices must travel with every copy — the only obligation they impose.
+- **Bundled third-party parts keep their own licences**, listed in `THIRD_PARTY_NOTICES` and in *about*: Electron, CodeMirror, xterm.js, node-pty (MIT) · clangd, lldb-dap and LLVM libraries (Apache-2.0 with LLVM exception) · elkjs (EPL-2.0, used unmodified) · Selawik (SIL OFL 1.1) · ArX F1 (its own open licence) · SQLite (public domain). Their notices must travel with every copy — the only obligation they impose.
 - **Nothing GPL is bundled**: cppcheck, Ocarina, gdb, Valgrind and heaptrack are used only when already installed, as separate programs.
 - **Zero cost**: no paid signing certificates, no Apple Developer account, no servers. macOS builds are ad-hoc signed (free, required for Apple silicon) but not notarised. Releases are plain archives.
 

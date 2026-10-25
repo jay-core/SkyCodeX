@@ -37,6 +37,7 @@ export async function runSmoke() {
   const report: Record<string, unknown> = {};
   if (info()?.scenario === 'memory') return memoryDemo(report);
   if (info()?.scenario === 'compiler') return compilerDemo(report);
+  if (info()?.scenario === 'fonts') return fontsDemo(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -463,6 +464,32 @@ async function compilerDemo(report: Record<string, unknown>) {
     try { localStorage.removeItem('litho.compiler.pos'); } catch { /* fine */ }
   } catch (e) {
     errors.push(`compiler demo: ${e}`);
+  }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario fonts`: every bundled code-font weight loads from the app and renders fixed-width. */
+async function fontsDemo(report: Record<string, unknown>) {
+  try {
+    const fam = String(settings()['font.family']);
+    report.setting = fam;
+    const weights: Record<number, unknown> = {};
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    for (const w of [100, 200, 300, 400, 500, 600, 700]) {
+      const faces = await document.fonts.load(`${w} 16px "ArX F1"`);
+      ctx.font = `${w} 20px "ArX F1", serif`;
+      const mono = Math.abs(ctx.measureText('iiiiiiiiii').width - ctx.measureText('WWWWWWWWWW').width) < 0.5;
+      weights[w] = { loaded: faces.length > 0 && document.fonts.check(`${w} 16px "ArX F1"`), mono, src: faces[0] ? (faces[0] as any).family : null };
+    }
+    report.weights = weights;
+    report.oldName = document.fonts.check('400 16px "ARX F1"') && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'ARX F1');
+    await until(() => lspState() === 'ready', 20000);
+    await openFile(`${root()}/src/server.cpp`); await sleep(800);
+    report.editorFont = getComputedStyle(document.querySelector('.cm-content')!).fontFamily;
+    await api.smoke.capture('f1-arx-f1');
+  } catch (e) {
+    errors.push(`fonts demo: ${e}`);
   }
   report.errors = errors;
   await api.smoke.done(report);

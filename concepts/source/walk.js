@@ -14,7 +14,7 @@ W.insertAdjacentHTML('beforeend',`<div id="set" style="position:absolute;inset:0
   <div class="si" style="font:600 11px var(--ui);letter-spacing:.14em;color:#4f564f">LITHOGRAPH</div>
   <div class="si" style="display:flex;align-items:baseline;gap:30px;margin:4px 0 30px;white-space:nowrap"><span style="font:300 52px var(--ui);color:#a3a8a0;letter-spacing:-.02em">appearance</span>${['editor','preview','clangd','keys','files'].map(x=>`<span style="font:300 52px var(--ui);color:#2b2e2b;letter-spacing:-.02em">${x}</span>`).join('')}</div>
   <div style="display:grid;grid-template-columns:330px 330px 1fr;gap:56px">
-    <div class="si">${pick('code font','ARX F1')}${slider('fs','code size','12.5','8','24')}${slider('lh','line height','1.6','1.2','2.2')}${pick('interface font','Selawik')}</div>
+    <div class="si">${pick('code font','ArX F1')}${slider('fs','code size','12.5','8','24')}${slider('lh','line height','1.6','1.2','2.2')}${pick('interface font','Selawik')}</div>
     <div class="si">${pick('theme','charcoal')}${slider('ct','contrast','6.9 : 1','soft','crisp')}${toggle('ew','evening warmth','warmer, dimmer after sunset')}${toggle('fd','focus dimming','fade code outside the function')}</div>
     <div class="si"><div style="font:300 15px var(--ui);color:#4f564f;margin-bottom:8px">preview</div><div id="spv" style="background:#151615;padding:6px 0">${code(MAIN.split('\n').slice(9,19).join('\n').replace(/«[^|»]*\|([^»]*)»/g,'$1'),{start:39,params:['req'],active:45})}</div>
       <div style="font:300 12.5px var(--ui);color:#3f453f;margin-top:14px">every change here is written to <span style="color:#7b8279">data/settings.toml</span><span id="saved" style="margin-left:10px;color:#5f8a6a;opacity:0">saved</span></div></div>

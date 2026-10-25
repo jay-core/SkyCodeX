@@ -3,20 +3,20 @@
 @font-face { font-family: 'Selawik'; src: url('/Selawik/selawk.ttf'); font-weight: 400; }
 @font-face { font-family: 'Selawik'; src: url('/Selawik/selawksb.ttf'); font-weight: 600; }
 @font-face { font-family: 'Selawik'; src: url('/Selawik/selawkb.ttf'); font-weight: 700; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-Thin.otf'); font-weight: 100; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-ExtraLight.otf'); font-weight: 200; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-Light.otf'); font-weight: 300; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-Regular.otf'); font-weight: 400; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-Medium.otf'); font-weight: 500; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-SemiBold.otf'); font-weight: 600; }
-@font-face { font-family: 'ARX F1'; src: url('/ARXF1/ARXF1-Bold.otf'); font-weight: 700; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Thin.otf'); font-weight: 100; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-ExtraLight.otf'); font-weight: 200; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Light.otf'); font-weight: 300; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Regular.otf'); font-weight: 400; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Medium.otf'); font-weight: 500; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Semibold.otf'); font-weight: 600; }
+@font-face { font-family: 'ArX F1'; src: url('/ArXF1/ArXF1-Bold.otf'); font-weight: 700; }
 
 :root {
   --bg: #171817; --side: #141514; --prev: #151615; --card: #1b1c1b; --card-hi: #1e1f1e; --pop: #202220; --term: #131413;
   --fg: #9ea39b; --bright: #a3a8a0; --dim: #5f665f; --faint: #3f453f; --ghost: #2f332f; --gut: #373b37;
   --kw: #739696; --fn: #ad9b6f; --ty: #7f9e82; --var: #a8929e; --par: #b0857a; --str: #ab9070; --cm: #5f665f;
   --err: #b8766b; --warn: #ab9070; --info: #739696; --accent: #ad9b6f; --link: #7fa3a3; --sel: rgba(115, 150, 150, .26);
-  --mono: 'ARX F1', ui-monospace, Menlo, Consolas, monospace;
+  --mono: 'ArX F1', ui-monospace, Menlo, Consolas, monospace;
   --ui: 'Selawik', -apple-system, 'Segoe UI', system-ui, sans-serif;
   --code-size: 13px; --code-lh: 1.6; --code-ls: 0px; --code-weight: 400; --preview-scale: .9;
 }

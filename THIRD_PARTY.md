@@ -11,4 +11,4 @@ Toolchains installed from the compiler window keep their own licence files insid
 ## Fonts
 
 - Selawik — SIL Open Font License, see `fonts/Selawik/LICENSE.txt`.
-- ARX F1 — derived from Audi Type, whose licence allows private use only; it must not be redistributed with Lithograph.
+- ArX F1 — no licence file came with these fonts. The earlier ARX F1 builds were derived from Audi Type, whose licence allows private use only; confirm ArX F1's terms before sharing Lithograph with it.

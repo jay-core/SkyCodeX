@@ -5,7 +5,7 @@ export interface FontFamily { name: string; mono: boolean; bundled?: boolean }
 
 // the weights shipped in styles.css
 const BUNDLED: (FontFamily & { weights: number[] })[] = [
-  { name: 'ARX F1', mono: true, bundled: true, weights: [100, 200, 300, 400, 500, 600, 700] },
+  { name: 'ArX F1', mono: true, bundled: true, weights: [100, 200, 300, 400, 500, 600, 700] },
   { name: 'Selawik', mono: false, bundled: true, weights: [300, 350, 400, 600, 700] },
 ];
 let faces: Promise<{ family: string; style: string }[]> | null = null;

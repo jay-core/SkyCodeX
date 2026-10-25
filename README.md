@@ -56,7 +56,7 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 |---|---|
 | `ARCHITECTURE.md` | The complete design |
 | `concepts/` | Concept images and videos; `concepts/source/` holds the pages they were rendered from |
-| `fonts/` | ARX F1 (code) and Selawik (interface), each under its own licence |
+| `fonts/` | ArX F1 (code) and Selawik (interface), each under its own licence |
 | `LICENSE` | The Lithograph License |
 
 ## Licence

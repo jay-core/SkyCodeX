@@ -44,7 +44,7 @@ const TOOLS = path.join(app.isPackaged ? path.dirname(data.dir) : appRoot, 'tool
 const PACKS = resolvePacksDir(app.isPackaged ? path.dirname(data.dir) : appRoot, data.dir);
 if (!fs.existsSync(SETTINGS_FILE)) atomicWrite(SETTINGS_FILE, defaultFileText());
 
-let settings: Settings;
+let settings!: Settings;   // set by reloadSettings() just below
 let problems: SettingProblem[];
 const reloadSettings = () => ({ settings, problems } = loadSettings(fs.readFileSync(SETTINGS_FILE, 'utf8')));
 reloadSettings();
@@ -92,6 +92,8 @@ function writeSetting(key: string, value: unknown) {
   atomicWrite(SETTINGS_FILE, setSetting(fs.readFileSync(SETTINGS_FILE, 'utf8'), key, value));
   reloadSettings();
 }
+// the bundled code font was renamed from "ARX F1" to "ArX F1": settings that named it follow
+for (const k of ['font.family', 'font.ui.family']) if (settings[k] === 'ARX F1') writeSetting(k, 'ArX F1');
 ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
   writeSetting(key, value);
   send('settings:changed', { settings, problems });

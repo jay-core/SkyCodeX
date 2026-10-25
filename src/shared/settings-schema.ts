@@ -30,7 +30,7 @@ export const SECTIONS: { name: string; doc: string }[] = [
 ];
 
 export const SETTINGS: SettingDef[] = [
-  { key: 'font.family', type: 'string', default: 'ARX F1', doc: 'any installed font' },
+  { key: 'font.family', type: 'string', default: 'ArX F1', doc: 'any installed font' },
   { key: 'font.size', type: 'number', default: 13, min: 6, max: 72, doc: 'code text size', unit: 'px' },
   { key: 'font.letter_spacing', type: 'number', default: 0, min: -2, max: 6, doc: 'space between letters', unit: 'px' },
   { key: 'font.weight', type: 'number', default: 400, min: 100, max: 900, doc: 'code text weight' },

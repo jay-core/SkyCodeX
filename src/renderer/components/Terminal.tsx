@@ -17,7 +17,7 @@ const THEME = {
 const fontOptions = () => {
   const s = settings();
   return {
-    fontFamily: `'${s['font.family']}', 'ARX F1', ui-monospace, Menlo, Consolas, monospace`,
+    fontFamily: `'${s['font.family']}', 'ArX F1', ui-monospace, Menlo, Consolas, monospace`,
     fontSize: s['terminal.font_size'] ?? 12.5, lineHeight: s['terminal.line_height'] ?? 1.25,
     fontWeight: String(s['terminal.font_weight'] ?? 400) as any, fontWeightBold: String(s['terminal.font_weight_bold'] ?? 700) as any,
   };

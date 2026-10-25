@@ -12,7 +12,7 @@ export function onScreen(col: HTMLElement, selector: string): HTMLElement[] {
 /** Loads the bundled faces ahead of use, so a first glimpse of a weight never stalls a frame. */
 export function preloadFonts() {
   const go = () => {
-    for (const w of [100, 200, 300, 400, 500, 600, 700]) document.fonts.load(`${w} 13px "ARX F1"`).catch(() => {});
+    for (const w of [100, 200, 300, 400, 500, 600, 700]) document.fonts.load(`${w} 13px "ArX F1"`).catch(() => {});
     for (const w of [300, 350, 400, 600, 700]) document.fonts.load(`${w} 13px "Selawik"`).catch(() => {});
   };
   'requestIdleCallback' in window ? (window as any).requestIdleCallback(go, { timeout: 2000 }) : setTimeout(go, 300);
