@@ -188,16 +188,17 @@ export async function refreshForCursor(file: string, pos: Pos, force = false) {
   if (!force && cur && cur.file === file && cur.name === fn.name && cur.range.start.line === fn.range.start.line && levels().length) return;
   setMainFn({ name: fn.name, file, range: fn.range });
   setBusy(true);
+  // while clangd is still building the file or loading its index, it may answer with no calls, or resolve
+  // some callees only to their header declaration: keep one retry pending, for up to 30 s after the first attempt for this function
+  const key = `${file}#${fn.range.start.line}`;
+  const retry = () => scheduleRetry(key, () => refreshForCursor(file, pos, true));
   const item = await callItemAt(file, fn.selectionRange.start);
   if (gen !== generation) return;
-  if (!item) { setLevels([]); setBusy(false); return; }
+  if (!item) { setLevels([]); setBusy(false); retry(); return; }
   const l1 = await buildLevel(item, 0);
   if (gen !== generation) return;
   setLevels([l1]); setWin(0); setBusy(false);
-  // while clangd is still loading its index some callees resolve only to their header declaration:
-  // keep one retry pending, for up to 30 s after the first attempt for this function
-  const key = `${file}#${fn.range.start.line}`;
-  if (l1.cards.some(unresolvedCard)) scheduleRetry(key, () => refreshForCursor(file, pos, true));
+  if (!l1.cards.length || l1.cards.some(unresolvedCard)) retry();
   else retryStart.delete(key);
 }
 
