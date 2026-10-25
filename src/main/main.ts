@@ -479,4 +479,8 @@ app.whenReady().then(() => {
   powerMonitor.on('on-battery', sendPower); powerMonitor.on('on-ac', sendPower);
   buildMenu(); createWindow();
 });
-app.on('window-all-closed', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); for (const p of ptys.values()) p.kill(); app.quit(); });
+app.on('window-all-closed', () => app.quit());
+// every way out (closing the window, Quit, a smoke run ending) stops clangd and the terminals; on Windows they would outlive the app otherwise
+app.on('will-quit', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); for (const p of ptys.values()) p.kill(); ptys.clear(); });
+// a smoke run that stalls ends itself, so a build machine is never left waiting
+if (smoke) setTimeout(() => { log('smoke: timed out after 5 minutes'); app.exit(2); }, 300_000).unref();

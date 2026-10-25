@@ -59,7 +59,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq xvfb libgtk-3-0 libnss3 libxss1 libgbm1 libasound2
           dir=$(ls -d release/Lithograph-*-linux-x64)
-          xvfb-run -a "$dir/lithograph" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
+          timeout 360 xvfb-run -a "$dir/lithograph" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
           node src/build/check-smoke.mjs "$dir"
 
       - name: Boot check (Windows)
@@ -67,7 +67,10 @@ jobs:
         shell: pwsh
         run: |
           $dir = (Get-ChildItem release -Directory | Select-Object -First 1).FullName
-          Start-Process -FilePath "$dir\Lithograph.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -Wait
+          # wait for the app itself only (with -Wait, Start-Process also waits for every process it started), at most 6 minutes
+          $p = Start-Process -FilePath "$dir\Lithograph.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -PassThru
+          if (-not $p.WaitForExit(360000)) { Stop-Process -Id $p.Id -Force; Write-Host 'the app did not finish in 6 minutes' }
+          Get-Process clangd, Lithograph -ErrorAction SilentlyContinue | Format-Table Id, Name
           node src/build/check-smoke.mjs "$dir"
 
       - name: Screenshot and logs of the check
