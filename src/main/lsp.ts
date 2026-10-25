@@ -196,3 +196,71 @@ export class LspClient {
     this.send({ jsonrpc: '2.0', id, result });
   }
 }
+
+// ---------- headers clang can't recognise by name ----------
+// A header with no extension, or one such as .tcc or .tpp, is passed to clang as a linker input and clangd builds nothing
+// ("Unable to handle compilation"). Such files get a command of their own: the project's flags plus -x c++-header.
+const CLANG_KNOWS = /\.(c|cc|cp|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|m|mm|cu|cuh|cppm|ccm|cxxm|c\+\+m|ixx|i|ii)$/i;
+const STDLIB = /[\\/]c\+\+[\\/](v\d+|\d+(\.\d+)*)[\\/]/;   // libc++ and libstdc++: clangd already handles these itself
+const FRAGMENT = /\.(def|inc)$/i;                       // X-macro tables and include fragments: meaningless on their own
+
+export interface HeaderCommand { workingDirectory: string; compilationCommand: string[] }
+
+/** Splits a compile command the way a POSIX shell would (quotes and backslashes). */
+export function splitCommand(cmd: string): string[] {
+  const out: string[] = [];
+  let cur = '', q: string | null = null, any = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (q) { if (c === q) q = null; else if (c === '\\' && q === '"' && i + 1 < cmd.length) cur += cmd[++i]; else cur += c; continue; }
+    if (c === '"' || c === "'") { q = c; any = true; continue; }
+    if (c === '\\' && i + 1 < cmd.length) { cur += cmd[++i]; any = true; continue; }
+    if (/\s/.test(c)) { if (cur || any) out.push(cur); cur = ''; any = false; continue; }
+    cur += c;
+  }
+  if (cur || any) out.push(cur);
+  return out;
+}
+
+/** The flags of one compile command, without its input, output and dependency-file arguments. */
+export function flagsOf(args: string[], input: string): string[] {
+  const out: string[] = [];
+  const takesValue = new Set(['-o', '-x', '-MF', '-MT', '-MQ', '-MJ']);
+  const base = path.basename(input);
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (takesValue.has(a)) { i++; continue; }
+    if (a === '-c' || a === '-MD' || a === '-MMD' || a === '--' || /^-o.+/.test(a) || /^-x.+/.test(a) || /^-M[FTQJ].+/.test(a)) continue;
+    if (a === input || (!a.startsWith('-') && path.basename(a) === base)) continue;
+    out.push(a);
+  }
+  return out;
+}
+
+/** A command for a C/C++ file whose name clang doesn't recognise, or null when clangd needs none. */
+export function headerCommand(file: string, root: string): HeaderCommand | null {
+  if (CLANG_KNOWS.test(file) || STDLIB.test(file) || FRAGMENT.test(file)) return null;
+  let dir = root || path.dirname(file), flags: string[] = [], compiler = 'clang++';
+  const ccDir = root ? findCompileCommands(root) : null;
+  if (ccDir) {
+    // the entry that lives closest to this file lends its flags
+    try {
+      const entries = JSON.parse(fs.readFileSync(path.join(ccDir, 'compile_commands.json'), 'utf8')) as { directory: string; file: string; arguments?: string[]; command?: string }[];
+      const near = (e: { directory: string; file: string }) => { const f = path.resolve(e.directory, e.file); let n = 0; while (n < f.length && n < file.length && f[n] === file[n]) n++; return n; };
+      const best = entries.filter((e) => /\.(c|cc|cpp|cxx|c\+\+|mm?)$/i.test(e.file)).sort((a, b) => near(b) - near(a))[0];
+      if (best) {
+        const args = best.arguments ?? splitCommand(best.command ?? '');
+        compiler = args[0] ?? compiler; flags = flagsOf(args, path.resolve(best.directory, best.file)); dir = best.directory;
+      }
+    } catch { /* fall back to compile_flags.txt */ }
+  }
+  if (!flags.length && root) {
+    for (let d = path.dirname(file); d.startsWith(root); d = path.dirname(d)) {
+      const f = path.join(d, 'compile_flags.txt');
+      if (fs.existsSync(f)) { flags = fs.readFileSync(f, 'utf8').split(/\r?\n/).map((s) => s.trim()).filter(Boolean); dir = d; break; }
+      if (d === path.dirname(d)) break;
+    }
+  }
+  if (!flags.some((f) => /^-std=/.test(f))) flags.push('-std=c++20');
+  return { workingDirectory: dir, compilationCommand: [compiler, ...flags, '-x', 'c++-header', file] };
+}

@@ -18,6 +18,7 @@ import { startTour } from './components/Tour';
 import { setStyleOpen } from './components/StyleWindow';
 import { setRunOpen } from './components/RunWindow';
 import { definitionAt } from './lib/lsp';
+import { langOf } from './lib/langs';
 import { openReference, todoList } from './lib/extras';
 
 const errors: string[] = [];
@@ -48,6 +49,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'fonts') return fontsDemo(report);
   if (info()?.scenario === 'extras') return extrasDemo(report);
   if (info()?.scenario === 'defs') return defsDemo(report);
+  if (info()?.scenario === 'anyheader') return anyHeaderDemo(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -673,6 +675,40 @@ async function defsDemo(report: Record<string, unknown>) {
       };
     }
   } catch (e) { errors.push(`defs: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario anyheader`: headers with unusual extensions or none, outside any include folder, followed like any other. */
+async function anyHeaderDemo(report: Record<string, unknown>) {
+  try {
+    const dir = root();   // a folder prepared by the caller (see the README's smoke notes)
+    await until(() => lspState() === 'ready', 20000);
+    const main = `${dir}/main.cpp`;
+    await openFile(main);
+    await sleep(2500);
+    const at = (src: string, line: number, word: string) => {
+      const t = states.get(src)!.doc.line(line + 1).text;
+      return definitionAt(src, { line, character: t.indexOf(word) + 1 });
+    };
+    const out: Record<string, unknown> = {};
+    const rel = (l: any) => (l ? `${l.file.slice(dir.length + 1)}:${l.line + 1}` : null);
+    out.includeNoExt = rel(await at(main, 0, 'Config'));
+    out.includeTcc = rel(await at(main, 1, 'impl'));
+    out.fnInNoExt = rel(await at(main, 5, 'config_value'));
+    out.templateInTcc = rel(await at(main, 5, 'twice'));
+    out.macroTableDef = rel(await at(main, 5, 'alpha'));
+    // inside the extensionless header: its own #include and a call
+    const cfg = `${dir}/vendor/Config`;
+    await openFile(cfg);
+    await sleep(1500);
+    out.configLanguage = langOf(cfg);
+    out.insideNoExtInclude = rel(await at(cfg, 2, 'util'));
+    out.insideNoExtCall = rel(await at(cfg, 3, 'helper'));
+    out.defLanguage = langOf(`${dir}/ops.def`);
+    out.tccLanguage = langOf(`${dir}/impl.tcc`);
+    Object.assign(report, out);
+  } catch (e) { errors.push(`anyheader: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }

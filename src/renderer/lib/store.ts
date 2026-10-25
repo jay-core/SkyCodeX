@@ -6,6 +6,7 @@ import type { EditorView } from '@codemirror/view';
 import { api, basename } from './api';
 import { setLanguage } from './i18n';
 import { setPowerPrefs } from './power';
+import { noteText } from './langs';
 import { openDoc, changeDoc, savedDoc, startLsp, promote } from './lsp';
 
 export type Settings = Record<string, any>;
@@ -70,6 +71,7 @@ export async function openFile(path: string, at?: { line: number; character: num
     try { text = await api.fs.read(path); } catch (e) { flash(`can't open ${basename(path)}: ${e}`); return; }
     saved.set(path, text);
     const body = textOverride ?? text;
+    noteText(path, body);   // a header with an unusual extension or none is still C/C++
     states.set(path, makeState(path, body));
     setFiles('list', (l) => [...l, { path, dirty: body !== text, diskChanged: false }]);
     promote(path);

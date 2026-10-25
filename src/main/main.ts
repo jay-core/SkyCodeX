@@ -1,6 +1,6 @@
 // Lithograph main process: window, portable data, settings, files, clangd, terminals, memory analysis.
 import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, protocol, net, powerMonitor, crashReporter } from 'electron';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -8,7 +8,7 @@ import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers } from './files';
-import { LspClient, findClangd, inbuiltClangd, systemClangd } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand } from './lsp';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { launchWithPacks } from './shellinit';
 import { releasesFor, stepsFor, KIND_INFO, languageBins, languageEnv, serverFor, refIndex, Lang } from './langpacks';
@@ -175,7 +175,9 @@ ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stri
 // ---------- clangd ----------
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
 lsp.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
+let lspRoot = '';
 ipcMain.handle('lsp:start', async (_e, root: string) => {
+  lspRoot = root;
   for (const c of langServers.values()) c.stop();   // a new folder: other languages' servers start again when one of their files opens
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
@@ -279,7 +281,17 @@ function serveReference(req: Request): Promise<Response> | Response {
   if (!file || !fs.existsSync(file) || /\.(js|mjs)$/i.test(file)) return new Response('not found', { status: 404 });
   return net.fetch(pathToFileURL(file).href);
 }
-ipcMain.handle('lsp:notify', (_e, method: string, params: unknown) => { if (lsp.running) lsp.notify(method, params); });
+ipcMain.handle('lsp:notify', (_e, method: string, params: any) => {
+  if (!lsp.running) return;
+  // a header clang can't recognise by its name gets a command of its own before clangd reads it
+  if (method === 'textDocument/didOpen') {
+    try {
+      const file = fileURLToPath(params.textDocument.uri), cmd = headerCommand(file, lspRoot);
+      if (cmd) lsp.notify('workspace/didChangeConfiguration', { settings: { compilationDatabaseChanges: { [file]: cmd } } });
+    } catch (e) { log(`header command: ${e}`); }
+  }
+  lsp.notify(method, params);
+});
 
 // ---------- terminals ----------
 type Pty = { write(d: string): void; resize(c: number, r: number): void; kill(): void; onData(cb: (d: string) => void): void; onExit(cb: (e: { exitCode: number }) => void): void };

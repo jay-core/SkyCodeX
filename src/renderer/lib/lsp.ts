@@ -6,7 +6,7 @@ import { setDiagnostics, Diagnostic as CmDiagnostic, linter } from '@codemirror/
 import { api, fileToUri, uriToFile, CallItem, OutgoingCall, DocSymbol, Diagnostic, Pos, FN_KINDS } from './api';
 import { posToOffset, offsetToPos } from './cm';
 import { parseCpp, offsetOf, lineOf } from '../../shared/flowcore';
-import { serverLang, langOf } from './langs';
+import { serverLang, langOf, markCpp } from './langs';
 import * as other from './langlsp';
 
 export const [lspState, setLspState] = createSignal<'off' | 'starting' | 'ready' | 'failed'>('off');
@@ -85,7 +85,8 @@ export function attachView(file: string, view: EditorView | null) {
 
 function pushDiagnostics(view: EditorView, file: string) {
   const doc = view.state.doc;
-  const out: CmDiagnostic[] = (diags.get(file) ?? []).map((d) => {
+  // "Unable to handle compilation" only says clangd has no command for a fragment such as an .inc table: not the code's fault
+  const out: CmDiagnostic[] = (diags.get(file) ?? []).filter((d) => !/^Unable to handle compilation/.test(d.message)).map((d) => {
     const from = posToOffset(doc, d.range.start.line, d.range.start.character);
     let to = posToOffset(doc, d.range.end.line, d.range.end.character);
     if (to <= from) to = Math.min(from + 1, doc.length);
@@ -184,13 +185,21 @@ export function hoverFor(file: () => string, send: Send = req) {
 export interface Loc { file: string; line: number; character: number }
 export async function definitionAt(file: string, pos: Pos): Promise<Loc | null> {
   if (serverLang(file)) return other.definitionAt(file, pos);
+  if (!isCpp(file)) return null;   // plain text, JSON, Markdown …: no language engine
   await ensureOpen(file);
   let res: any;
   try { res = await req('textDocument/definition', { textDocument: { uri: fileToUri(file) }, position: pos }); } catch { return null; }
   const l = Array.isArray(res) ? res[0] : res;
   if (!l) return null;
   const uri = l.targetUri ?? l.uri, range = l.targetSelectionRange ?? l.range;
-  return { file: uriToFile(uri), line: range.start.line, character: range.start.character };
+  return { file: fromClangd(uri), line: range.start.line, character: range.start.character };
+}
+
+/** A file clangd points to is C or C++, whatever its name (.tcc, .inc, .def, no extension …). */
+function fromClangd(uri: string): string {
+  const f = uriToFile(uri);
+  if (langOf(f) === 'text') markCpp(f);
+  return f;
 }
 
 const symCache = new Map<string, { v: number; syms: DocSymbol[] }>();
@@ -227,7 +236,7 @@ export async function callItemAt(file: string, pos: Pos): Promise<CallItem | nul
   try { const r = (await req('textDocument/prepareCallHierarchy', { textDocument: { uri: fileToUri(file) }, position: pos })) as CallItem[]; return r?.[0] ?? null; } catch { return null; }
 }
 export async function outgoing(item: CallItem): Promise<OutgoingCall[]> {
-  try { return ((await req('callHierarchy/outgoingCalls', { item })) as OutgoingCall[]) ?? []; } catch { return []; }
+  try { const r = ((await req('callHierarchy/outgoingCalls', { item })) as OutgoingCall[]) ?? []; for (const c of r) fromClangd(c.to.uri); return r; } catch { return []; }
 }
 export async function workspaceSymbols(query: string): Promise<{ name: string; kind: number; location: { uri: string; range: { start: Pos } }; containerName?: string }[]> {
   try { return ((await req('workspace/symbol', { query })) as any[]) ?? []; } catch { return []; }
