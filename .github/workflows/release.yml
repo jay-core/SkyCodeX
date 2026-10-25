@@ -6,6 +6,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'attach the builds to this existing tag''s release (empty: build and check only)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -92,7 +97,7 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -103,8 +108,10 @@ jobs:
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           ls -la out
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Lithograph ${GITHUB_REF_NAME#v}" --notes "Portable builds for each system."
-          gh release upload "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Lithograph ${TAG#v}" --notes "Portable builds for each system."
+          # the archives only; the artifacts also hold the unpacked folders
+          gh release upload "$TAG" out/*.zip out/*.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
