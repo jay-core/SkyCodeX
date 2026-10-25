@@ -1,23 +1,17 @@
-// Lithograph main process: window, portable data, settings, files, clangd, terminals, memory analysis.
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, protocol, net, powerMonitor, crashReporter } from 'electron';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+// SkyCodeX main process: window, portable data, settings, files, clangd and the language packs.
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, powerMonitor, crashReporter } from 'electron';
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers } from './files';
 import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand } from './lsp';
+import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
-import { launchWithPacks } from './shellinit';
-import { releasesFor, stepsFor, KIND_INFO, languageBins, languageEnv, serverFor, refIndex, Lang } from './langpacks';
-import { safeJoin } from './unpack';
-import { TEMPLATES, createProject } from './templates';
-import { runWithChecks, CheckKind, Tools, flagsFor } from './checks';
-import { buildReport } from './report';
+import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync } from 'node:child_process';
-import { findBinaries, analyze } from './memory';
 
 // ---------- portable data dir: decided before anything else touches the disk ----------
 const appRoot = path.resolve(__dirname, '..', '..');
@@ -59,7 +53,7 @@ const reloadSettings = () => ({ settings, problems } = loadSettings(fs.readFileS
 reloadSettings();
 
 const log = (line: string) => {
-  try { fs.appendFileSync(path.join(data.dir, 'logs', 'lithograph.log'), `${new Date().toISOString()} ${line.trimEnd()}\n`); } catch { /* logging never breaks the app */ }
+  try { fs.appendFileSync(path.join(data.dir, 'logs', 'skycodex.log'), `${new Date().toISOString()} ${line.trimEnd()}\n`); } catch { /* logging never breaks the app */ }
 };
 
 
@@ -73,17 +67,11 @@ function createWindow() {
     show: false,
     frame: native,
     backgroundColor: '#171817',
-    title: 'Lithograph',
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true },
+    title: 'SkyCodeX',
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
-  // spelling uses the system's checker (macOS, Windows); on Linux, dictionaries are read only from data/dictionaries, never downloaded
-  try {
-    const ses = win.webContents.session;
-    ses.setSpellCheckerDictionaryDownloadURL(pathToFileURL(path.join(data.dir, 'dictionaries')).href + '/');
-    if (process.platform !== 'darwin') ses.setSpellCheckerLanguages(['en-US']);
-  } catch (e) { log(`spellcheck: ${e}`); }
-  // the reference viewer may move between its own pages; nothing in a frame may load from the network
-  win.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame && !e.url.startsWith('litho-ref:')) e.preventDefault(); });
+  // nothing in a frame may load from the network
+  win.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame) e.preventDefault(); });
   // the interface may list installed fonts (settings) and write to the clipboard; nothing else is granted
   const allowed = new Set(['local-fonts', 'clipboard-sanitized-write']);
   win.webContents.session.setPermissionRequestHandler((wc, perm, cb) => cb(wc === win?.webContents && allowed.has(perm)));
@@ -123,15 +111,6 @@ ipcMain.handle('app:info', () => ({
 }));
 
 // ---------- files ----------
-// shells the terminal can use, for the settings page
-ipcMain.handle('sys:shells', () => {
-  if (process.platform === 'win32') {
-    const sys = process.env.SystemRoot ?? 'C:\\Windows';
-    return [path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), path.join(sys, 'System32', 'cmd.exe'),
-      'C:\\Program Files\\PowerShell\\7\\pwsh.exe', 'C:\\Program Files\\Git\\bin\\bash.exe'].filter((p) => fs.existsSync(p));
-  }
-  try { return [...new Set(fs.readFileSync('/etc/shells', 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('/') && fs.existsSync(l)))]; } catch { return []; }
-});
 ipcMain.handle('fs:pickFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
@@ -146,6 +125,7 @@ ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
 });
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
+ipcMain.handle('fs:targets', (_e, root: string) => buildTargets(root));
 ipcMain.handle('fs:read', (_e, file: string) => fs.readFileSync(file, 'utf8'));
 ipcMain.handle('fs:exists', (_e, file: string) => fs.existsSync(file));
 ipcMain.handle('fs:write', (_e, file: string, text: string) => { atomicWrite(file, text); dropBuffer(BUFFERS, file); return fs.statSync(file).mtimeMs; });
@@ -157,7 +137,7 @@ ipcMain.handle('fs:watch', (_e, root: string) => {
   try {
     // clangd's index, git and build output change thousands of files; none of that is shown, so it is ignored,
     // and the rest is sent in batches so a burst of writes costs the interface one refresh
-    const IGNORE = /(^|[\\/])(\.git|node_modules|\.cache|CMakeFiles|build|out|cmake-build-[^\\/]*)([\\/]|$)|\.(o|obj|d|su|tmp)$|\.lithograph-/;
+    const IGNORE = /(^|[\\/])(\.git|node_modules|\.cache|CMakeFiles|build|out|cmake-build-[^\\/]*)([\\/]|$)|\.(o|obj|d|su|tmp)$|\.skycodex-/;
     let batch = new Set<string>(), timer: NodeJS.Timeout | undefined;
     watcher = fs.watch(root, { recursive: true }, (_ev, name) => {
       if (!name || IGNORE.test(name)) return;
@@ -184,7 +164,9 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
   try {
-    await lsp.start(clangd, root, settings['clangd.args'] as string[]);
+    // a toolchain pack's compiler goes into the compile database SkyCodeX writes, so its standard headers are indexed too
+    const tc = activeToolchain(), cxx = tc ? packExe(PACKS.dir, tc, 'clang++') : null;
+    await lsp.start(clangd, root, [...(settings['clangd.args'] as string[]), ...(cxx ? [`--query-driver=${cxx}`] : [])], STATE, cxx);
     return { ok: true, clangd, capabilities: lsp.capabilities };
   } catch (e) { return { ok: false, message: String(e) }; }
 });
@@ -211,117 +193,24 @@ ipcMain.handle('lang:request', (_e, lang: Lang, method: string, params: unknown)
 });
 ipcMain.handle('lang:notify', (_e, lang: Lang, method: string, params: unknown) => { const c = langServers.get(lang); if (c?.running) c.notify(method, params); });
 
-// ---------- run with checks, and profile ----------
-function which(prog: string): string | null {
-  const exe = process.platform === 'win32' ? `${prog}.exe` : prog;
-  for (const d of (process.env.PATH ?? '').split(path.delimiter)) if (d && fs.existsSync(path.join(d, exe))) return path.join(d, exe);
-  return null;
-}
-function xcrunFind(prog: string): string | null { try { return execFileSync('xcrun', ['--find', prog], { encoding: 'utf8', timeout: 5000 }).trim() || null; } catch { return null; } }
-/** The compiler for checks: the toolchain pack in use, else the system's clang. */
-function checkTools(): Tools {
-  const tc = activeToolchain();
-  const fromPack = (p: string) => (tc ? packExe(PACKS.dir, tc, p) : null);
-  const env: Record<string, string> = {};
-  if (process.platform === 'darwin') { const sdk = sdkPath(); if (sdk) env.SDKROOT = sdk; }
-  const sys = (p: string, fb: string[]) => (process.platform === 'darwin' ? (fs.existsSync(`/usr/bin/${p}`) ? `/usr/bin/${p}` : null) : which(p)) ?? fb.map(which).find(Boolean) ?? p;
-  const llvm = (p: string) => fromPack(p) ?? (process.platform === 'darwin' ? xcrunFind(p) : which(p));
-  return { cxx: fromPack('clang++') ?? sys('clang++', ['c++', 'g++']), cc: fromPack('clang') ?? sys('clang', ['cc', 'gcc']), profdata: llvm('llvm-profdata'), cov: llvm('llvm-cov'), cxxfilt: llvm('llvm-cxxfilt') ?? (process.platform === 'darwin' ? xcrunFind('c++filt') : which('c++filt')), env };
-}
-let checking = false;
-ipcMain.handle('checks:run', async (_e, root: string, kind: CheckKind, args: string[]) => {
-  if (checking) return { ok: false, stage: 'build', message: 'a run is already going', reports: [] };
-  checking = true;
-  try { return await runWithChecks(root, kind, args, checkTools(), path.join(STATE, 'checks')); }
-  catch (e) { return { ok: false, stage: 'build', message: String((e as Error).message ?? e), reports: [] }; }
-  finally { checking = false; }
-});
-ipcMain.handle('checks:flags', (_e, kind: CheckKind) => flagsFor(kind).join(' '));
-
 // ---------- power: calmer on battery ----------
 const sendPower = () => send('power:battery', powerMonitor.isOnBatteryPower());
 ipcMain.handle('power:battery', () => powerMonitor.isOnBatteryPower());
 
-// ---------- problem reports: written to the logs folder, never sent anywhere ----------
-ipcMain.handle('report:log', (_e, line: string) => log(`interface: ${String(line).slice(0, 4000)}`));
-ipcMain.handle('report:build', async () => {
-  const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
-  const text = buildReport({
-    version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node,
-    platform: process.platform, arch: process.arch, osRelease: os.release(), dataDir: data.dir,
-    clangd, clangdVersion: await clangdVersion(clangd), packs: listPacks(PACKS.dir).map((m) => `${m.id} (${m.kind})`),
-    settingsText: fs.readFileSync(SETTINGS_FILE, 'utf8'), logDir: path.join(data.dir, 'logs'), home: app.getPath('home'),
-  });
-  const file = path.join(data.dir, 'logs', `problem-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`);
-  atomicWrite(file, text);
-  return file;
-});
+// ---------- interface errors, written to the log ----------
+ipcMain.handle('log', (_e, line: string) => log(`interface: ${String(line).slice(0, 4000)}`));
 
-// ---------- new projects ----------
-ipcMain.handle('templates:list', () => TEMPLATES.map(({ id, title, note }) => ({ id, title, note })));
-ipcMain.handle('templates:create', (_e, parent: string, name: string, id: string) => createProject(parent, name, id));
-
-// ---------- code style: clangd formats a sample beside a candidate .clang-format, so the style can be tried before it is saved ----------
-ipcMain.handle('format:preview', async (_e, style: string, sample: string) => {
-  if (!lsp.running) return { ok: false, message: 'the language engine is not running — open a folder first' };
-  const dir = path.join(STATE, 'format-preview'), file = path.join(dir, 'sample.cpp'), uri = pathToFileURL(file).href;
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '.clang-format'), style);
-  fs.writeFileSync(file, sample);
-  lsp.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'cpp', version: 1, text: sample } });
-  try { return { ok: true, edits: await lsp.request('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 4, insertSpaces: true } }) }; }
-  catch (e) { return { ok: false, message: String((e as Error).message ?? e).replace(/^textDocument\/formatting: /, '') }; }
-  finally { lsp.notify('textDocument/didClose', { textDocument: { uri } }); }
-});
-
-// ---------- offline C++ reference: pages served from the installed pack only ----------
-ipcMain.handle('ref:index', () => { const r = refIndex(PACKS.dir); return r ? r.names : null; });
-function serveReference(req: Request): Promise<Response> | Response {
-  const r = refIndex(PACKS.dir);
-  const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '');
-  const file = r ? safeJoin(path.join(r.root, r.base), rel) : null;
-  if (!file || !fs.existsSync(file) || /\.(js|mjs)$/i.test(file)) return new Response('not found', { status: 404 });
-  return net.fetch(pathToFileURL(file).href);
-}
 ipcMain.handle('lsp:notify', (_e, method: string, params: any) => {
   if (!lsp.running) return;
   // a header clang can't recognise by its name gets a command of its own before clangd reads it
   if (method === 'textDocument/didOpen') {
     try {
-      const file = fileURLToPath(params.textDocument.uri), cmd = headerCommand(file, lspRoot);
+      const file = fileURLToPath(params.textDocument.uri), cmd = headerCommand(file, lspRoot, lsp.ccDir);
       if (cmd) lsp.notify('workspace/didChangeConfiguration', { settings: { compilationDatabaseChanges: { [file]: cmd } } });
     } catch (e) { log(`header command: ${e}`); }
   }
   lsp.notify(method, params);
 });
-
-// ---------- terminals ----------
-type Pty = { write(d: string): void; resize(c: number, r: number): void; kill(): void; onData(cb: (d: string) => void): void; onExit(cb: (e: { exitCode: number }) => void): void };
-const ptys = new Map<number, Pty>();
-function defaultShell(): { file: string; args: string[] } {
-  const s = String(settings['terminal.shell']);
-  if (s && s !== 'auto') return { file: s, args: [] };
-  if (process.platform === 'win32') return { file: 'powershell.exe', args: ['-NoLogo'] };
-  return { file: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), args: ['-l'] };
-}
-ipcMain.handle('pty:spawn', (_e, id: number, cwd: string, cols: number, rows: number) => {
-  let nodePty: { spawn: (f: string, a: string[], o: object) => Pty };
-  try { nodePty = require('node-pty'); } catch (e) { return { ok: false, message: `terminal unavailable: ${e}` }; }
-  const sh = defaultShell();
-  // the active toolchain pack comes first on PATH in this terminal only (see shellinit.ts)
-  const tc = activeToolchain(), extra: Record<string, string> = { TERM_PROGRAM: 'Lithograph' };
-  if (tc && process.platform === 'darwin') { const sdk = sdkPath(); if (sdk) extra.SDKROOT = sdk; }   // LLVM's clang finds the macOS headers through this
-  Object.assign(extra, languageEnv(PACKS.dir));   // Cargo, Go and pip keep their caches inside their packs
-  const go = launchWithPacks(sh.file, sh.args, [...(tc ? [path.join(PACKS.dir, tc.id, tc.bin)] : []), ...languageBins(PACKS.dir)], STATE, extra);
-  const p = nodePty.spawn(go.file, go.args, { name: 'xterm-256color', cols, rows, cwd: fs.existsSync(cwd) ? cwd : process.env.HOME, env: { ...process.env, ...go.env } });
-  ptys.set(id, p);
-  p.onData((d) => send('pty:data', id, d));
-  p.onExit((ev) => { ptys.delete(id); send('pty:exit', id, ev.exitCode); });
-  return { ok: true, shell: sh.file };
-});
-ipcMain.handle('pty:write', (_e, id: number, d: string) => ptys.get(id)?.write(d));
-ipcMain.handle('pty:resize', (_e, id: number, c: number, r: number) => { try { ptys.get(id)?.resize(c, r); } catch { /* exited */ } });
-ipcMain.handle('pty:kill', (_e, id: number) => { ptys.get(id)?.kill(); ptys.delete(id); });
 
 // ---------- compiler window: engines and language packs ----------
 function activeToolchain(): PackManifest | null {
@@ -385,17 +274,6 @@ ipcMain.handle('packs:install', async (_e, kind: PackKind, version: string, repl
   if (!rel) return { ok: false, message: `${kind} ${version} isn't available for this machine` };
   return runInstall(rel, replaces);
 });
-/** A pack from an archive on this computer (the C++ reference, whose source publishes no checksum). */
-ipcMain.handle('packs:installFile', async (_e, kind: PackKind) => {
-  if (installing) return { ok: false, message: `${installing.rel.id} is still installing` };
-  const pick = await dialog.showOpenDialog(win!, { title: `Choose the ${KIND_INFO[kind].title} archive`, properties: ['openFile'], filters: [{ name: 'Archives', extensions: ['zip', 'gz', 'tgz', 'zst'] }] });
-  const file = pick.filePaths[0];
-  if (pick.canceled || !file) return { ok: false, message: 'cancelled' };
-  const name = path.basename(file), version = name.match(/(\d{8})/)?.[1] ?? new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const format = /\.zip$/i.test(name) ? 'zip' : /\.(tar\.gz|tgz)$/i.test(name) ? 'tar.gz' : /\.tar\.zst$/i.test(name) ? 'tar.zst' : null;
-  if (!format) return { ok: false, message: 'choose a .zip, .tar.gz or .tar.zst archive (.tar.xz can\'t be read; use the .zip)' };
-  return runInstall({ kind, name: kind, version, asset: name, url: pathToFileURL(file).href, size: fs.statSync(file).size, sha256: '', format, source: `this computer (${file})`, id: `${kind}-${version}` });
-});
 async function runInstall(r: Release, replaces?: string) {
   const ctrl = new AbortController();
   installing = { ctrl, rel: r };
@@ -426,10 +304,6 @@ ipcMain.handle('packs:remove', (_e, id: string) => {
 });
 ipcMain.handle('packs:show', () => shell.openPath(PACKS.dir));
 
-// ---------- memory ----------
-ipcMain.handle('memory:binaries', (_e, root: string) => findBinaries(root));
-ipcMain.handle('memory:analyze', (_e, bin: string, root: string) => analyze(bin, root));
-
 // ---------- window ----------
 ipcMain.handle('win:minimize', () => win?.minimize());
 ipcMain.handle('win:maximize', () => (win?.isMaximized() ? win.unmaximize() : win?.maximize()));
@@ -455,32 +329,28 @@ function buildMenu() {
     // shortcuts are handled inside the window, so the menu only shows them (registerAccelerator: false)
     ({ label, accelerator: accel, registerAccelerator: false, click: () => send('menu:command', id) });
   const template: MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ label: 'Lithograph', submenu: [{ role: 'about' }, { type: 'separator' }, cmd('settings', 'Settings…', 'Cmd+,'), { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
+    ...(process.platform === 'darwin' ? [{ label: 'SkyCodeX', submenu: [{ role: 'about' }, { type: 'separator' }, cmd('settings', 'Settings…', 'Cmd+,'), { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
     { label: 'File', submenu: [
-      cmd('newFile', 'New File', 'CmdOrCtrl+N'), cmd('newProject', 'New Project from a Template…'), cmd('openFile', 'Open File…', 'CmdOrCtrl+Shift+O'), cmd('openFolder', 'Open Folder…', 'CmdOrCtrl+O'),
+      cmd('newFile', 'New File', 'CmdOrCtrl+N'), cmd('openFile', 'Open File…', 'CmdOrCtrl+Shift+O'), cmd('openFolder', 'Open Folder…', 'CmdOrCtrl+O'),
       { type: 'separator' }, cmd('save', 'Save', 'CmdOrCtrl+S'), cmd('saveAs', 'Save As…', 'CmdOrCtrl+Shift+S'), cmd('saveAll', 'Save All', 'CmdOrCtrl+Alt+S'),
       { type: 'separator' }, cmd('closeFile', 'Close File', 'CmdOrCtrl+W'),
     ] },
-    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F'), { type: 'separator' }, cmd('formatDocument', 'Format Document', 'Shift+Alt+F'), cmd('codeStyle', 'Code Style…')] },
-    { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P'), { type: 'separator' }, cmd('todoList', 'To-do List'), cmd('reference', 'C++ Reference', 'Shift+F1')] },
-    { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('showMemory', 'Memory'), cmd('toggleTerminal', 'Terminal', 'Ctrl+`'), cmd('togglePreview', 'Preview Panes', 'CmdOrCtrl+Shift+E')] },
+    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F')] },
+    { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P')] },
+    { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('togglePreview', 'Preview Panes', 'CmdOrCtrl+Shift+E')] },
     { role: 'windowMenu' },
-    { label: 'Run', submenu: [cmd('runChecks', 'Run with Checks…'), cmd('profile', 'Profile…')] },
-    { role: 'help', submenu: [cmd('help', 'Lithograph Help', 'F1'), cmd('tour', 'Take the Tour'), { type: 'separator' }, cmd('report', 'Write a Problem Report…')] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'litho-ref', privileges: { standard: true, secure: true } }]);
 // crash dumps stay in data/logs/crashes; nothing is uploaded
 crashReporter.start({ uploadToServer: false, compress: true });
 app.whenReady().then(() => {
-  protocol.handle('litho-ref', serveReference);
   powerMonitor.on('on-battery', sendPower); powerMonitor.on('on-ac', sendPower);
   buildMenu(); createWindow();
 });
 app.on('window-all-closed', () => app.quit());
-// every way out (closing the window, Quit, a smoke run ending) stops clangd and the terminals; on Windows they would outlive the app otherwise
-app.on('will-quit', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); for (const p of ptys.values()) p.kill(); ptys.clear(); });
+// every way out (closing the window, Quit, a smoke run ending) stops the language engines; on Windows they would outlive the app otherwise
+app.on('will-quit', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); });
 // a smoke run that stalls ends itself, so a build machine is never left waiting
 if (smoke) setTimeout(() => { log('smoke: timed out after 5 minutes'); app.exit(2); }, 300_000).unref();

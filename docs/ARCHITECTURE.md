@@ -1,7 +1,9 @@
-# Lithograph — architecture
+# SkyCodeX — architecture
 
-A portable, offline, C/C++-focused code editor for macOS, Windows and Linux.
+A portable, offline tool for reading and understanding codebases of any size, for macOS, Windows and Linux: a bird's-eye view of how the program runs, backed by the compiler's own index, with editing and saving kept.
 Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
+
+> **Refocus (after 1.0, renamed from Lithograph):** the editor extras are removed — the memory view (§ on memory), run with checks and the profiler, the terminal, project templates, the C++ reference, the to-do list, spell-check, code style and formatting, problem reports, interface translations, help pages and the tour. Sections below that describe them are kept as history. The flow view (§25) is the primary function and is being redesigned next. Folders without `compile_commands.json` now get one generated in SkyCodeX's state folder, and the flow graph is crawled from clangd's index in parallel (`src/renderer/lib/flow.ts`).
 
 ## 1. Stack
 
@@ -11,7 +13,7 @@ Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
 | UI | **TypeScript + Solid.js** | Fine-grained updates, tiny runtime, no virtual-DOM churn while typing |
 | Editor | **CodeMirror 6** | Cheap to run many editors at once (main pane + every preview card) |
 | Terminal | **xterm.js + node-pty** | Real shell; ConPTY on Windows, pty on macOS/Linux |
-| Live intelligence + code facts | **lithograph-clangd**: one binary = clangd + our fact extractor (bundled, LSP over stdio) → **SQLite** | One copy of the Clang engine and one parse per file feed both the live features and the whole-project facts |
+| Live intelligence + code facts | **skycodex-clangd**: one binary = clangd + our fact extractor (bundled, LSP over stdio) → **SQLite** | One copy of the Clang engine and one parse per file feed both the live features and the whole-project facts |
 | Database | `node:sqlite` (built into Node / Electron) | No native module to ship |
 | History | **git** CLI (if installed) | Blame, log, diffs |
 | Build / ASM / deep analysis | System compiler (clang, gcc, MSVC) + `clang --analyze` | Detected, never bundled |
@@ -22,7 +24,7 @@ Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
 ```
 ┌──────────────────────────── Electron main (Node) ────────────────────────────┐
 │ window · portable data dir · settings (TOML) · file watcher · process manager │
-│ LSP client ─── lithograph-clangd (clangd + fact extractor → SQLite)          │
+│ LSP client ─── skycodex-clangd (clangd + fact extractor → SQLite)          │
 │ git worker      search worker (fuzzy, in memory)      pty ─── shell           │
 └───────────────────────────────▲──────────────────────────────────────────────┘
                                 │ typed IPC (contextBridge; renderer has no Node)
@@ -39,7 +41,7 @@ Charcoal, borderless, Metro-style typography; ArX F1 for code, Selawik for UI.
 
 **clangd** — everything that must react per keystroke.
 
-**Fact extractor** (inside lithograph-clangd) — everything that needs facts about the whole project. Hooks clangd’s background index, so each translation unit from `compile_commands.json` is parsed once, and writes:
+**Fact extractor** (inside skycodex-clangd) — everything that needs facts about the whole project. Hooks clangd’s background index, so each translation unit from `compile_commands.json` is parsed once, and writes:
 
 | Table | Contents |
 |---|---|
@@ -77,8 +79,8 @@ Incremental by file hash, parallel per translation unit, stored in `data/index/<
 ## 5. Portable data
 
 ```
-Lithograph/
-├─ lithograph(.exe | .app | linux binary)
+SkyCodeX/
+├─ skycodex(.exe | .app | linux binary)
 ├─ data/                created on first run, next to the executable
 │  ├─ settings.toml     every option, commented, live-reloaded
 │  ├─ keys.toml
@@ -86,10 +88,10 @@ Lithograph/
 │  ├─ state/            layout, thread, history snapshots, Chromium profile
 │  ├─ index/            SQLite fact databases
 │  ├─ notes/  boards/  tours/  logs/
-└─ tools/  lithograph-clangd                (per OS / arch)
+└─ tools/  skycodex-clangd                (per OS / arch)
 ```
 
-- Data dir = folder of the executable (macOS: beside `Lithograph.app`).
+- Data dir = folder of the executable (macOS: beside `SkyCodeX.app`).
 - Chromium’s own profile is redirected into `data/state` so nothing is written elsewhere.
 - Not writable (Program Files, read-only drive, macOS App Translocation) → say so once, offer to move or fall back to the OS app-data folder.
 - Bad setting → squiggle in the file, default used, never a crash.
@@ -122,9 +124,9 @@ Lithograph/
 
 **Version 1.0 (built):** `npm run package` (`src/build/package.mjs`) builds for the system it runs on, from Electron's own app, with no installer:
 
-- **macOS:** the bundle is renamed (helpers included), carries Lithograph's built files, node-pty's ready-built binary for the processor and the inbuilt clangd in `Resources/tools/`, and is ad-hoc signed (free, not notarised). Zipped.
-- **Windows:** a folder with `Lithograph.exe` (icon and version details set with `rcedit`), node-pty's ready-built Windows binary and clangd in `resources/tools/`. Zipped.
-- **Linux:** a folder with `lithograph`, node-pty compiled for Electron at build time, packed as `.tar.gz` (no AppImage, so no FUSE dependency).
+- **macOS:** the bundle is renamed (helpers included), carries SkyCodeX's built files, node-pty's ready-built binary for the processor and the inbuilt clangd in `Resources/tools/`, and is ad-hoc signed (free, not notarised). Zipped.
+- **Windows:** a folder with `SkyCodeX.exe` (icon and version details set with `rcedit`), node-pty's ready-built Windows binary and clangd in `resources/tools/`. Zipped.
+- **Linux:** a folder with `skycodex`, node-pty compiled for Electron at build time, packed as `.tar.gz` (no AppImage, so no FUSE dependency).
 
 Each folder holds a short read-me and the licence; `data/` and `language_packs/` are created beside the app on first run. Windows and Linux are built by GitHub Actions (`.github/workflows/release.yml`), which opens each packaged app in a boot check before attaching it to the tagged release.
 
@@ -150,7 +152,7 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 4. clangd: diagnostics, completion, hover, go-to-definition, fix-its, all refactor tweaks.
 5. Fact extractor + preview L1/L2, connector lines, shift preview with animation.
 6. Terminal with command blocks; build view; build & test integration.
-7. ~~Debugger~~ — dropped: Lithograph is a hobby project, and the terminal plus run-with-checks cover its needs.
+7. ~~Debugger~~ — dropped: SkyCodeX is a hobby project, and the terminal plus run-with-checks cover its needs.
 8. Thread, signal mode, value story, structural zoom, callers.
 9. Deep analysis, assembly view, struct layout, memory view, MISRA engine.
 10. Git write operations, diff view, merge conflicts.
@@ -185,12 +187,12 @@ Target: ≈ 150–180 MB on disk, ≈ 60–80 MB download. The floor is the Clan
 - Find & replace in file and across the project: regex, case, whole word, in-selection; project replace shows a preview first.
 - Multi-cursor, column selection, go to line, go to symbol in file, comment toggle, folding, word wrap, whitespace, snippets.
 - Command palette (⌘/Ctrl ⇧ P) for every action. Split view; compare two files.
-- Keymap presets: Lithograph (default), VS Code, optional Vim mode.
+- Keymap presets: SkyCodeX (default), VS Code, optional Vim mode.
 - Refactors (⌘/Ctrl .): rename, extract variable, extract function, move body header ⇄ source, expand auto, expand macro, populate switch, swap if/else, add using, generate constructors / special members, add missing and remove unused includes.
 
 ## 13. Debugger — not planned
 
-Dropped for version 1 and after: Lithograph is a hobby project. Sanitizer runs (§31) and the profiler (§30) cover finding faults. The notes below are kept only as a record.
+Dropped for version 1 and after: SkyCodeX is a hobby project. Sanitizer runs (§31) and the profiler (§30) cover finding faults. The notes below are kept only as a record.
 
 - Debug Adapter Protocol. **lldb-dap** bundled (part of LLVM, all three OSes); gdb used when present.
 - Breakpoints (conditional, logpoints), step, variables, watches, data breakpoints.
@@ -200,7 +202,7 @@ Dropped for version 1 and after: Lithograph is a hobby project. Sanitizer runs (
 
 - Git: diff view, stage, commit, switch branch, merge-conflict helper (plus the read features above).
 - Build: CMake presets and targets, run configurations; tests discovered through CTest (GoogleTest, Catch2, doctest) with run / debug buttons.
-- compile_commands.json: detected; for CMake, Lithograph offers to re-configure with export on; otherwise guessed flags with a visible note.
+- compile_commands.json: detected; for CMake, SkyCodeX offers to re-configure with export on; otherwise guessed flags with a visible note.
 - Trust: a newly opened project can read and navigate, but cannot run build, run or task commands until you mark it trusted.
 
 ## 15. Terminal and build view
@@ -239,7 +241,7 @@ Dropped for version 1 and after: Lithograph is a hobby project. Sanitizer runs (
 - All UI text lives in small TOML locale files (`locales/en.toml`, …), a few KB each; community translations can be dropped into `data/locales/`.
 - Right-to-left layouts for Arabic and Hebrew mirror the chrome; code stays left-to-right.
 - Typing: full IME support (Chinese, Japanese, Korean) in editor and terminal; bidirectional text in comments and strings.
-- Fonts: ArX F1 and Selawik cover Latin; other scripts fall back to the OS (Segoe UI / SF / Noto). Chromium’s own locale pack is shipped only for the languages Lithograph ships.
+- Fonts: ArX F1 and Selawik cover Latin; other scripts fall back to the OS (Segoe UI / SF / Noto). Chromium’s own locale pack is shipped only for the languages SkyCodeX ships.
 
 ## 18. Accessibility, updates, testing
 
@@ -249,16 +251,16 @@ Dropped for version 1 and after: Lithograph is a hobby project. Sanitizer runs (
 
 ## 19. No installation — what “setup” means
 
-1. Unzip `Lithograph/` anywhere. Run it. No installer, no admin rights, no registry, nothing in the user profile.
+1. Unzip `SkyCodeX/` anywhere. Run it. No installer, no admin rights, no registry, nothing in the user profile.
 2. First launch creates `data/` beside the executable with `settings.toml` (every option, commented), `keys.toml`, `themes/charcoal.toml`, `state/`, `logs/`. Chromium’s profile, caches, crash dumps and temp files are redirected into `data/` too.
-3. One welcome screen: pick a project folder. Lithograph reports what it found — compile_commands.json, compiler, git — and offers to import a VS Code theme. Done.
+3. One welcome screen: pick a project folder. SkyCodeX reports what it found — compile_commands.json, compiler, git — and offers to import a VS Code theme. Done.
 
 Honest caveats:
-- **First launch warnings** (no paid signing, by choice): Windows SmartScreen → *More info → Run anyway*. macOS → *System Settings → Privacy & Security → Open Anyway* (or `xattr -dr com.apple.quarantine Lithograph.app`). Once per machine. The README and the download page say this up front.
-- **macOS quarantine**: an app run straight from Downloads may be launched from a read-only copy; moving the folder with Finder fixes it, and Lithograph detects and explains it.
+- **First launch warnings** (no paid signing, by choice): Windows SmartScreen → *More info → Run anyway*. macOS → *System Settings → Privacy & Security → Open Anyway* (or `xattr -dr com.apple.quarantine SkyCodeX.app`). Once per machine. The README and the download page say this up front.
+- **macOS quarantine**: an app run straight from Downloads may be launched from a read-only copy; moving the folder with Finder fixes it, and SkyCodeX detects and explains it.
 - **Linux**: needs a normal desktop (GTK 3, NSS) — present on mainstream distros.
 - **Compiler**: building, running, assembly view and deep analysis use the compiler already on the machine (Xcode Command Line Tools, Visual Studio Build Tools / LLVM, gcc or clang). Editing, navigation, previews and every reading feature work without one. Optional on Windows: a portable **llvm-mingw toolchain pack** dropped into `tools/` gives compile-and-run with no install at all (~200 MB, separate download). macOS SDKs and MSVC libraries can’t legally be bundled.
-- The OS may keep its own tiny bookkeeping (recent-items lists, jump lists); Lithograph disables what it can.
+- The OS may keep its own tiny bookkeeping (recent-items lists, jump lists); SkyCodeX disables what it can.
 
 ## 20. Language packs — the only feature that uses the internet
 
@@ -269,10 +271,10 @@ Honest caveats:
   - Rust via rustup with its homes pointed into `tools/lang/rust`; Go, Node, a JDK and standalone Python builds as official archives extracted in place; rust-analyzer and similar as single binaries.
 - **System mode** (opt-in per language): winget / scoop on Windows, Homebrew on macOS, apt / dnf / pacman / zypper on Linux.
 - **Recipes** are small declarative TOML files (`recipes/<language>.toml`): detection commands, official HTTPS URLs with SHA-256 checksums, package-manager commands per OS, a verification step. Replacing the files updates them. Nothing is ever piped from the network straight into a shell.
-- **Permissions**: Lithograph never sees or stores a password. It asks the OS: the native macOS administrator dialog, Windows UAC, or polkit (`pkexec`) on Linux. Where none exists, `sudo` runs in the visible terminal and Lithograph moves focus there with a small in-UI note; the password goes straight to the terminal, is never echoed, logged or kept in command history.
+- **Permissions**: SkyCodeX never sees or stores a password. It asks the OS: the native macOS administrator dialog, Windows UAC, or polkit (`pkexec`) on Linux. Where none exists, `sudo` runs in the visible terminal and SkyCodeX moves focus there with a small in-UI note; the password goes straight to the terminal, is never echoed, logged or kept in command history.
 - **Uninstall**: portable packs are a folder delete; system installs show the matching remove command.
 - **Control**: `network.allow` in settings (default: only when you press install). Offline machines can install a pack from a downloaded archive.
-- Platform limits: the macOS C/C++ toolchain comes from Xcode Command Line Tools (Apple’s own installer prompt); MSVC can’t be fetched silently — Lithograph offers llvm-mingw (portable) instead.
+- Platform limits: the macOS C/C++ toolchain comes from Xcode Command Line Tools (Apple’s own installer prompt); MSVC can’t be fetched silently — SkyCodeX offers llvm-mingw (portable) instead.
 
 ## 21. Tool views
 
@@ -280,7 +282,7 @@ Build, memory and MISRA are pivot pages of one tool pane (*build · memory · mi
 
 ## 22. Memory view
 
-**Budgets** per region — storage (flash / disk image) and RAM, plus any named linker region (CCM, external SDRAM, …), each task stack and the heap. Thresholds: amber at 90 % (configurable), red over 100 %. The header shows a tiny `RAM 104 %` when anything is over; the build view marks the build; `lithograph check --memory` fails CI.
+**Budgets** per region — storage (flash / disk image) and RAM, plus any named linker region (CCM, external SDRAM, …), each task stack and the heap. Thresholds: amber at 90 % (configurable), red over 100 %. The header shows a tiny `RAM 104 %` when anything is over; the build view marks the build; `skycodex check --memory` fails CI.
 
 **Largest first** — one list per region, descending, every entry with size, kind, file:line and change since last build. When a budget is exceeded, the message names the overflow and the entries that caused it (*RAM over by 5.4 KB — log_buffer, 8.0 KB, new in log.c:22, is the largest change*).
 
@@ -288,7 +290,7 @@ Build, memory and MISRA are pivot pages of one tool pane (*build · memory · mi
 
 | Case | Handling |
 |---|---|
-| ELF (Linux, embedded), Mach-O (macOS), PE/COFF (Windows) | Read with LLVM’s object library inside lithograph-clangd — one engine for all three |
+| ELF (Linux, embedded), Mach-O (macOS), PE/COFF (Windows) | Read with LLVM’s object library inside skycodex-clangd — one engine for all three |
 | Embedded regions | Linker script `MEMORY` regions and the linker’s own `--print-memory-usage`; map file when present |
 | `.data` | Counted twice, correctly: its initial image in storage and its live copy in RAM |
 | Heap and stack reserves | Read from linker symbols (`_Min_Heap_Size`, `_Min_Stack_Size`, …) and counted as RAM |
@@ -302,7 +304,7 @@ Build, memory and MISRA are pivot pages of one tool pane (*build · memory · mi
 **Stack**
 - Frame sizes from `-fstack-usage` (GCC, Clang, clang-cl); MSVC builds use clang-cl for this view.
 - Worst-case depth = frame sizes along the call graph from each entry point: `main`, each interrupt handler (added on top of the stack it interrupts), each RTOS task with its own configured stack size.
-- Calls through function pointers resolve to every address-taken function with a matching type — conservative, never under-counted. Recursion is *unbounded* unless annotated (`// lithograph: max-depth 8`). `alloca` / VLAs flagged *dynamic*.
+- Calls through function pointers resolve to every address-taken function with a matching type — conservative, never under-counted. Recursion is *unbounded* unless annotated (`// skycodex: max-depth 8`). `alloca` / VLAs flagged *dynamic*.
 
 **Heap**
 - Every allocation site: `malloc` / `calloc` / `realloc` / `free`, `new` / `delete`, allocating standard containers, smart-pointer factories, plus functions that allocate through callees.
@@ -320,7 +322,7 @@ Build, memory and MISRA are pivot pages of one tool pane (*build · memory · mi
   4. *Not mechanically checkable* (directives about documentation and process) — listed as manual checklist items with their status.
 - **Essential type model**: implemented once and shared, since a large family of rules depends on it.
 - **Precise messages**: rule number and category (mandatory / required / advisory); a one-line summary in our own words; *what in this line* violates it (the operand, the types, the path); and the smallest compliant fix, as a fix-it when it’s safe. Example: *Rule 10.4 · required — `count` is essentially unsigned and `-1` essentially signed; write `count > 0u` or cast explicitly.*
-- **Licensing**: Lithograph ships numbers and its own summaries; official headlines load locally from the user’s licensed copy (`data/`, never redistributed).
+- **Licensing**: SkyCodeX ships numbers and its own summaries; official headlines load locally from the user’s licensed copy (`data/`, never redistributed).
 - **Deviations**: `// misra-deviation <rule>: <reason>` or `deviations.toml`; deviated findings are kept and counted, not hidden.
 - **Report**: per-guideline compliance summary (violations, deviations, not-applicable, manual) as HTML / CSV, laid out the way compliance matrices usually are.
 - **Quality bar**: every check has passing and failing test cases; false positives are treated as bugs; the engine is not a qualified tool and says so in the report.
@@ -386,7 +388,7 @@ Build, memory and MISRA are pivot pages of one tool pane (*build · memory · mi
 
 MISRA covers only part of DO-178C: the objective that source code conforms to a coding standard. DO-178C is a process standard; most of its objectives — plans, requirements, traceability, structural coverage, configuration management, quality assurance, tool qualification — are outside any coding standard. The pack helps where an editor can:
 
-| DO-178C need | Lithograph support |
+| DO-178C need | SkyCodeX support |
 |---|---|
 | Source code conforms to standards | MISRA engine + project-specific rules |
 | Traceability (requirements ↔ code ↔ tests) | `@req HLR-104` tags in comments, requirement import (CSV / ReqIF), trace matrix, untraced code flagged |
@@ -400,7 +402,7 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
 
 ## 27. AADL support pack (optional, SAE AS5506D)
 
-- **Editing**: AADL syntax colouring, outline, go-to-definition across packages, error checking — Lithograph’s own parser (no maintained AADL language server exists).
+- **Editing**: AADL syntax colouring, outline, go-to-definition across packages, error checking — SkyCodeX’s own parser (no maintained AADL language server exists).
 - **From code to model**: a draft AADL model generated from the fact database and known RTOS APIs (FreeRTOS, Zephyr, POSIX threads, ARINC 653): tasks → threads (period and priority from creation calls), queues → event data ports and connections, mutex-guarded globals → shared data access, interrupt handlers → aperiodic threads / devices, functions → subprograms with `Source_Name` / `Source_Text` properties pointing back at the code. The draft is reviewed by the user; nothing is presented as authoritative.
 - **Consistency**: model vs code (*model says 10 ms period, code waits 20 ms*).
 - **Interop**: open the model in OSATE when installed; generate code from AADL with Ocarina as an optional external tool.
@@ -408,10 +410,10 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
 
 ## 28. Licence and distribution
 
-- **Lithograph’s own code: the Lithograph License** (`LICENSE`) — © 2026 Jatin Aggarwal. MIT as the base, with additional conditions that take precedence:
-  - **No selling** (Commons Clause): no selling Lithograph, or paid hosting / support / products whose value comes substantially from it. Using it for paid work is allowed.
-  - **Origin and credit**: no one may claim to have written it; modified versions must be marked as modified; every distributed copy shows *Based on Lithograph by Jatin Aggarwal* in its About screen and docs and ships the licence unchanged.
-  - **Name**: modified versions must use a different name; unmodified copies may keep “Lithograph”.
+- **SkyCodeX’s own code: the SkyCodeX License** (`LICENSE`) — © 2026 Jatin Aggarwal. MIT as the base, with additional conditions that take precedence:
+  - **No selling** (Commons Clause): no selling SkyCodeX, or paid hosting / support / products whose value comes substantially from it. Using it for paid work is allowed.
+  - **Origin and credit**: no one may claim to have written it; modified versions must be marked as modified; every distributed copy shows *Based on SkyCodeX by Jatin Aggarwal* in its About screen and docs and ships the licence unchanged.
+  - **Name**: modified versions must use a different name; unmodified copies may keep “SkyCodeX”.
   - **Terms stick**: the conditions can’t be removed or weakened by sublicensing.
   - Selling is restricted, so it is *source-available*, not OSI “open source”.
 - The copyright line and the licence are shown in *about*, in `--version`, and at the top of `THIRD_PARTY_NOTICES`.
@@ -433,7 +435,7 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
 
 ## 31. Concurrency checks
 
-- Clang thread-safety analysis (`-Wthread-safety`) with annotation help: Lithograph suggests `GUARDED_BY` / `REQUIRES` from observed lock usage.
+- Clang thread-safety analysis (`-Wthread-safety`) with annotation help: SkyCodeX suggests `GUARDED_BY` / `REQUIRES` from observed lock usage.
 - Lock-order graph from the fact database: possible lock inversions flagged.
 - ThreadSanitizer, AddressSanitizer and UndefinedBehaviorSanitizer as one-click toggles in the build view; findings appear as normal diagnostics and can be sent to an investigation board.
 
@@ -451,7 +453,7 @@ Not a qualified tool (DO-330); its output is evidence to support, not certificat
 ## 34. Problem reports (offline)
 
 - *Help → Create problem report* writes a zip into `data/reports/`: logs, settings, versions, OS details; file paths and project names can be replaced with placeholders.
-- Lithograph never sends it anywhere; the user decides where it goes.
+- SkyCodeX never sends it anywhere; the user decides where it goes.
 
 ## 35. Extras
 

@@ -12,7 +12,6 @@ const problems = [
   !r.clangd?.inbuilt && `not using the inbuilt clangd (${r.clangd?.active})`,
   !(r.previewCards > 0) && 'no preview cards',
   !r.definition && 'go to definition failed',
-  !r.terminal && 'the terminal printed nothing',
   !(r.flowBoxes > 0) && 'the flow view is empty',
 ].filter(Boolean);
 if (problems.length) { console.error(`\nboot check failed:\n- ${problems.join('\n- ')}`); process.exit(1); }

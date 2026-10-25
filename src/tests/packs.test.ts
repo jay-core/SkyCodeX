@@ -10,7 +10,6 @@ import { execFileSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { safeJoin, extractTar, extractZip, extractTarZst } from '../main/unpack';
 import { sourceFor, compareVersions, installRelease, listPacks, removePack, Release } from '../main/packs';
-import { launchWithPacks } from '../main/shellinit';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-packs-'));
 
@@ -138,26 +137,6 @@ describe('release matching', () => {
     expect(compareVersions('23.1.10', '23.1.4')).toBeGreaterThan(0);
     expect(compareVersions('9.0.0', '10.0.0')).toBeLessThan(0);
     expect(compareVersions('20261020', '20260901')).toBeGreaterThan(0);
-  });
-});
-
-describe.skipIf(process.platform === 'win32')('packs come first on PATH in Lithograph\'s terminal only', () => {
-  const bin = (d: string) => { const b = path.join(d, 'pack dir with spaces', 'bin'); fs.mkdirSync(b, { recursive: true }); fs.writeFileSync(path.join(b, 'clang'), '#!/bin/sh\necho pack-clang\n', { mode: 0o755 }); return b; };
-  for (const sh of ['/bin/zsh', '/bin/bash']) {
-    it.skipIf(!fs.existsSync(sh))(`${path.basename(sh)} login start-up (path_helper included) still finds the pack's clang first`, () => {
-      const d = tmp(), home = path.join(d, 'home'), b = bin(d);
-      fs.mkdirSync(home);
-      const go = launchWithPacks(sh, sh.endsWith('zsh') ? ['-l'] : ['-l'], [b], path.join(d, 'state'));
-      const args = sh.endsWith('zsh') ? [...go.args, '-i', '-c', 'clang; print -r -- $PATH'] : [...go.args, '-c', 'clang; echo "$PATH"'];
-      const out = execFileSync(go.file, args, { env: { PATH: '/usr/bin:/bin', HOME: home, ...go.env }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
-      expect(out).toContain('pack-clang');
-      expect(out.trim().split('\n').pop()!.startsWith(b)).toBe(true);
-      // the user's own environment is untouched: nothing was written outside the state folder
-      expect(fs.readdirSync(home)).toEqual([]);
-    });
-  }
-  it('with no packs the shell starts exactly as configured', () => {
-    expect(launchWithPacks('/bin/zsh', ['-l'], [], tmp())).toEqual({ file: '/bin/zsh', args: ['-l'], env: {} });
   });
 });
 

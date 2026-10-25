@@ -12,26 +12,26 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-'));
 
 describe('portable data dir', () => {
   const base = { appRoot: '/repo', appDataFallback: '/Users/x/Library/Application Support' };
-  it('sits beside Lithograph.app on macOS', () => {
-    const i = { ...base, isPackaged: true, platform: 'darwin' as const, execPath: '/Tools/Lithograph/Lithograph.app/Contents/MacOS/Lithograph' };
-    expect(portableBase(i)).toBe('/Tools/Lithograph');
-    expect(resolveDataDir(i, () => true)).toEqual({ dir: '/Tools/Lithograph/data', fallback: false });
+  it('sits beside SkyCodeX.app on macOS', () => {
+    const i = { ...base, isPackaged: true, platform: 'darwin' as const, execPath: '/Tools/SkyCodeX/SkyCodeX.app/Contents/MacOS/SkyCodeX' };
+    expect(portableBase(i)).toBe('/Tools/SkyCodeX');
+    expect(resolveDataDir(i, () => true)).toEqual({ dir: '/Tools/SkyCodeX/data', fallback: false });
   });
   it('sits beside the exe on Windows and Linux', () => {
-    expect(portableBase({ ...base, isPackaged: true, platform: 'win32', execPath: 'D:/apps/Lithograph/lithograph.exe' })).toBe('D:/apps/Lithograph');
-    expect(portableBase({ ...base, isPackaged: true, platform: 'linux', execPath: '/opt/Lithograph/lithograph' })).toBe('/opt/Lithograph');
+    expect(portableBase({ ...base, isPackaged: true, platform: 'win32', execPath: 'D:/apps/SkyCodeX/skycodex.exe' })).toBe('D:/apps/SkyCodeX');
+    expect(portableBase({ ...base, isPackaged: true, platform: 'linux', execPath: '/opt/SkyCodeX/skycodex' })).toBe('/opt/SkyCodeX');
   });
   it('uses the project folder when unpackaged', () => {
     expect(resolveDataDir({ ...base, isPackaged: false, platform: 'darwin', execPath: '/x' }, () => true).dir).toBe('/repo/data');
   });
   it('falls back, with a reason, when the folder is read-only', () => {
-    const r = resolveDataDir({ ...base, isPackaged: true, platform: 'win32', execPath: 'C:/Program Files/Lithograph/lithograph.exe' }, () => false);
+    const r = resolveDataDir({ ...base, isPackaged: true, platform: 'win32', execPath: 'C:/Program Files/SkyCodeX/skycodex.exe' }, () => false);
     expect(r.fallback).toBe(true);
-    expect(r.dir).toBe(path.join(base.appDataFallback, 'Lithograph'));
+    expect(r.dir).toBe(path.join(base.appDataFallback, 'SkyCodeX'));
     expect(r.reason).toMatch(/can't be written/);
   });
   it('detects macOS App Translocation', () => {
-    const r = resolveDataDir({ ...base, isPackaged: true, platform: 'darwin', execPath: '/private/var/folders/x/AppTranslocation/ABC/d/Lithograph.app/Contents/MacOS/Lithograph' }, () => true);
+    const r = resolveDataDir({ ...base, isPackaged: true, platform: 'darwin', execPath: '/private/var/folders/x/AppTranslocation/ABC/d/SkyCodeX.app/Contents/MacOS/SkyCodeX' }, () => true);
     expect(r.fallback).toBe(true);
     expect(r.reason).toMatch(/quarantine/);
   });
@@ -53,6 +53,9 @@ describe('settings.toml', () => {
     expect(r.problems).toHaveLength(1);
     expect(r.problems[0].line).toBe(lineOf(text, 'font.size'));
     expect(r.problems[0].message).toMatch(/6–72/);
+  });
+  it('settings of removed features are skipped quietly', () => {
+    expect(loadSettings('[terminal]\nline_height = 1.8\n[memory]\nwarn_percent = 80\n[ui]\nlanguage = "en"\n').problems).toEqual([]);
   });
   it('unknown keys and broken syntax never throw', () => {
     expect(loadSettings('[font]\nwhatever = 1\n').problems[0].message).toMatch(/unknown/);

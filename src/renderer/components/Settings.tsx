@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { settings, problems, setSettingsOpen, openFile, info, flash, applySettings } from '../lib/store';
 import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
 import { afterPaint } from '../lib/motion';
-import { t, LANGUAGES } from '../lib/i18n';
+import { t } from '../lib/i18n';
 
 const PAGES: { name: string; sections: string[] }[] = [
   { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion'] },
@@ -12,13 +12,10 @@ const PAGES: { name: string; sections: string[] }[] = [
   { name: 'editor', sections: ['editor', 'window'] },
   { name: 'preview', sections: ['preview'] },
   { name: 'clangd', sections: ['clangd'] },
-  { name: 'terminal', sections: ['terminal'] },
-  { name: 'memory', sections: ['memory'] },
 ];
 const sectionOf = (k: string) => k.slice(0, k.lastIndexOf('.'));
 const NAMES: Record<string, string> = {
   'font.family': 'code font', 'font.ui.family': 'interface font', 'font.preview.scale': 'preview text scale', 'font.weight': 'code weight',
-  'terminal.font_weight': 'terminal weight', 'terminal.font_weight_bold': 'terminal bold weight',
 };
 const label = (d: SettingDef) => {
   if (NAMES[d.key]) return NAMES[d.key];
@@ -81,14 +78,10 @@ function Combo(props: { value: string; load: () => Promise<Opt[]>; onPick: (v: s
 
 const fontOpts = (monoFirst: boolean) => async (): Promise<Opt[]> => {
   const all = await installedFonts();
-  const g = (f: FontFamily) => (f.bundled ? 'bundled with lithograph' : !monoFirst ? 'installed' : f.mono ? 'monospace' : 'other installed fonts');
+  const g = (f: FontFamily) => (f.bundled ? 'bundled with skycodex' : !monoFirst ? 'installed' : f.mono ? 'monospace' : 'other installed fonts');
   const order = (f: FontFamily) => (f.bundled ? 0 : !monoFirst || f.mono ? 1 : 2);
   return [...all].sort((a, b) => order(a) - order(b)).map((f) => ({ value: f.name, label: f.name, group: g(f), font: true }));
 };
-const shellOpts = async (): Promise<Opt[]> => [
-  { value: 'auto', label: 'auto — your login shell' },
-  ...((await api.sys.shells()) as string[]).map((p) => ({ value: p, label: p })),
-];
 
 const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);   // 0.05 steps keep two places
 
@@ -170,15 +163,12 @@ function Control(props: { d: SettingDef }) {
       <button class="tog" classList={{ on: !!v() }} onClick={() => set(d.key, !v())}><b /><i /></button>
     </div>
   );
-  if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{d.key === 'ui.language' ? (LANGUAGES.find((l) => l.code === x)?.name ?? t(x)) : t(x)}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{t(d.doc)}</div></Show></>);
+  if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{t(x)}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{t(d.doc)}</div></Show></>);
   if (/(^font|_font)\.?weight|font_weight/.test(d.key)) return wrap(<><Lab /><WeightCtl d={d} family={() => String(settings()['font.family'])} /></>);
   if (d.type === 'number') return wrap(<><Lab /><NumberCtl d={d} /><div class="doc">{t(d.doc)}</div></>);
   if (d.key === 'font.family' || d.key === 'font.ui.family') return wrap(<>
     <Lab /><Combo value={String(v())} load={fontOpts(d.key === 'font.family')} onPick={(x) => set(d.key, x)} font hint="installed fonts couldn't be listed — type a font name" />
     <div class="doc">{d.key === 'font.family' ? 'monospace fonts first · type to filter, or any font name' : 'any installed font · type to filter'}</div></>);
-  if (d.key === 'terminal.shell') return wrap(<>
-    <Lab /><Combo value={String(v())} load={shellOpts} onPick={(x) => set(d.key, x)} hint="type the path to a shell" />
-    <div class="doc">{t(d.doc)} · {t('new terminals use it')}</div></>);
   if (d.key === 'clangd.path') return wrap(<>
     <Lab /><div class="pathrow">
       <input type="text" value={String(v())} spellcheck={false} onChange={(e) => set(d.key, e.currentTarget.value.trim() || 'auto')} />
@@ -222,9 +212,9 @@ export default function Settings() {
   onCleanup(() => window.removeEventListener('keydown', onKey));
   const defs = () => SETTINGS.filter((d) => PAGES[pg()].sections.includes(sectionOf(d.key)));
   return (
-    <div class="set" ref={el} data-help="settings" role="dialog" aria-label="settings">
+    <div class="set" ref={el} role="dialog" aria-label="settings">
       <div class="si" style={{ display: 'flex' }}>
-        <span class="app-title">LITHOGRAPH</span><span style={{ flex: 1 }} />
+        <span class="app-title">SKYCODEX</span><span style={{ flex: 1 }} />
         <button class="chip" style={{ 'font-size': '14px' }} onClick={() => { openFile(info()!.settingsFile); close(); }}>{t('open settings.toml')}</button>
         <button class="chip" style={{ 'font-size': '14px', 'margin-left': '24px' }} onClick={close}>{t('close · esc')}</button>
       </div>

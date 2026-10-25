@@ -15,5 +15,5 @@ samples/*/compile_commands.json
 .cache/
 # clangd fetched for this platform by `npm run fetch-clangd` (too large for git)
 tools/clangd/
-# language packs installed from inside Lithograph
+# language packs installed from inside SkyCodeX
 language_packs/

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { availableReleases, compareVersions, listPacks, InstallSteps, PackKind, PackManifest, Release, Progress } from './packs';
 
-const UA = { 'User-Agent': 'Lithograph' };
+const UA = { 'User-Agent': 'SkyCodeX' };
 const win = process.platform === 'win32';
 const exe = (n: string) => (win ? `${n}.exe` : n);
 
@@ -18,7 +18,6 @@ export const KIND_INFO: Record<PackKind, { title: string; language: string; what
   python: { title: 'Python', language: 'Python', what: 'interpreter and pip' },
   pyright: { title: 'Pyright', language: 'Python', what: 'language engine' },
   go: { title: 'Go', language: 'Go', what: 'compiler and tools, with the gopls language engine' },
-  cppref: { title: 'C++ reference', language: 'C and C++', what: 'offline cppreference.com pages' },
 };
 
 const cache = new Map<string, { at: number; list: Release[] }>();
@@ -96,7 +95,6 @@ export function goReleases(list: any[], plat: { os: string; arch: string }): Rel
 
 export async function releasesFor(kind: PackKind, platform = process.platform, arch = process.arch): Promise<Release[]> {
   if (kind === 'toolchain' || kind === 'clangd') return availableReleases(kind, platform, arch);
-  if (kind === 'cppref') return [];   // installed from a file the person downloads themselves (no published checksum)
   if (kind === 'rust-analyzer') return cached(kind, async () => {
     const t = rustTarget(platform, arch);
     if (!t) return [];
@@ -138,7 +136,7 @@ export async function releasesFor(kind: PackKind, platform = process.platform, a
     const integrity = String(m.dist?.integrity ?? '');
     if (!integrity.startsWith('sha512-')) return [];
     const url = String(m.dist.tarball);
-    return [{ kind, name: 'pyright', version: m.version, asset: path.basename(new URL(url).pathname), url, size: await headSize(url), sha256: '', sha512: integrity.slice(7), format: 'tar.gz', source: 'registry.npmjs.org', id: `pyright-${m.version}`, note: 'runs with the Node.js inside Lithograph' }];
+    return [{ kind, name: 'pyright', version: m.version, asset: path.basename(new URL(url).pathname), url, size: await headSize(url), sha256: '', sha512: integrity.slice(7), format: 'tar.gz', source: 'registry.npmjs.org', id: `pyright-${m.version}`, note: 'runs with the Node.js inside SkyCodeX' }];
   });
   if (kind === 'go') return cached(kind, async () => {
     const plat = goPlatform(platform, arch);
@@ -184,7 +182,7 @@ export function goEnv(pack: string): Record<string, string> {
     GOENV: path.join(pack, 'cache', 'env'), GOTOOLCHAIN: 'local', GOFLAGS: '-modcacherw', GOTELEMETRY: 'off',
   };
 }
-/** HOME and the config folders, moved into the pack for programs Lithograph itself runs (gopls's build and the server). */
+/** HOME and the config folders, moved into the pack for programs SkyCodeX itself runs (gopls's build and the server). */
 const homeInside = (pack: string): Record<string, string> => {
   const h = path.join(pack, 'cache', 'home');
   fs.mkdirSync(h, { recursive: true });
@@ -237,52 +235,7 @@ export function stepsFor(kind: PackKind): InstallSteps {
       }
     },
   };
-  if (kind === 'cppref') return { bin: '.', check: (root) => !!refRoot(root), prepare: async (root, onProgress) => { onProgress({ phase: 'unpack', done: 0, total: 0, note: 'indexing pages' }); const n = buildRefIndex(root); return `${n} names indexed`; } };
   return {};
-}
-
-// ---------- the offline C++ reference ----------
-/** The folder holding en/cpp in an unpacked cppreference archive (html-book or cppreference-doc). */
-export function refRoot(root: string): string | null {
-  for (const c of [root, path.join(root, 'reference'), path.join(root, 'html-book', 'reference'), path.join(root, 'output', 'reference')]) if (has(c, 'en', 'cpp')) return c;
-  return null;
-}
-/** Every page title names one or more entities, e.g. "std::basic_string<CharT,Traits,Allocator>::size, std::basic_string<...>::length". */
-export function namesFromTitle(title: string): string[] {
-  const t = title.replace(/\s*-\s*cppreference\.com\s*$/i, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  const out: string[] = [];
-  let depth = 0, cur = '';
-  for (const ch of t) {   // split on commas outside template brackets
-    if (ch === '<') depth++;
-    else if (ch === '>') depth = Math.max(0, depth - 1);
-    if (ch === ',' && depth === 0) { out.push(cur); cur = ''; } else cur += ch;
-  }
-  out.push(cur);
-  return out.map((n) => {
-    let s = '', d = 0;
-    for (const ch of n.trim()) { if (ch === '<') d++; else if (ch === '>') d = Math.max(0, d - 1); else if (d === 0) s += ch; }
-    return s.replace(/\s*\(.*\)$/, '').replace(/\s+/g, ' ').trim();
-  }).filter((s) => /^[A-Za-z_~][\w:~ ]*$/.test(s) && s.length < 90);
-}
-export function buildRefIndex(root: string): number {
-  const base = refRoot(root)!;
-  const names: Record<string, string> = {};
-  const walk = (dir: string) => {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.html')) {
-        const fd = fs.openSync(p, 'r'), b = Buffer.alloc(4096);
-        const n = fs.readSync(fd, b, 0, 4096, 0); fs.closeSync(fd);
-        const title = b.subarray(0, n).toString('utf8').match(/<title>([^<]*)<\/title>/i)?.[1];
-        const rel = path.relative(base, p).split(path.sep).join('/');
-        for (const nm of title ? namesFromTitle(title) : []) if (!names[nm] || rel.length < names[nm].length) names[nm] = rel;
-      }
-    }
-  };
-  walk(path.join(base, 'en'));
-  fs.writeFileSync(path.join(root, 'lithograph-index.json'), JSON.stringify({ base: path.relative(root, base).split(path.sep).join('/'), names }));
-  return Object.keys(names).length;
 }
 
 // ---------- using installed packs ----------
@@ -300,7 +253,7 @@ export function languageBins(dir: string): string[] {
   return out;
 }
 
-/** Variables for Lithograph's terminals that keep Cargo, Go and pip writing inside their packs. */
+/** Variables for SkyCodeX's terminals that keep Cargo, Go and pip writing inside their packs. */
 export function languageEnv(dir: string): Record<string, string> {
   const packs = listPacks(dir), env: Record<string, string> = {};
   const rust = newest(packs, 'rust'), go = newest(packs, 'go'), py = newest(packs, 'python');
@@ -340,15 +293,6 @@ export function serverFor(lang: Lang, dir: string): ServerCmd | null {
   if (pr) return { name: 'pyright', cmd: process.execPath, args: [path.join(dir, pr.id, 'langserver.index.js'), '--stdio'], env: { ELECTRON_RUN_AS_NODE: '1', ...languageEnv(dir) }, settings };
   const sys = onPath('pyright-langserver');
   return sys ? { name: 'pyright', cmd: sys, args: ['--stdio'], env: {}, settings } : null;
-}
-
-export function refIndex(dir: string): { root: string; base: string; names: Record<string, string> } | null {
-  const m = newest(listPacks(dir), 'cppref');
-  if (!m) return null;
-  try {
-    const root = path.join(dir, m.id), j = JSON.parse(fs.readFileSync(path.join(root, 'lithograph-index.json'), 'utf8'));
-    return { root, base: j.base, names: j.names };
-  } catch { return null; }
 }
 
 export type { Progress };

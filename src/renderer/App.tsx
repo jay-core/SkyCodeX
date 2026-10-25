@@ -3,12 +3,10 @@ import Header from './components/Header';
 import Editor from './components/Editor';
 import Preview from './components/Preview';
 import FilesPane, { refreshTree } from './components/FilesPane';
-import TerminalPane from './components/Terminal';
 import Settings from './components/Settings';
 import Flow from './components/Flow';
-import Memory from './components/Memory';
 import { api } from './lib/api';
-import { settings, files, page, setPage, settingsOpen, setSettingsOpen, terminalOpen, setTerminalOpen, toast, info, setInfo, applySettings, restoreSession, openFolder, onDiskChange, saveAll, root, flash } from './lib/store';
+import { settings, files, page, setPage, settingsOpen, setSettingsOpen, toast, info, setInfo, applySettings, restoreSession, openFolder, onDiskChange, saveAll, root, flash } from './lib/store';
 import { invalidateText } from './lib/preview';
 import { runSmoke } from './smoke';
 import Palette from './components/Palette';
@@ -17,34 +15,26 @@ import AppMenu from './components/AppMenu';
 import AppBar from './components/AppBar';
 import CompilerWindow, { compilerOpen } from './components/CompilerWindow';
 import { preloadFonts } from './lib/motion';
-import Help, { helpTopic, openHelp } from './components/Help';
-import Tour, { startTour, tourDone } from './components/Tour';
-import { topicFor } from './lib/help';
-import Reference from './components/Reference';
-import StyleWindow, { styleOpen } from './components/StyleWindow';
-import RunWindow, { runOpen } from './components/RunWindow';
 import { watchPower } from './lib/power';
-import { refPage, openReference, nameAtCursor, formatDocument } from './lib/extras';
 
-function Split(props: { onDrag: (dx: number) => void; vertical?: boolean }) {
+function Split(props: { onDrag: (dx: number) => void }) {
   let el!: HTMLDivElement;
   // pointer events: a mouse, a finger or a pen can all drag the divider
   const down = (e: PointerEvent) => {
     e.preventDefault();
-    let last = props.vertical ? e.clientY : e.clientX;
+    let last = e.clientX;
     el.classList.add('drag');
     el.setPointerCapture(e.pointerId);
-    const move = (m: PointerEvent) => { const v = props.vertical ? m.clientY : m.clientX; props.onDrag(v - last); last = v; };
+    const move = (m: PointerEvent) => { props.onDrag(m.clientX - last); last = m.clientX; };
     const up = () => { el.classList.remove('drag'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   };
-  return <div ref={el} class={props.vertical ? 'hsplit' : 'split'} style={{ 'touch-action': 'none' }} onPointerDown={down} role="separator" aria-orientation={props.vertical ? 'horizontal' : 'vertical'} />;
+  return <div ref={el} class="split" style={{ 'touch-action': 'none' }} onPointerDown={down} role="separator" aria-orientation="vertical" />;
 }
 
 export default function App() {
   const [codeW, setCodeW] = createSignal(Math.round(window.innerWidth * 0.31));
   const [filesW, setFilesW] = createSignal(180);
-  const [termH, setTermH] = createSignal(190);
   let body!: HTMLDivElement, overlay!: SVGSVGElement, code!: HTMLDivElement;
   let redraw = () => {};
   const previewOn = () => settings()['preview.enabled'] !== false;
@@ -54,9 +44,9 @@ export default function App() {
   onMount(async () => {
     preloadFonts();
     watchPower();
-    // interface errors go to the log, for problem reports
-    window.addEventListener('error', (e) => api.report.log(`${e.message} at ${e.filename}:${e.lineno}`));
-    window.addEventListener('unhandledrejection', (e) => api.report.log(`unhandled: ${String((e.reason as Error)?.stack ?? e.reason)}`));
+    // interface errors go to the log
+    window.addEventListener('error', (e) => api.log(`${e.message} at ${e.filename}:${e.lineno}`));
+    window.addEventListener('unhandledrejection', (e) => api.log(`unhandled: ${String((e.reason as Error)?.stack ?? e.reason)}`));
     const i = await api.info();
     setInfo(i as any);
     const s = (await api.settings.get()) as any;
@@ -67,18 +57,11 @@ export default function App() {
     if ((i as any).fallbackReason) flash((i as any).fallbackReason, 12000);
     if ((i as any).smoke) { await openFolder((i as any).smoke); runSmoke(); return; }
     await restoreSession();
-    if (!tourDone()) setTimeout(startTour, 600);
   });
 
-  let pointer = { x: -1, y: -1 };
-  const onPointer = (e: MouseEvent) => { pointer = { x: e.clientX, y: e.clientY }; };
   const onKey = (e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
-    if (e.key === 'F1' && e.shiftKey) { e.preventDefault(); openReference(nameAtCursor() || undefined); return; }
-    if (e.shiftKey && e.altKey && e.code === 'KeyF') { e.preventDefault(); formatDocument(); return; }
-    if (e.key === 'F1') { e.preventDefault(); const under = pointer.x >= 0 ? document.elementFromPoint(pointer.x, pointer.y) : null; openHelp(topicFor(under?.closest('.help') ? document.activeElement : under ?? document.activeElement)); return; }
-    if (e.ctrlKey && e.key === '`') { e.preventDefault(); setTerminalOpen(!terminalOpen()); }
-    else if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen(true); }
+    if (mod && e.key === ',') { e.preventDefault(); setSettingsOpen(true); }
     else if (mod && e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAll(); }
     else if (mod && e.key.toLowerCase() === 'o' && !e.shiftKey) { e.preventDefault(); api.fs.pickFolder().then((p) => p && openFolder(p as string)); }
     else if (mod && e.key.toLowerCase() === 'o' && e.shiftKey) { e.preventDefault(); openFileDialog(); }
@@ -93,8 +76,8 @@ export default function App() {
     else if (e.shiftKey && e.key === 'F12') { e.preventDefault(); findReferences(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); api.settings.set('preview.enabled', !previewOn()); }
   };
-  onMount(() => { window.addEventListener('keydown', onKey); window.addEventListener('mousemove', onPointer, { passive: true }); });
-  onCleanup(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousemove', onPointer); });
+  onMount(() => window.addEventListener('keydown', onKey));
+  onCleanup(() => window.removeEventListener('keydown', onKey));
   window.addEventListener('beforeunload', () => { /* unsaved buffers are already mirrored to data/state */ });
 
   return (
@@ -102,7 +85,7 @@ export default function App() {
       <Header />
       <div class="body" ref={body} style={{ position: 'relative', display: page() === 'editor' ? 'flex' : 'none' }}>
         <div class="pane" style={previewOn() ? { width: `${codeW()}px`, flex: 'none' } : { flex: '1' }}>
-          <div class="pane" style={{ flex: 1 }} ref={code} data-help="editor" data-tour="code">
+          <div class="pane" style={{ flex: 1 }} ref={code}>
             <Show when={files.active} fallback={<div class="empty">{root() ? 'open a file from the right' : 'open a folder · ⌘/Ctrl O'}</div>}>{null}</Show>
             <div style={{ display: files.active ? 'flex' : 'none', flex: 1, 'min-height': 0, 'flex-direction': 'column' }}><Editor onScroll={() => redraw()} onCursor={() => redraw()} /></div>
           </div>
@@ -112,23 +95,15 @@ export default function App() {
           <Preview overlay={() => overlay} bodyEl={() => body} codeEl={() => code} registerRedraw={(f) => (redraw = f)} />
         </Show>
         <Split onDrag={(dx) => { setFilesW(Math.max(140, filesW() - dx)); redraw(); }} />
-        <div style={{ width: `${filesW()}px`, flex: 'none' }} data-help="start" data-tour="files"><FilesPane /></div>
+        <div style={{ width: `${filesW()}px`, flex: 'none' }}><FilesPane /></div>
         <svg class="links" ref={overlay} />
       </div>
-      <Show when={page() === 'flow'}><div style={{ flex: 1, 'min-height': 0 }} data-help="flow"><Flow /></div></Show>
-      <Show when={page() === 'memory'}><div style={{ flex: 1, 'min-height': 0, position: 'relative' }} data-help="memory"><Memory /></div></Show>
-      <Show when={terminalOpen()}><Split vertical onDrag={(dy) => { setTermH(Math.min(window.innerHeight - 200, Math.max(90, termH() - dy))); redraw(); }} /></Show>
-      <div style={{ height: terminalOpen() ? `${termH()}px` : '0px', overflow: 'hidden', flex: 'none' }} data-help="terminal"><TerminalPane /></div>
+      <Show when={page() === 'flow'}><div style={{ flex: 1, 'min-height': 0 }}><Flow /></div></Show>
       <AppBar />
       <Show when={settingsOpen()}><Settings /></Show>
       <Show when={palette()}><Palette /></Show>
       <AppMenu />
       <Show when={compilerOpen()}><CompilerWindow /></Show>
-      <Show when={helpTopic() && !refPage()}><Help /></Show>
-      <Show when={refPage()}><Reference /></Show>
-      <Show when={styleOpen()}><StyleWindow /></Show>
-      <Show when={runOpen()}><RunWindow /></Show>
-      <Tour />
       <Show when={toast()}><div role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '18px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>

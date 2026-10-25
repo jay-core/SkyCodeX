@@ -241,7 +241,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const levelCount = () => levels().length;
 
   return (
-    <div class="pane prev" style={{ flex: 1 }} ref={area} data-help="preview" data-tour="preview">
+    <div class="pane prev" style={{ flex: 1 }} ref={area}>
       <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 2, padding: 0 }}>
         <For each={[0, 1]}>{(c) => (
           <>

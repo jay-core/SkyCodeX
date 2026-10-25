@@ -1,4 +1,4 @@
-// Where Lithograph keeps everything it writes: the data/ folder beside the executable.
+// Where SkyCodeX keeps everything it writes: the data/ folder beside the executable.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -20,7 +20,7 @@ export interface DataDirResult {
 export function portableBase(i: DataDirInput): string {
   if (!i.isPackaged) return i.appRoot;
   if (i.platform === 'darwin') {
-    // …/Lithograph.app/Contents/MacOS/Lithograph → beside Lithograph.app, so the bundle stays signed.
+    // …/SkyCodeX.app/Contents/MacOS/SkyCodeX → beside SkyCodeX.app, so the bundle stays signed.
     const bundle = path.resolve(i.execPath, '..', '..', '..');
     return path.dirname(bundle);
   }
@@ -44,16 +44,16 @@ export function resolveDataDir(i: DataDirInput, canWrite: (dir: string) => boole
   const dir = path.join(base, 'data');
   if (i.platform === 'darwin' && base.includes('/AppTranslocation/')) {
     return {
-      dir: path.join(i.appDataFallback, 'Lithograph'),
+      dir: path.join(i.appDataFallback, 'SkyCodeX'),
       fallback: true,
-      reason: 'macOS is running Lithograph from a read-only quarantine copy. Move the Lithograph folder with Finder (for example out of Downloads) to keep data beside the app.',
+      reason: 'macOS is running SkyCodeX from a read-only quarantine copy. Move the SkyCodeX folder with Finder (for example out of Downloads) to keep data beside the app.',
     };
   }
   if (canWrite(dir)) return { dir, fallback: false };
   return {
-    dir: path.join(i.appDataFallback, 'Lithograph'),
+    dir: path.join(i.appDataFallback, 'SkyCodeX'),
     fallback: true,
-    reason: `The folder beside Lithograph can't be written (${base}). Data is being kept in the system app-data folder instead. Move the Lithograph folder somewhere writable to make it portable again.`,
+    reason: `The folder beside SkyCodeX can't be written (${base}). Data is being kept in the system app-data folder instead. Move the SkyCodeX folder somewhere writable to make it portable again.`,
   };
 }
 

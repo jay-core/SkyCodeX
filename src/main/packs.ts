@@ -8,8 +8,8 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { extractZip, extractTarZst, extractTarGz, extractGzProgram, UnpackStats } from './unpack';
 
-/** toolchain = C/C++ (clang); the rest are other languages and references (see langpacks.ts). */
-export type PackKind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go' | 'cppref';
+/** toolchain = C/C++ (clang); the rest are other languages (see langpacks.ts). */
+export type PackKind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go';
 export interface PackManifest {
   id: string; kind: PackKind; name: string; version: string; bin: string;
   source: string; asset: string; sha256: string; bytes: number; installedAt: string; note?: string;
@@ -20,7 +20,7 @@ export interface Release { kind: PackKind; name: string; version: string; asset:
 export interface InstallSteps { check?: (root: string) => boolean; prepare?: (root: string, onProgress: (p: Progress) => void, signal: AbortSignal) => Promise<string | void>; bin?: string; program?: string }
 export type Progress = { phase: 'download' | 'verify' | 'unpack' | 'done' | 'failed' | 'cancelled'; done: number; total: number; note?: string };
 
-export const MANIFEST = 'lithograph-pack.json';
+export const MANIFEST = 'skycodex-pack.json';
 
 /** language_packs beside the app (or the project in development); the portable data folder when that is read-only. */
 export function resolvePacksDir(besideApp: string, dataDir: string): { dir: string; note?: string } {
@@ -40,7 +40,9 @@ export function listPacks(dir: string): PackManifest[] {
   const out: PackManifest[] = [];
   for (const d of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
     if (d.startsWith('.')) continue;
-    try { out.push(JSON.parse(fs.readFileSync(path.join(dir, d, MANIFEST), 'utf8'))); } catch { /* not a pack */ }
+    // packs installed before the rename carry the old manifest name
+    const file = [MANIFEST, 'lithograph-pack.json'].map((m) => path.join(dir, d, m)).find((f) => fs.existsSync(f));
+    try { if (file) out.push(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { /* not a pack */ }
   }
   return out.sort((a, b) => a.kind.localeCompare(b.kind) || compareVersions(b.version, a.version));
 }
@@ -82,7 +84,7 @@ export async function availableReleases(kind: PackKind, platform = process.platf
   if (!src) return [];
   const hit = cache.get(src.repo);
   if (hit && Date.now() - hit.at < 600_000) return hit.list;
-  const res = await fetch(`https://api.github.com/repos/${src.repo}/releases?per_page=40`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Lithograph' } });
+  const res = await fetch(`https://api.github.com/repos/${src.repo}/releases?per_page=40`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SkyCodeX' } });
   if (!res.ok) throw new Error(res.status === 403 ? 'GitHub is limiting requests right now — try again in a while' : `GitHub answered ${res.status}`);
   const list: Release[] = [];
   for (const r of (await res.json()) as any[]) {
@@ -109,7 +111,7 @@ export function freeBytes(dir: string): number {
 const insideDir = (dir: string, p: string) => { const r = path.resolve(p), d = path.resolve(dir); return r.startsWith(d + path.sep); };
 
 async function download(url: string, to: string, total: number, onProgress: (p: Progress) => void, signal: AbortSignal, algo: 'sha256' | 'sha512' = 'sha256'): Promise<string> {
-  const res = await fetch(url, { signal, headers: { 'User-Agent': 'Lithograph' } });
+  const res = await fetch(url, { signal, headers: { 'User-Agent': 'SkyCodeX' } });
   if (!res.ok || !res.body) throw new Error(`download failed (${res.status})`);
   const hash = crypto.createHash(algo), out = fs.createWriteStream(to);
   let done = 0, last = 0;
@@ -187,7 +189,7 @@ export async function installRelease(rel: Release, dir: string, onProgress: (p: 
 
 export function removePack(dir: string, id: string) {
   const p = path.join(dir, id);
-  if (!insideDir(dir, p) || !fs.existsSync(path.join(p, MANIFEST))) throw new Error(`${id} is not an installed pack`);
+  if (!insideDir(dir, p) || ![MANIFEST, 'lithograph-pack.json'].some((m) => fs.existsSync(path.join(p, m)))) throw new Error(`${id} is not an installed pack`);
   makeWritable(p);   // Go's module cache is read-only by default
   fs.rmSync(p, { recursive: true, force: true });
 }

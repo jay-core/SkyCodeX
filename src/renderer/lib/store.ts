@@ -4,7 +4,6 @@ import { createStore } from 'solid-js/store';
 import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { api, basename } from './api';
-import { setLanguage } from './i18n';
 import { setPowerPrefs } from './power';
 import { noteText } from './langs';
 import { openDoc, changeDoc, savedDoc, startLsp, promote } from './lsp';
@@ -16,11 +15,10 @@ export const [settings, setSettingsSig] = createSignal<Settings>({});
 export const [problems, setProblems] = createSignal<Problem[]>([]);
 export const [info, setInfo] = createSignal<{ dataDir: string; fallbackReason: string | null; platform: string; version: string; smoke: string | null; scenario?: string | null; settingsFile: string } | null>(null);
 export const [root, setRoot] = createSignal<string>('');
-export const [page, setPage] = createSignal<'editor' | 'flow' | 'memory'>('editor');
+export const [page, setPage] = createSignal<'editor' | 'flow'>('editor');
 export const [settingsOpen, setSettingsOpen] = createSignal(false);
 export const [crumb, setCrumb] = createSignal('');
 export const [cursorPos, setCursorPos] = createSignal({ line: 1, col: 1 });
-export const [terminalOpen, setTerminalOpen] = createSignal(true);
 export const [toast, setToast] = createSignal<string | null>(null);
 
 export interface OpenFile { path: string; dirty: boolean; diskChanged: boolean }
@@ -46,7 +44,6 @@ export function applySettings(s: Settings, p: Problem[]) {
   r.setProperty('--mono', `'${s['font.family']}', 'ArX F1', ui-monospace, Menlo, Consolas, monospace`);
   r.setProperty('--ui', `'${s['font.ui.family']}', 'Selawik', -apple-system, 'Segoe UI', system-ui, sans-serif`);
   document.body.style.fontVariantLigatures = s['font.ligatures'] ? 'normal' : 'none';
-  setLanguage(s['ui.language'] as string);
   (api.win as any).zoom?.(Number(s['ui.scale']) || 1);
   document.documentElement.classList.toggle('hc', !!s['ui.high_contrast']);
   setPowerPrefs(s['power.saver'] as string, !!s['motion.reduce']);

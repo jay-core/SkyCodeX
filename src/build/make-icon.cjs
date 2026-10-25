@@ -1,11 +1,11 @@
-// Renders assets/icon/lithograph.svg to lithograph-1024.png (macOS and Linux icons are made from it) and
-// lithograph.ico for Windows (16–256 px, each a PNG inside the .ico). Run with Electron: npm run icon.
+// Renders assets/icon/skycodex.svg to skycodex-1024.png (macOS and Linux icons are made from it) and
+// skycodex.ico for Windows (16–256 px, each a PNG inside the .ico). Run with Electron: npm run icon.
 const { app, BrowserWindow, nativeImage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..', '..');
-const svg = fs.readFileSync(path.join(root, 'assets/icon/lithograph.svg'), 'utf8');
+const svg = fs.readFileSync(path.join(root, 'assets/icon/skycodex.svg'), 'utf8');
 // the icon's lettering is Selawik Light, embedded so nothing else can stand in for it
 const selawik = fs.readFileSync(path.join(root, 'assets/fonts/Selawik/selawkl.ttf')).toString('base64');
 const face = `<style>@font-face{font-family:'Selawik';font-weight:300;src:url(data:font/ttf;base64,${selawik}) format('truetype')}</style>`;
@@ -41,10 +41,10 @@ async function render(w, svgText, out) {
 app.whenReady().then(async () => {
   const w = new BrowserWindow({ width: 1024, height: 1024, show: false, transparent: true, backgroundColor: '#00000000', frame: false, useContentSize: true, webPreferences: { offscreen: true } });
   // macOS: the tile on Apple's icon grid (824 px with a margin and a shadow)
-  await render(w, svg, path.join(root, 'assets/icon/lithograph-1024.png'));
+  await render(w, svg, path.join(root, 'assets/icon/skycodex-1024.png'));
   // Windows and Linux: the same tile filling the square, without the shadow, so it isn't small in a taskbar
   const flat = svg.replace(/translate\(100 100\) scale\([\d.]+\)/, 'translate(16 16) scale(2.0666667)').replace(/ filter="url\(#shadow\)"/, '');
-  await render(w, flat, path.join(root, 'assets/icon/lithograph-square-1024.png'));
-  writeIco(path.join(root, 'assets/icon/lithograph-square-1024.png'), path.join(root, 'assets/icon/lithograph.ico'));
+  await render(w, flat, path.join(root, 'assets/icon/skycodex-square-1024.png'));
+  writeIco(path.join(root, 'assets/icon/skycodex-square-1024.png'), path.join(root, 'assets/icon/skycodex.ico'));
   app.quit();
 });

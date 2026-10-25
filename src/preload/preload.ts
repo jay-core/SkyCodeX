@@ -10,12 +10,11 @@ const on = (ch: string, cb: (...a: any[]) => void) => {
 
 const api = {
   info: () => invoke('app:info'),
-  sys: { shells: () => invoke('sys:shells') },
+  log: (line: string) => invoke('log', line),
   compiler: { info: () => invoke('compiler:info') },
   packs: {
     available: (kind: string) => invoke('packs:available', kind),
     install: (kind: string, version: string, replaces?: string) => invoke('packs:install', kind, version, replaces),
-    installFile: (kind: string) => invoke('packs:installFile', kind),
     cancel: () => invoke('packs:cancel'),
     remove: (id: string) => invoke('packs:remove', id),
     show: () => invoke('packs:show'),
@@ -32,6 +31,7 @@ const api = {
     saveDialog: (defaultPath: string) => invoke('fs:saveDialog', defaultPath),
     list: (dir: string) => invoke('fs:list', dir),
     sources: (root: string) => invoke('fs:sources', root),
+    targets: (root: string) => invoke('fs:targets', root),
     read: (file: string) => invoke('fs:read', file),
     exists: (file: string) => invoke('fs:exists', file),
     write: (file: string, text: string) => invoke('fs:write', file, text),
@@ -51,34 +51,12 @@ const api = {
     notify: (lang: string, method: string, params: unknown) => invoke('lang:notify', lang, method, params),
     onNotify: (cb: (lang: string, method: string, params: any) => void) => on('lang:notify', cb),
   },
-  ref: { index: () => invoke('ref:index') as Promise<Record<string, string> | null> },
-  templates: { list: () => invoke('templates:list'), create: (parent: string, name: string, id: string) => invoke('templates:create', parent, name, id) },
-  format: { preview: (style: string, sample: string) => invoke('format:preview', style, sample) },
-  checks: { run: (root: string, kind: string, args: string[]) => invoke('checks:run', root, kind, args), flags: (kind: string) => invoke('checks:flags', kind) },
   power: { battery: () => invoke('power:battery') as Promise<boolean>, onChange: (cb: (battery: boolean) => void) => on('power:battery', cb) },
-  report: { log: (line: string) => invoke('report:log', line), build: () => invoke('report:build') as Promise<string> },
-  // the system's spelling checker, used for words in comments and strings
-  spell: {
-    misspelt: (words: string[]) => words.filter((w) => webFrame.isWordMisspelled(w)),
-    suggest: (word: string) => webFrame.getWordSuggestions(word),
-  },
   lsp: {
     start: (root: string) => invoke('lsp:start', root),
     request: (method: string, params: unknown) => invoke('lsp:request', method, params),
     notify: (method: string, params: unknown) => invoke('lsp:notify', method, params),
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),
-  },
-  pty: {
-    spawn: (id: number, cwd: string, cols: number, rows: number) => invoke('pty:spawn', id, cwd, cols, rows),
-    write: (id: number, d: string) => invoke('pty:write', id, d),
-    resize: (id: number, c: number, r: number) => invoke('pty:resize', id, c, r),
-    kill: (id: number) => invoke('pty:kill', id),
-    onData: (cb: (id: number, d: string) => void) => on('pty:data', cb),
-    onExit: (cb: (id: number, code: number) => void) => on('pty:exit', cb),
-  },
-  memory: {
-    binaries: (root: string) => invoke('memory:binaries', root),
-    analyze: (bin: string, root: string) => invoke('memory:analyze', bin, root),
   },
   win: {
     minimize: () => invoke('win:minimize'),

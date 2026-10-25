@@ -3,7 +3,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import { buildFlow, FlowGraph, FlowBox, shortName, fileToUri } from '../lib/flow';
 import { root, settings } from '../lib/store';
 import { indexEpoch, lspState } from '../lib/lsp';
-import { api } from '../lib/api';
+import { api, basename } from '../lib/api';
 import Card from './Card';
 import { PAL } from '../lib/lines';
 import { routeEdges, folderFrames, Route, Rect } from '../lib/flowlayout';
@@ -39,8 +39,12 @@ export default function Flow() {
     setStatus(t('tracing calls from main…'));
     const g = await buildFlow(root(), (n) => setStatus(`tracing calls from main… ${n} functions`));
     setGraph(g);
+    if (canvas) canvas.dataset.ms = String(g.ms);   // build time, read by the smoke run
     await layout(g);
-    setStatus(g.note || `${g.entries.length > 1 ? `${g.entries.length} entry points · ` : ''}${g.fns.length} functions · ${g.boxes.filter((b) => !b.dead).length} files${g.truncated ? ' · stopped at 400 functions' : ''}`);
+    const files = g.boxes.filter((b) => !b.dead).length, stop = g.truncated ? ` · stopped at ${g.limit} functions` : '';
+    setStatus(g.note || (g.library
+      ? `from the public API (${g.library} functions) · ${g.fns.length} functions reached · ${files} files${stop}`
+      : `${g.entries.length > 1 ? `${g.entries.length} entry points · ` : ''}${g.fns.length} functions · ${files} files${stop}`));
     // clangd may still be loading its index: rebuild until every call resolves to a definition (30 s at most)
     if (g.unresolved && Date.now() - firstBuild < 30000) setTimeout(rebuild, 2000);
   }
@@ -67,15 +71,19 @@ export default function Flow() {
     const pins = loadPins();
     const out: Placed[] = live.map((b) => ({ box: b, ...(pins[b.file] ?? pos.get(b.file) ?? { x: 0, y: 0 }), pinned: !!pins[b.file] }));
     const maxY = Math.max(0, ...out.map((p) => p.y + BH + 40));
-    g.boxes.filter((b) => b.dead).forEach((b, i) => out.push({ box: b, ...(pins[b.file] ?? { x: (i % 4) * (BW + 30), y: maxY + 60 + Math.floor(i / 4) * (BH + 30) }), pinned: !!pins[b.file] }));
+    // the shelf of files no entry point reaches: as wide as the diagram above it (4 to 10 boxes a row)
+    const liveW = Math.max(0, ...out.map((p) => p.x + BW));
+    const per = Math.min(10, Math.max(4, Math.floor((liveW + 30) / (BW + 30))));
+    g.boxes.filter((b) => b.dead).forEach((b, i) => out.push({ box: b, ...(pins[b.file] ?? { x: (i % per) * (BW + 30), y: maxY + 60 + Math.floor(i / per) * (BH + 30) }), pinned: !!pins[b.file] }));
     setPlaced(out);
     reroute(out);
     if (!fit) return;
-    // fit the whole diagram in view
-    const w = Math.max(...out.map((p) => p.x + BW)) + 60, h = Math.max(...out.map((p) => p.y + BH)) + 80;
+    // fit what runs in view (the shelf below it is a scroll away); with nothing running, the shelf's first rows
+    const shown = out.some((p) => !p.box.dead) ? out.filter((p) => !p.box.dead) : out.slice(0, per * 4);
+    const w = Math.max(...shown.map((p) => p.x + BW)) + 60, h = Math.max(...shown.map((p) => p.y + BH)) + 80;
     const cw = canvas?.clientWidth || 900, ch = canvas?.clientHeight || 600;
-    const k = Math.min(1, (cw - 80) / w, (ch - 60) / h);
-    const x0 = Math.min(0, ...out.map((p) => p.x)), y0 = Math.min(0, ...out.map((p) => p.y));
+    const k = Math.max(0.35, Math.min(1, (cw - 80) / w, (ch - 60) / h));   // never too small to read; a larger diagram pans
+    const x0 = Math.min(0, ...shown.map((p) => p.x)), y0 = Math.min(0, ...shown.map((p) => p.y));
     setView({ k, x: 60 - x0 * k, y: 40 - y0 * k });
   }
 
@@ -83,7 +91,9 @@ export default function Flow() {
   function reroute(list = placed()) {
     const g = graph();
     if (!g) return;
-    setRoutes(routeEdges(list.map(boxAt), g.edges.map((e) => ({ from: e.from, to: e.to, thread: e.thread, text: e.thread ? t('spawns thread') : e.nums.join(' · ') }))));
+    // an arrow that carries many calls shows the first four numbers; the box's list has them all
+    const nums = (n: string[]) => (n.length > 4 ? `${n.slice(0, 4).join(' · ')} +${n.length - 4}` : n.join(' · '));
+    setRoutes(routeEdges(list.map(boxAt), g.edges.map((e) => ({ from: e.from, to: e.to, thread: e.thread, text: e.thread ? t('spawns thread') : nums(e.nums) }))));
     setFrames(grouped() ? folderFrames(list.filter((p) => !p.box.dead).map((p) => ({ ...boxAt(p), folder: folderOf(p.box.file) }))) : []);
   }
 
@@ -172,6 +182,14 @@ export default function Flow() {
     } else setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
   };
 
+  // a box fades in the first time it appears; rebuilds while clangd indexes leave the boxes already shown in place
+  const shownBoxes = new Set<string>();
+  createEffect(on(root, () => shownBoxes.clear()));
+  const enter = (p: Placed, i: number) => {
+    if (reduce() || p.pinned || shownBoxes.has(p.box.file)) return 'none';
+    shownBoxes.add(p.box.file);
+    return `fadeUp .45s cubic-bezier(.16,1,.3,1) ${Math.min(i, 16) * 50}ms backwards`;
+  };
   const touches = (r: Routed) => { const f = hover() ?? sel(); return !f || r.from === f || r.to === f; };
   const run = (b: FlowBox) => b.fns.filter((f) => f.num).length;
   const reduce = () => !!settings()['motion.reduce'];
@@ -193,13 +211,14 @@ export default function Flow() {
                 </g>
               )}</For>
             </svg>
-            <For each={routes()}>{(r) => <div class="flab" classList={{ t: r.thread }} style={{ left: `${r.label.x}px`, top: `${r.label.y}px`, opacity: touches(r) ? 1 : 0.25 }}>{r.label.text}</div>}</For>
+            {/* zoomed out, the call numbers show only on the arrows of the box pointed at or selected */}
+            <For each={routes()}>{(r) => <Show when={view().k >= 0.6 || ((hover() || sel()) && touches(r))}><div class="flab" classList={{ t: r.thread }} style={{ left: `${r.label.x}px`, top: `${r.label.y}px`, opacity: touches(r) ? 1 : 0.25 }}>{r.label.text}</div></Show>}</For>
             <Show when={placed().some((p) => p.box.dead)}>
               <div class="sub" style={{ position: 'absolute', 'white-space': 'nowrap', left: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.x))}px`, top: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.y)) - 30}px` }}>{t('not reached from any entry point')}</div>
             </Show>
             <For each={placed()}>{(p, i) => (
               <div class="fbox" classList={{ dead: p.box.dead, on: sel() === p.box.file, pinned: p.pinned }}
-                style={{ left: `${p.x}px`, top: `${p.y}px`, width: `${BW}px`, height: `${BH}px`, animation: reduce() || p.pinned ? 'none' : `fadeUp .45s cubic-bezier(.16,1,.3,1) ${i() * 60}ms backwards` }}
+                style={{ left: `${p.x}px`, top: `${p.y}px`, width: `${BW}px`, height: `${BH}px`, animation: enter(p, i()) }}
                 onMouseEnter={() => setHover(p.box.file)} onMouseLeave={() => setHover(null)}
                 onPointerDown={(e) => onBoxDown(e, p)} tabindex="0" role="button" aria-label={`${shortName(root(), p.box.file)}, ${p.box.fns.length} functions`}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(sel() === p.box.file ? null : p.box.file); } }}
@@ -207,8 +226,8 @@ export default function Flow() {
                 <Show when={p.pinned}><button class="pin" title={t('unpin: let the layout place this box')} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); unpin(p.box.file); }}>{t('pinned ×')}</button></Show>
                 <Show when={p.box.entries.length}><span class="start">{p.box.entries.length > 1 ? `start ▸ ${p.box.entries.length}` : 'start ▸'}</span></Show>
                 <Show when={p.box.thread}><span class="tag">{t('thread')}</span></Show>
-                <div class="t">{shortName(root(), p.box.file)}</div>
-                <div class="s">{p.box.fns.length} functions · {p.box.dead ? t('none run') : `${run(p.box)} run`}</div>
+                <div class="t" title={shortName(root(), p.box.file)}>{basename(p.box.file)}</div>
+                <div class="s">{p.box.fns.length} functions · {p.box.dead ? t('none run') : `${run(p.box)} run`}<Show when={folderOf(p.box.file)}><span class="dir"> · {folderOf(p.box.file)}</span></Show></div>
                 <Show when={p.box.loops.length && hover() !== p.box.file}><div class="loop" title={p.box.loops.join('\n')}>{p.box.loops[0]}{p.box.loops.length > 1 ? ` · +${p.box.loops.length - 1}` : ''}</div></Show>
                 <Show when={hover() === p.box.file}>
                   <div class="hpop" style={{ left: '-1px', top: `${BH + 6}px` }}>

@@ -1,4 +1,4 @@
-// Battery awareness: with power.saver = "auto" Lithograph calms down while the computer runs on battery.
+// Battery awareness: with power.saver = "auto" SkyCodeX calms down while the computer runs on battery.
 import { createSignal } from 'solid-js';
 import { api } from './api';
 

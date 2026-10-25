@@ -2,7 +2,6 @@ import { For, Show } from 'solid-js';
 import { api, basename } from '../lib/api';
 import { files, page, setPage, crumb, cursorPos, root, closeFile, setFiles } from '../lib/store';
 import { lspState, indexing } from '../lib/lsp';
-import { memoryAlert } from './Memory';
 import { serverLang } from '../lib/langs';
 import { saver } from '../lib/power';
 import { langStatus } from '../lib/langlsp';
@@ -22,10 +21,11 @@ export const GEAR = (
 export default function Header() {
   return (
     <div class="hdr">
-      <div class="pivot nodrag" data-tour="tabs">
+      <div class="pivot nodrag">
         <Show when={root()}>
           <button classList={{ on: page() === 'flow' }} onClick={() => setPage('flow')}>{t('flow')}</button>
-          <button classList={{ on: page() === 'memory' }} onClick={() => setPage('memory')}>{t('memory')}</button>
+          {/* the folder's files, reachable even before any file is open */}
+          <button classList={{ on: page() === 'editor' && !files.active }} title={root()} onClick={() => { setPage('editor'); setFiles('active', ''); }}>{t('folder')}</button>
         </Show>
         <For each={files.list}>{(f) => (
           <>
@@ -40,7 +40,6 @@ export default function Header() {
         )}</For>
       </div>
       <div class="status" role="status" aria-live="polite">
-        <Show when={memoryAlert()}><span class="warn">{memoryAlert()}</span></Show>
         <Show when={saver()}><span title={t('on battery: animations off, background work spaced out (settings → interface → power)')}>{t('battery saver')}</span></Show>
         <Show when={page() === 'editor' && files.active}><span>{cursorPos().line}:{cursorPos().col}</span></Show>
         <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>

@@ -5,8 +5,6 @@ import { editorExtensions, posToOffset, offsetToPos } from '../lib/cm';
 import { completionFor, hoverFor, lintSupport, attachView, definitionAt, indexEpoch } from '../lib/lsp';
 import { langOf, syntaxFor, serverLang } from '../lib/langs';
 import { sender, flush as flushOther } from '../lib/langlsp';
-import { spellcheck } from '../lib/spell';
-import { profileHeat } from '../lib/profile';
 import { saver } from '../lib/power';
 import { files, states, settings, setStateFactory, setMainView, onDocChanged, openFile, save, setCrumb, setCursorPos } from '../lib/store';
 import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
@@ -87,7 +85,7 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
         // C and C++ talk to clangd; Rust, Python and Go to their pack's engine; other files only get colouring
         langOf(file) === 'cpp' ? [completionFor(() => file), hoverFor(() => file)]
           : serverLang(file) ? [completionFor(() => file, sender(file), flushOther), hoverFor(() => file, sender(file))] : [],
-        lintSupport, marksField, dimPlugin, spellcheck(() => settings()['editor.spellcheck'] !== false), profileHeat(() => file),
+        lintSupport, marksField, dimPlugin,
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
         // standard-library and SDK headers open read-only
         SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : [],

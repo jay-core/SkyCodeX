@@ -1,7 +1,6 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
-import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, page, cursorPos, info } from './lib/store';
-import { locateSymbol } from './lib/memloc';
+import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, cursorPos, info } from './lib/store';
 import { relPath } from './lib/api';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
@@ -11,15 +10,8 @@ import { setMenuOpen } from './components/AppMenu';
 import { cardViews } from './components/Card';
 import { files, states } from './lib/store';
 import { offsetToPos } from './lib/cm';
-import { toast } from './lib/store';
-import { setLanguage } from './lib/i18n';
-import { setHelpTopic } from './components/Help';
-import { startTour } from './components/Tour';
-import { setStyleOpen } from './components/StyleWindow';
-import { setRunOpen } from './components/RunWindow';
 import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
-import { openReference, todoList } from './lib/extras';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -44,13 +36,13 @@ async function until(cond: () => boolean, ms: number, tick?: () => void) {
 
 export async function runSmoke() {
   const report: Record<string, unknown> = {};
-  if (info()?.scenario === 'memory') return memoryDemo(report);
   if (info()?.scenario === 'compiler') return compilerDemo(report);
   if (info()?.scenario === 'fonts') return fontsDemo(report);
-  if (info()?.scenario === 'extras') return extrasDemo(report);
   if (info()?.scenario === 'defs') return defsDemo(report);
   if (info()?.scenario === 'anyheader') return anyHeaderDemo(report);
   if (info()?.scenario === 'boot') return bootCheck(report);
+  if (info()?.scenario === 'large') return largeCheck(report);
+  if (info()?.scenario === 'folder') return folderCheck(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -194,19 +186,8 @@ export async function runSmoke() {
     report.editorWeight = getComputedStyle(document.querySelector('.cm-scroller')!).fontWeight;
     await api.smoke.capture('4g-settings-weight');
     await api.settings.set('font.weight', 400);
-    const rowH = () => (document.querySelector('.xterm-rows > div') as HTMLElement | null)?.getBoundingClientRect().height ?? 0;
-    const h0 = rowH();
-    await api.settings.set('terminal.line_height', 1.8); await sleep(400);
-    report.terminalRowHeight = [+h0.toFixed(1), +rowH().toFixed(1)];
-    await api.settings.set('terminal.line_height', 1.25);
     pageBtn('clangd').click(); await sleep(300);
     await api.smoke.capture('4e-settings-clangd');
-    pageBtn('terminal').click(); await sleep(300);
-    (document.querySelector('.set .combo input') as HTMLInputElement).focus();
-    await until(() => document.querySelectorAll('.set .combo-list button').length > 1, 4000);
-    report.shellOptions = [...document.querySelectorAll('.set .combo-list button')].map((x) => x.textContent);
-    await api.smoke.capture('4f-settings-shell');
-    (document.querySelector('.set .combo input') as HTMLInputElement).blur();
     setSettingsOpen(false);
     await sleep(300);
     (document.querySelector('.wctl') as HTMLElement).style.transition = 'none';
@@ -223,7 +204,7 @@ export async function runSmoke() {
     report.flowBoxes = [...document.querySelectorAll('.fbox .t')].map((e) => e.textContent);
     report.flowLabels = [...document.querySelectorAll('.flab')].map((e) => e.textContent);
     await api.smoke.capture('5-flow');
-    const server = [...document.querySelectorAll('.fbox')].find((e) => /src\/server\.cpp$/.test(e.querySelector('.t')?.textContent ?? '')) as HTMLElement | undefined;
+    const server = [...document.querySelectorAll('.fbox')].find((e) => /src\/server\.cpp$/.test(e.querySelector('.t')?.getAttribute('title') ?? '')) as HTMLElement | undefined;
     if (server) {
       server.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
       await sleep(500);
@@ -249,27 +230,6 @@ export async function runSmoke() {
       report.deadSelectCards = document.querySelectorAll('.pane.prev .card').length;
       await api.smoke.capture('7b-flow-unreached');
     }
-    setPage('memory');
-    await until(() => !!document.querySelector('.mem select option'), 8000);
-    (document.querySelector('.ph .chip.on') as HTMLButtonElement)?.click();
-    await until(() => !!document.querySelector('.mrow'), 10000);
-    await sleep(500);
-    report.memoryRows = document.querySelectorAll('.mrow').length;
-    report.memoryNames = [...document.querySelectorAll('.mrow.go .n')].slice(0, 6).map((e) => e.textContent);
-    // hover a symbol: its definition shows; click: it opens there
-    const mrow = [...document.querySelectorAll('.mrow.go')].find((e) => /Server|Metrics|main|Router|config/i.test(e.textContent ?? '')) as HTMLElement | undefined;
-    mrow?.dispatchEvent(new MouseEvent('mouseenter'));
-    await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 6000);
-    report.memoryTip = document.querySelector('.memtip')?.textContent ?? null;
-    { const t = document.querySelector('.memtip') as HTMLElement | null; const r = t?.getBoundingClientRect(); report.memoryTipBox = r ? [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height), getComputedStyle(t!).opacity] : null; }
-    await api.smoke.capture('8b-memory-tip');
-    mrow?.click();
-    await until(() => page() === 'editor', 4000);
-    await sleep(300);
-    report.memoryOpened = page() === 'editor' ? `${files.active.split('/').pop()}:${cursorPos().line}` : null;
-    await openFile(file);   // back to the file the rest of the run works in
-    setPage('memory'); await sleep(300);
-    await api.smoke.capture('8-memory');
     setPage('editor');
     await sleep(400);
     // standard-library cards: show source inline
@@ -345,13 +305,11 @@ export async function runSmoke() {
       await api.settings.set('preview.include_other', true);
       await openFile(file);
     }
-    // switching folders: clangd must come back up and the terminal must follow
+    // switching folders: clangd must come back up
     const sub = `${root()}/src`;
     await openFolder(sub);
     report.reopenLsp = (await until(() => lspState() === 'ready', 15000)) ? 'ready' : lspState();
     await sleep(600);
-    await api.pty.write(1, 'pwd\r');
-    await sleep(800);
     await api.smoke.capture('9-reopened-folder');
   } catch (e) {
     errors.push(`smoke: ${e}`);
@@ -361,68 +319,6 @@ export async function runSmoke() {
   await api.smoke.done(report);
 }
 
-/** `--scenario memory`: analyse the folder's program, hover symbols of every kind, click through to the source. */
-async function memoryDemo(report: Record<string, unknown>) {
-  try {
-    await until(() => lspState() === 'ready', 20000);
-    // workspace symbols need the background index: wait until a cross-file symbol resolves
-    report.indexReady = await until(() => !!document.body.dataset.idx, 30000, () => { locateSymbol('Sensors::history_', 'bss').then((l) => { if (l) document.body.dataset.idx = '1'; }); });
-    setPage('memory');
-    await until(() => !!document.querySelector('.mem select option') || !!document.querySelector('.ph select option'), 8000);
-    (document.querySelector('.ph .chip.on') as HTMLButtonElement)?.click();
-    await until(() => !!document.querySelector('.mrow.go'), 10000);
-    await sleep(400);
-    const rowsNow = () => [...document.querySelectorAll('.mrow.go')] as HTMLElement[];
-    report.ramRows = rowsNow().map((r) => `${r.querySelector('.n')?.textContent} ${r.querySelector('.s')?.textContent}`);
-    const hover = async (name: string, shot?: string) => {
-      const row = rowsNow().find((r) => r.querySelector('.n')?.textContent === name);
-      if (!row) return `${name}: no row`;
-      row.scrollIntoView({ block: 'nearest' }); await sleep(100);
-      row.dispatchEvent(new MouseEvent('mouseenter'));
-      await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 8000);
-      await sleep(250);
-      const t = document.querySelector('.memtip');
-      const out = t ? [...t.children].map((c) => c.textContent).join(' | ') : 'no tooltip';
-      if (shot) await api.smoke.capture(shot);
-      row.dispatchEvent(new MouseEvent('mouseleave'));
-      return out;
-    };
-    const click = async (name: string, shot: string) => {
-      const row = rowsNow().find((r) => r.querySelector('.n')?.textContent === name);
-      row?.click();
-      await until(() => page() === 'editor', 5000);
-      await sleep(700);
-      const v = getMainView()!, head = v.state.selection.main.head, line = v.state.doc.lineAt(head);
-      const res = `${relPath(root(), files.active)}:${line.number} col ${head - line.from + 1} → ${line.text.trim()}`;
-      await api.smoke.capture(shot);
-      setPage('memory'); await sleep(400);
-      return res;
-    };
-    const tips: Record<string, string> = {};
-    for (const [n, shot] of [['g_frame_buffer', 'm1-hover-bss'], ['Sensors::history_', ''], ['Logger::ring', ''], ['next_id()::issued', 'm2-hover-static-local'], ['dsp::window', ''], ['g_calibration', 'm3-hover-data']] as const) tips[n] = await hover(n, shot || undefined);
-    report.ramTips = tips;
-    report.clickHistory = await click('Sensors::history_', 'm4-click-history');
-    report.clickLocal = await click('next_id()::issued', 'm5-click-static-local');
-    // storage: constants and functions
-    ([...document.querySelectorAll('.mem .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'storage')?.click();
-    await sleep(400);
-    report.storageRows = rowsNow().slice(0, 12).map((r) => `${r.querySelector('.n')?.textContent} ${r.querySelector('.s')?.textContent}`);
-    const st: Record<string, string> = {};
-    for (const [n, shot] of [['kGainTable', 'm6-hover-rodata'], ['Logger::write(char const*)', 'm7-hover-function'], ['Sensors::average() const', '']] as const) st[n] = await hover(n, shot || undefined);
-    report.storageTips = st;
-    report.clickFunction = await click('Logger::write(char const*)', 'm8-click-function');
-    // stack rows open their line too
-    const sRow = ([...document.querySelectorAll('.mrow.go')] as HTMLElement[]).find((r) => r.querySelector('.n')?.textContent?.startsWith('Sensors::sample'));
-    sRow?.dispatchEvent(new MouseEvent('mouseenter'));
-    await until(() => !/finding/.test(document.querySelector('.memtip')?.textContent ?? 'finding'), 4000);
-    report.stackTip = [...(document.querySelector('.memtip')?.children ?? [])].map((c) => c.textContent).join(' | ');
-    await api.smoke.capture('m9-hover-stack');
-  } catch (e) {
-    errors.push(`memory demo: ${e}`);
-  }
-  report.errors = errors;
-  await api.smoke.done(report);
-}
 
 /** `--scenario compiler`: the compiler window — engine, versions from GitHub, moving, minimising; nothing is installed. */
 async function compilerDemo(report: Record<string, unknown>) {
@@ -510,129 +406,6 @@ async function fontsDemo(report: Record<string, unknown>) {
 
 /** `--scenario extras`: help and the tour, translations, spelling, flow pins and folders, code style, to-do list,
  *  the reference without its pack, and run with checks / profile on a project made from a template (in the scratch folder). */
-async function extrasDemo(report: Record<string, unknown>) {
-  const q = (sel: string) => document.querySelector(sel) as HTMLElement | null;
-  try {
-    await until(() => lspState() === 'ready', 20000);
-    const src = (await api.fs.sources(root()) as string[]).find((f) => /server\.cpp$/.test(f))!;
-    await openFile(src);
-    await sleep(800);
-    // ---- spelling: a misspelt word in a comment, none in code ----
-    const v = getMainView()!;
-    v.dispatch({ changes: { from: 0, insert: '// the quick brwon fox jumps over teh lazy dog\nint smokeIdentifierWithoutSpaces = 0;\n' } });
-    await until(() => document.querySelectorAll('.cm-misspelt').length >= 2, 4000);
-    report.misspelt = [...document.querySelectorAll('.cm-misspelt')].map((e) => e.textContent);
-    await api.smoke.capture('x1-spelling');
-    v.dispatch({ changes: { from: 0, to: v.state.doc.line(3).from, insert: '' } });
-    // ---- help: F1 over the preview opens its page ----
-    const pr = q('.pane.prev')!.getBoundingClientRect();
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: pr.left + 40, clientY: pr.top + 80 }));
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true }));
-    await until(() => !!q('.help h1'), 3000);
-    report.helpForPreview = q('.help h1')?.textContent;
-    (q('.help-q') as HTMLInputElement).value = 'pin box';
-    q('.help-q')!.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    await sleep(150);
-    report.helpSearch = [...document.querySelectorAll('.help-nav button')].map((b) => b.textContent);
-    await api.smoke.capture('x2-help');
-    setHelpTopic(null);
-    // ---- the tour ----
-    startTour();
-    await sleep(500);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    await sleep(600);
-    report.tourStep = q('.tour-note .tt')?.textContent;
-    report.tourSpot = (() => { const r = q('.tour-spot')!.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })();
-    await api.smoke.capture('x3-tour');
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await sleep(200);
-    report.tourClosed = !q('.tour');
-    // ---- translations (interface only; settings.toml is not touched) ----
-    for (const l of ['hi', 'ja', 'de']) {
-      setLanguage(l);
-      await sleep(150);
-      (report.translated ??= {} as any)[l] = [...document.querySelectorAll('.appbar .barbtn')].map((b) => b.textContent).join(' | ');
-      if (l === 'hi') await api.smoke.capture('x4-hindi');
-    }
-    setLanguage('auto');
-    // ---- code style: a sample re-formatted by clangd with the chosen options ----
-    setStyleOpen(true);
-    await sleep(1500);
-    const before = q('.style-code .cm-content')?.textContent ?? '';
-    ([...document.querySelectorAll('.sopt')].find((o) => /braces/.test(o.textContent ?? ''))?.querySelectorAll('button') as any)?.[3]?.click();   // Allman
-    ([...document.querySelectorAll('.sopt')].find((o) => /pointer/.test(o.textContent ?? ''))?.querySelectorAll('button') as any)?.[0]?.click();   // Left
-    await sleep(1500);
-    const after = q('.style-code .cm-content')?.textContent ?? '';
-    report.style = { changed: before !== after, sample: [...document.querySelectorAll('.style-code .cm-line')].slice(4, 9).map((l) => l.textContent), note: q('.style-prev .sub')?.textContent };
-    await api.smoke.capture('x5-code-style');
-    setStyleOpen(false);
-    // ---- to-do list and the reference without its pack ----
-    await todoList();
-    await sleep(500);
-    report.todo = palette()?.placeholder;
-    setPalette(null);
-    await openReference('std::vector');
-    await sleep(200);
-    report.referenceWithoutPack = toast();
-    // ---- flow: drag a box to pin it, group by folder ----
-    setPage('flow');
-    await until(() => document.querySelectorAll('.fbox').length > 1, 30000);
-    await sleep(1500);
-    const box = q('.fbox')!, b0 = box.getBoundingClientRect(), canvas = q('.flow')!;
-    box.dispatchEvent(new PointerEvent('pointerdown', { clientX: b0.left + 20, clientY: b0.top + 20, bubbles: true, pointerId: 1, button: 0 }));
-    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: b0.left + 120, clientY: b0.top + 160, bubbles: true, pointerId: 1 }));
-    canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: b0.left + 120, clientY: b0.top + 160, bubbles: true, pointerId: 1 }));
-    await sleep(300);
-    report.pinned = document.querySelectorAll('.fbox.pinned').length;
-    const labels = [...document.querySelectorAll('.flab')].map((l) => l.getBoundingClientRect());
-    const boxes = [...document.querySelectorAll('.fbox')].map((b) => b.getBoundingClientRect());
-    report.labelsOnBoxes = labels.filter((l) => boxes.some((b) => l.left < b.right && l.right > b.left && l.top < b.bottom && l.bottom > b.top)).length;
-    report.labels = labels.length;
-    ([...document.querySelectorAll('.flow ~ *, .ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'group by folder')?.click();
-    await sleep(1200);
-    report.folderFrames = [...document.querySelectorAll('.fgroup span')].map((s) => s.textContent);
-    await api.smoke.capture('x6-flow-pinned-grouped');
-    ([...document.querySelectorAll('.ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'group by folder')?.click();
-    ([...document.querySelectorAll('.ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'unpin all')?.click();
-    await sleep(800);
-    report.unpinned = document.querySelectorAll('.fbox.pinned').length === 0;
-    setPage('editor');
-    // ---- run with checks and profile on a new project from a template, beside the smoke folder ----
-    const parent = root().replace(/[\\/][^\\/]+$/, '');
-    const made = (await api.templates.create(parent, `smoke-proj-${Date.now()}`, 'cpp-console')) as any;
-    report.template = made.ok;
-    await api.fs.write(made.open, '#include <cstdio>\nint twice(int x) { return x * 2; }\nint main() {\n  int s = 0;\n  for (int i = 0; i < 500; i++) s += twice(i);\n  int* p = new int(s);\n  delete p;\n  std::printf("%d\\n", *p);\n}\n');
-    await openFolder(made.dir);
-    await openFile(made.open);
-    setRunOpen('memory');
-    await sleep(400);
-    ([...document.querySelectorAll('.runwin .barbtn')] as HTMLButtonElement[])[0].click();
-    await until(() => !!q('.runwin .runres'), 90000);
-    report.checks = { status: q('.runwin .runres .csub')?.textContent, problems: [...document.querySelectorAll('.runrep .tt')].map((e) => e.textContent), firstFrame: q('.runrep .frame.mine')?.textContent };
-    await api.smoke.capture('x7-run-with-checks');
-    (q('.runrep .frame.mine') as HTMLButtonElement | null)?.click();
-    await sleep(500);
-    report.jumpedTo = cursorPos();
-    ([...document.querySelectorAll('.runwin .copt')] as HTMLButtonElement[])[3].click();   // profile
-    await sleep(200);
-    ([...document.querySelectorAll('.runwin .barbtn')] as HTMLButtonElement[])[0].click();
-    await until(() => !!q('.runwin .runres'), 90000);
-    await sleep(800);
-    report.profile = { status: q('.runwin .runres .csub')?.textContent, top: [...document.querySelectorAll('.runwin .frame.prof')].slice(0, 3).map((e) => e.textContent), gutter: [...document.querySelectorAll('.cm-heat-gutter .cm-gutterElement')].map((e) => e.textContent).filter(Boolean).slice(0, 8) };
-    await api.smoke.capture('x8-profile');
-    setRunOpen(null);
-    // ---- problem report: written to the logs folder and opened ----
-    COMMANDS.report();
-    await until(() => /problem-report/.test(files.active), 5000);
-    report.problemReport = { opened: files.active.split(/[\\/]/).pop(), redacted: !(states.get(files.active)?.doc.toString() ?? '').includes('/Users/') };
-  } catch (e) {
-    errors.push(`extras demo: ${e}`);
-  }
-  report.errors = errors;
-  await api.smoke.done(report);
-}
 
 /** `--scenario defs`: go to definition into standard headers, by request and by ⌘-click. */
 async function defsDemo(report: Record<string, unknown>) {
@@ -714,7 +487,7 @@ async function anyHeaderDemo(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
-/** `--scenario boot`: the quick check run on each system's packaged app: engine, previews, flow, terminal. */
+/** `--scenario boot`: the quick check run on each system's packaged app: engine, previews, definitions, flow. */
 async function bootCheck(report: Record<string, unknown>) {
   try {
     const ci = (await api.compiler.info()) as any;
@@ -731,9 +504,6 @@ async function bootCheck(report: Record<string, unknown>) {
       report.previewCards = document.querySelectorAll('.pcol .card').length;
       report.definition = !!(await definitionAt(src, { line: at, character: lines[at].indexOf('handle') + 1 }));
     }
-    // the terminal: a shell started and printed something
-    await until(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim().length > 0, 20000);
-    report.terminal = (document.querySelector('.xterm-rows')?.textContent ?? '').trim().length > 0;
     setPage('flow');
     await until(() => document.querySelectorAll('.fbox').length > 0, 60000);
     report.flowBoxes = document.querySelectorAll('.fbox').length;
@@ -741,6 +511,82 @@ async function bootCheck(report: Record<string, unknown>) {
     await sleep(500);
     await api.smoke.capture('boot');
   } catch (e) { errors.push(`boot: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** A large real project (e.g. thorvg): how long each stage takes, and what never arrives. */
+async function largeCheck(report: Record<string, unknown>) {
+  const t0 = performance.now(), at = () => Math.round(performance.now() - t0);
+  const steps: Record<string, unknown> = {};
+  report.steps = steps;
+  try {
+    steps.lsp = (await until(() => lspState() === 'ready', 120000)) ? at() : `not ready: ${lspState()}`;
+    const t1 = performance.now();
+    const srcs = (await api.fs.sources(root())) as string[];
+    steps.sources = { count: srcs.length, ms: Math.round(performance.now() - t1) };
+    steps.treeRows = document.querySelectorAll('.tree .row, .tree [role=treeitem]').length;
+    const want = srcs.find((f) => /tvgPaint\.cpp$/.test(f)) ?? srcs.find((f) => /\.(cpp|cc|c)$/.test(f));
+    if (want) {
+      const t2 = performance.now();
+      await openFile(want);
+      steps.open = { file: relPath(root(), want), ms: Math.round(performance.now() - t2) };
+      const v = getMainView()!, lines = v.state.doc.toString().split('\n');
+      let ln = lines.findIndex((l) => /Paint::Impl::update\(/.test(l));
+      if (ln < 0) ln = lines.findIndex((l) => /^\w.*\)\s*$/.test(l));
+      v.dispatch({ selection: { anchor: v.state.doc.line(ln + 4).from + 4 } });
+      const t3 = performance.now();
+      const ok = await until(() => document.querySelectorAll('.pcol .card').length > 0, 90000);
+      steps.previewCards = { count: document.querySelectorAll('.pcol .card').length, ms: ok ? Math.round(performance.now() - t3) : 'timed out', text: (document.querySelector('.pcol')?.textContent ?? '').slice(0, 200) };
+      await api.smoke.capture('large-1-preview');
+      const t4 = performance.now();
+      const call = lines.findIndex((l, i) => i > ln && /\w+\(/.test(l));
+      const name = (lines[call].match(/(\w+)\(/) ?? [])[1] ?? '';
+      const d = await definitionAt(want, { line: call, character: lines[call].indexOf(name) + 1 });
+      steps.definition = { of: name, to: d ? relPath(root(), (d as any).file ?? (d as any).uri ?? '') : null, ms: Math.round(performance.now() - t4) };
+    }
+    setPage('flow');
+    const t5 = performance.now();
+    const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
+    const fl = await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0 && !/tracing/.test(flowStatus()), 240000);
+    steps.flow = { status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, dead: document.querySelectorAll('.fbox.dead').length, arrows: document.querySelectorAll('.flab').length, ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
+    await sleep(1500);
+    await api.smoke.capture('large-2-flow');
+    // when clangd finishes indexing the flow rebuilds with the whole call graph
+    const ix = await until(() => /indexing/.test(document.body.textContent ?? '') === false, 240000);
+    await sleep(1000);
+    await until(() => !/tracing/.test(flowStatus()), 240000);
+    await sleep(1500);
+    steps.flowMs = (document.querySelector(".flow") as any)?.dataset?.ms;
+    steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, visible: [...document.querySelectorAll('.fbox:not(.dead)')].filter((e) => +getComputedStyle(e).opacity > 0.9).length };
+    await api.smoke.capture('large-2b-flow-indexed');
+    setPage('editor');
+    await sleep(3000);   // let indexing run, then see whether the window still answers
+    const t6 = performance.now(); await sleep(0); await new Promise((r) => requestAnimationFrame(r));
+    steps.frameAfterIndexMs = Math.round(performance.now() - t6);
+    steps.indexing = (document.querySelector('.pcol')?.textContent ?? '').match(/index[^\n]{0,60}/i)?.[0] ?? null;
+    await api.smoke.capture('large-3-after');
+  } catch (e) { errors.push(`large: ${e}`); }
+  report.totalMs = at();
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario folder`: from the flow tab, with no file open, the folder tab shows the folder's files. */
+async function folderCheck(report: Record<string, unknown>) {
+  try {
+    setPage('flow');
+    await sleep(800);
+    const tab = [...document.querySelectorAll('.pivot button')].find((b) => b.textContent === 'folder') as HTMLButtonElement | undefined;
+    report.folderTab = !!tab;
+    tab?.click();
+    await sleep(500);
+    const pane = document.querySelector('.files') as HTMLElement | null;
+    report.filesVisible = !!pane && pane.getBoundingClientRect().width > 0 && pane.getBoundingClientRect().height > 0;
+    report.fileRows = document.querySelectorAll('.files .ti').length;
+    report.tabOn = tab?.classList.contains('on') ?? false;
+    await api.smoke.capture('folder-tab');
+  } catch (e) { errors.push(`folder: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }

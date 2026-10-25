@@ -5,66 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { parseBinary, totals } from '../main/binary';
-import { analyze, stripCode, scanHeap, findBinaries } from '../main/memory';
 import { LspClient, findClangd } from '../main/lsp';
 
 const SAMPLE = path.resolve(__dirname, '../../samples/tinyhttp');
 
 beforeAll(() => {
   if (!fs.existsSync(path.join(SAMPLE, 'build/tinyhttp'))) execFileSync(path.join(SAMPLE, 'build.sh'));
-});
-
-describe('binary parsing', () => {
-  it('reads the sample Mach-O / ELF program: sections, totals, symbols', () => {
-    const info = parseBinary(fs.readFileSync(path.join(SAMPLE, 'build/tinyhttp')));
-    expect(['Mach-O', 'ELF']).toContain(info.format);
-    const t = totals(info);
-    expect(t.byKind.code).toBeGreaterThan(1000);
-    expect(t.storage).toBeGreaterThanOrEqual(t.byKind.code);
-    // the 16 KB report buffer and 8 KB-per-Metrics log buffer must show up
-    expect(t.ram).toBeGreaterThanOrEqual(16384);
-    expect(info.symbols.some((s) => /g_report/.test(s.name) && s.size >= 16384)).toBe(true);
-  });
-  it('reads an ELF object built for Linux', () => {
-    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'litho-elf-'));
-    fs.writeFileSync(path.join(d, 'x.c'), 'int big[1000]; const char msg[64] = "hi"; int add(int a, int b) { return a + b + big[a]; }\n');
-    execFileSync('clang', ['-target', 'x86_64-linux-gnu', '-O1', '-c', path.join(d, 'x.c'), '-o', path.join(d, 'x.o')]);
-    const info = parseBinary(fs.readFileSync(path.join(d, 'x.o')));
-    expect(info.format).toBe('ELF');
-    expect(info.arch).toBe('x86-64');
-    const big = info.symbols.find((s) => s.name === 'big');
-    expect(big).toMatchObject({ size: 4000, kind: 'bss' });
-    expect(info.symbols.find((s) => s.name === 'msg')?.kind).toBe('rodata');
-    expect(info.symbols.find((s) => s.name === 'add')?.kind).toBe('code');
-  });
-  it('memory report: largest RAM first, stack usage, heap sites', () => {
-    const r = analyze(path.join(SAMPLE, 'build/tinyhttp'), SAMPLE);
-    for (let i = 1; i < r.largestRam.length; i++) expect(r.largestRam[i - 1].size).toBeGreaterThanOrEqual(r.largestRam[i].size);
-    expect(r.largestRam[0].name).toMatch(/g_report/);
-    expect(r.stack.length).toBeGreaterThan(5);
-    expect(r.stack.some((s) => /Server::start/.test(s.fn))).toBe(true);
-  });
-  it('heap scan ignores comments and strings', () => {
-    expect(stripCode('a("x // y"); // malloc(1)\n/* new int */ b')).toBe('a(""); \n b');
-    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'litho-heap-'));
-    fs.writeFileSync(path.join(d, 'a.cpp'), '// malloc(3)\nint* p = new int[4];\nvoid* q = malloc(8);\nauto s = std::make_shared<int>(1);\nconst char* t = "free(x)";\n');
-    expect(scanHeap(d).map((h) => `${h.line}:${h.call}`)).toEqual(['2:new', '3:malloc', '4:make_shared']);
-  });
-});
-
-describe('program search', () => {
-  it('finds linked programs anywhere in the folder, newest first, and skips objects', () => {
-    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'litho-bins-'));
-    fs.mkdirSync(path.join(d, 'tools/deep'), { recursive: true });
-    fs.copyFileSync(path.join(SAMPLE, 'build/tinyhttp'), path.join(d, 'loop'));
-    fs.copyFileSync(path.join(SAMPLE, 'build/tinyhttp'), path.join(d, 'tools/deep/prog.exe'));
-    fs.chmodSync(path.join(d, 'loop'), 0o755);
-    fs.writeFileSync(path.join(d, 'notes.txt'), 'x'.repeat(100));
-    fs.copyFileSync(path.join(SAMPLE, 'build/src_main.cpp.o'), path.join(d, 'loop.o'));
-    const found = findBinaries(d).map((p) => path.relative(d, p)).sort();
-    expect(found).toEqual(['loop', 'tools/deep/prog.exe']);
-  });
 });
 
 describe('clangd restart', () => {

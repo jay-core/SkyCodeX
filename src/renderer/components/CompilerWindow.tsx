@@ -6,7 +6,7 @@ import { afterPaint } from '../lib/motion';
 
 export const [compilerOpen, setCompilerOpen] = createSignal(false);
 
-type Kind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go' | 'cppref';
+type Kind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go';
 interface Pack { id: string; kind: Kind; name: string; version: string; bytes: number; source: string; clangd: string | null; clang: string | null; note?: string }
 interface Info {
   setting: string; active: string | null; activeVersion: string | null;
@@ -28,7 +28,7 @@ const mb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.rou
 const newer = (a: string, b: string) => { const pa = a.split(/[.\-]/).map(Number), pb = b.split(/[.\-]/).map(Number); for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0); return false; };
 const stored = () => { try { return JSON.parse(localStorage.getItem('litho.compiler.pos') ?? 'null') as { x: number; y: number } | null; } catch { return null; } };
 
-/** The compiler window: which clangd runs, which toolchain the terminal uses, and installing, updating or removing packs. */
+/** The compiler window: which clangd runs, whose standard headers are indexed, and installing, updating or removing packs. */
 export default function CompilerWindow() {
   const [info, { refetch }] = createResource(async () => (await api.compiler.info()) as Info);
   const [mini, setMini] = createSignal(false);
@@ -94,7 +94,7 @@ export default function CompilerWindow() {
   const busy = () => !!prog() && !['done', 'failed', 'cancelled'].includes(prog()!.phase);
 
   return (
-    <div class="cwin" ref={el} data-help="compiler" role="dialog" aria-label="compiler" style={{ left: `${pos().x}px`, top: `${pos().y}px` }}>
+    <div class="cwin" ref={el} role="dialog" aria-label="compiler" style={{ left: `${pos().x}px`, top: `${pos().y}px` }}>
       <div class="cwin-h" onPointerDown={drag}>
         <span class="t">compiler</span>
         <span class="grow" />
@@ -111,7 +111,7 @@ export default function CompilerWindow() {
               <div class="csub">{engineLabel(i())}{i().active ? ` · ${i().active}` : ''}</div>
               <div class="copts">
                 <Opt on={i().setting === 'auto'} label="automatic" note="inbuilt, else the system's" onPick={() => useEngine('auto')} />
-                <Opt on={i().setting === 'inbuilt'} disabled={!i().inbuilt} label="inbuilt" note={i().inbuilt ? `clangd ${i().inbuilt!.version ?? ''} · ships with Lithograph` : 'this build has none (npm run fetch-clangd)'} onPick={() => useEngine('inbuilt')} />
+                <Opt on={i().setting === 'inbuilt'} disabled={!i().inbuilt} label="inbuilt" note={i().inbuilt ? `clangd ${i().inbuilt!.version ?? ''} · ships with SkyCodeX` : 'this build has none (npm run fetch-clangd)'} onPick={() => useEngine('inbuilt')} />
                 <Opt on={i().setting === 'system'} disabled={!i().system} label="system" note={i().system ? `clangd ${i().system!.version ?? '?'} · ${i().system!.path}` : 'none found on this machine'} onPick={() => useEngine('system')} />
                 <For each={i().packs.filter((p) => p.clangd)}>{(p) => (
                   <Opt on={i().setting === `pack:${p.id}`} label={`pack · ${p.id}`} note={p.kind === 'toolchain' ? 'the clangd inside this toolchain' : 'language pack'} onPick={() => useEngine(`pack:${p.id}`)} />
@@ -129,12 +129,12 @@ export default function CompilerWindow() {
               </div>
 
               {/* ---- toolchain ---- */}
-              <div class="csec">compiler toolchain <span class="dim">· used in Lithograph's terminal only</span></div>
-              <Show when={i().packs.some((p) => p.kind === 'toolchain')} fallback={<div class="csub">none installed — the terminal uses the system's compiler</div>}>
+              <div class="csec">compiler toolchain <span class="dim">· its standard headers are indexed with the project</span></div>
+              <Show when={i().packs.some((p) => p.kind === 'toolchain')} fallback={<div class="csub">none installed — the system's headers are used</div>}>
                 <div class="copts">
                   <For each={i().packs.filter((p) => p.kind === 'toolchain')}>{(p) => (
                     <div class="cpack">
-                      <button class="radio" classList={{ on: i().toolchain === p.id }} title="use in the terminal" onClick={async () => { await api.settings.set('compiler.toolchain', p.id); refetch(); }} />
+                      <button class="radio" classList={{ on: i().toolchain === p.id }} title="index its headers" onClick={async () => { await api.settings.set('compiler.toolchain', p.id); refetch(); }} />
                       <div class="grow">
                         <div>{p.name} {p.version}{i().toolchain === p.id ? <span class="tag">in use</span> : null}</div>
                         <div class="dim">{mb(p.bytes)} on disk · {p.source}</div>
@@ -145,7 +145,7 @@ export default function CompilerWindow() {
                       <button class="lnk warn" disabled={busy()} onClick={() => remove(p)}>remove</button>
                     </div>
                   )}</For>
-                  <Opt on={i().toolchainSetting === 'none'} label="none" note="the terminal uses the system's compiler" onPick={async () => { await api.settings.set('compiler.toolchain', 'none'); refetch(); }} />
+                  <Opt on={i().toolchainSetting === 'none'} label="none" note="the system's headers are used" onPick={async () => { await api.settings.set('compiler.toolchain', 'none'); refetch(); }} />
                 </div>
               </Show>
               <div class="crow">
@@ -164,7 +164,7 @@ export default function CompilerWindow() {
               </Show>
 
               {/* ---- other languages ---- */}
-              <div class="csec">more languages <span class="dim">· each in its own pack, used by the editor and Lithograph's terminal</span></div>
+              <div class="csec">more languages <span class="dim">· each in its own pack, used by the editor</span></div>
               <For each={MORE}>{(g) => (
                 <div class="clang">
                   <div class="cl">{g.language}</div>
@@ -189,14 +189,6 @@ export default function CompilerWindow() {
                   </div>
                 </div>
               )}</For>
-              <div class="clang">
-                <div class="cl">C++ reference</div>
-                <div class="grow">
-                  <For each={i().packs.filter((p) => p.kind === 'cppref')}>{(p) => <div class="dim">{p.version}{p.note ? ` · ${p.note}` : ''} <button class="lnk warn" disabled={busy()} onClick={() => remove(p)}>remove</button></div>}</For>
-                  <div class="dim">cppreference.com's pages, offline. Download <b>html-book-….zip</b> from github.com/PeterFeicht/cppreference-doc/releases yourself (it publishes no checksum), then choose it here. Shift F1 on a name opens its page.</div>
-                </div>
-                <button class="lnk" disabled={busy()} onClick={async () => { const r = (await api.packs.installFile('cppref')) as { ok: boolean; message?: string }; await refetch(); if (!r.ok && r.message !== 'cancelled') flash(`couldn't install the reference: ${r.message}`, 8000); else if (r.ok) flash('C++ reference installed', 4000); }}>install from a file…</button>
-              </div>
               <Show when={pickKind()}>{(k) => (
                 <div class="cvers">
                   <For each={releases(k()).slice(0, 8)}>{(r) => (
@@ -212,7 +204,7 @@ export default function CompilerWindow() {
                 <div class="cconfirm">
                   <div>Download <b>{c().r.asset}</b> ({c().r.size ? mb(c().r.size) : 'size not published'}) from {c().r.source}?</div>
                   <div class="dim">It goes into {i().packsDir}{c().replaces ? `, replacing ${c().replaces}` : ''} and needs about {mb(c().r.size * (c().r.format === 'zip' ? 4 : 7))} free.
-                    It is checked against the {c().r.sha512 ? 'SHA-512 the npm registry' : 'SHA-256 ' + (c().r.source.startsWith('github') ? 'GitHub' : c().r.source)} publishes for it and unpacked by Lithograph itself — no installer runs, and nothing outside that folder or in your environment changes.{c().r.note ? ` Note: ${c().r.note}.` : ''}</div>
+                    It is checked against the {c().r.sha512 ? 'SHA-512 the npm registry' : 'SHA-256 ' + (c().r.source.startsWith('github') ? 'GitHub' : c().r.source)} publishes for it and unpacked by SkyCodeX itself — no installer runs, and nothing outside that folder or in your environment changes.{c().r.note ? ` Note: ${c().r.note}.` : ''}</div>
                   <div class="crow"><button class="barbtn" onClick={() => install(c().r, c().replaces)}>download and install</button><button class="lnk" onClick={() => setConfirm(null)}>cancel</button></div>
                 </div>
               )}</Show>

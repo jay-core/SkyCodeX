@@ -7,7 +7,7 @@ const common = {
   target: 'node22',
   format: 'cjs',
   sourcemap: true,
-  external: ['electron', 'node-pty'],
+  external: ['electron'],
   logLevel: 'info',
 };
 

@@ -1,5 +1,5 @@
 // `npm run fetch-clangd`: puts the pinned official clangd into tools/clangd for this platform, the copy
-// Lithograph ships as its inbuilt language engine. The file is checked against its SHA-256 before use.
+// SkyCodeX ships as its inbuilt language engine. The file is checked against its SHA-256 before use.
 // Pass a local zip to skip the download: `npm run fetch-clangd -- path/to/clangd-mac-23.1.0.zip`.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +31,7 @@ async function main() {
     zip = path.join(tools, pin.asset);
     const url = `https://github.com/clangd/clangd/releases/download/${CLANGD_VERSION}/${pin.asset}`;
     console.log(`downloading ${url}`);
-    const res = await fetch(url, { headers: { 'User-Agent': 'Lithograph' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'SkyCodeX' } });
     if (!res.ok || !res.body) throw new Error(`download failed (${res.status})`);
     await pipeline(Readable.fromWeb(res.body as any), fs.createWriteStream(zip));
   }

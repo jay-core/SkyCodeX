@@ -1,6 +1,6 @@
 // Reads, validates and edits data/settings.toml without ever losing the user's comments.
 import { parse } from 'smol-toml';
-import { SETTINGS, SettingDef, SettingProblem, Settings, defaults, validate } from '../shared/settings-schema';
+import { SETTINGS, SettingDef, SettingProblem, Settings, defaults, validate, RETIRED } from '../shared/settings-schema';
 
 const BY_KEY = new Map(SETTINGS.map((d) => [d.key, d]));
 
@@ -46,7 +46,7 @@ export function loadSettings(text: string): LoadResult {
   }
   for (const [key, value] of Object.entries(raw)) {
     const def = BY_KEY.get(key);
-    if (!def) { problems.push({ key, line: lineOf(text, key), message: `unknown setting "${key}" — ignored` }); continue; }
+    if (!def) { if (!RETIRED.test(key)) problems.push({ key, line: lineOf(text, key), message: `unknown setting "${key}" — ignored` }); continue; }
     const r = validate(def, value);
     if (r.ok) settings[key] = r.value;
     else problems.push({ key, line: lineOf(text, key), message: `${key} ${r.message}; using ${JSON.stringify(def.default)}` });

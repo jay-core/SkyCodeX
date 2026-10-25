@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 /** Writes via a temporary file in the same folder, then renames it over the target. */
 export function atomicWrite(file: string, text: string): void {
   const dir = path.dirname(file);
-  const tmp = path.join(dir, `.${path.basename(file)}.lithograph-${process.pid}-${Date.now()}.tmp`);
+  const tmp = path.join(dir, `.${path.basename(file)}.skycodex-${process.pid}-${Date.now()}.tmp`);
   let mode: number | undefined;
   try { mode = fs.statSync(file).mode; } catch { /* new file */ }
   const fd = fs.openSync(tmp, 'w', mode ?? 0o644);
@@ -36,7 +36,7 @@ export function listDir(dir: string): DirEntry[] {
   let entries: fs.Dirent[];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
   return entries
-    .filter((e) => !HIDDEN.has(e.name) && !e.name.endsWith('.lithograph.tmp'))
+    .filter((e) => !HIDDEN.has(e.name) && !e.name.endsWith('.skycodex.tmp'))
     .map((e) => ({ name: e.name, path: path.join(dir, e.name), dir: e.isDirectory() }))
     .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
 }

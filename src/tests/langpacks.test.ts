@@ -6,8 +6,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { pathToFileURL } from 'node:url';
-import { rustTarget, pythonTriple, goPlatform, pythonReleases, goReleases, mergeRustComponents, namesFromTitle, buildRefIndex, refIndex, languageBins, languageEnv, serverFor, stepsFor, goEnv } from '../main/langpacks';
+import { rustTarget, pythonTriple, goPlatform, pythonReleases, goReleases, mergeRustComponents, languageBins, languageEnv, serverFor, stepsFor, goEnv } from '../main/langpacks';
 import { installRelease, listPacks, removePack, MANIFEST, Release } from '../main/packs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-lang-'));
@@ -82,26 +81,6 @@ describe('Rust components', () => {
   });
 });
 
-describe('the C++ reference', () => {
-  it('reads every name a page title lists, without template arguments', () => {
-    expect(namesFromTitle('std::basic_string<CharT,Traits,Allocator>::size, std::basic_string<CharT,Traits,Allocator>::length - cppreference.com'))
-      .toEqual(['std::basic_string::size', 'std::basic_string::length']);
-    expect(namesFromTitle('std::sort - cppreference.com')).toEqual(['std::sort']);
-    expect(namesFromTitle('Containers library - cppreference.com')).toEqual(['Containers library']);
-  });
-  it('indexes the pages and finds them through the pack', () => {
-    const dir = tmp(), root = path.join(dir, 'cppref-20250209');
-    put(path.join(root, 'reference/en/cpp/algorithm/sort.html'), '<html><head><title>std::sort - cppreference.com</title>');
-    put(path.join(root, 'reference/en/cpp/container/vector/push_back.html'), '<title>std::vector&lt;T,Allocator&gt;::push_back - cppreference.com</title>');
-    expect(stepsFor('cppref').check!(root)).toBe(true);
-    expect(buildRefIndex(root)).toBe(2);
-    fakeManifest(dir, 'cppref-20250209', 'cppref', '20250209', '.');
-    const idx = refIndex(dir)!;
-    expect(idx.names['std::vector::push_back']).toBe('en/cpp/container/vector/push_back.html');
-    expect(idx.base).toBe('reference');
-  });
-});
-
 describe('using packs', () => {
   it('puts every language on PATH and keeps Cargo, Go and pip inside their packs', () => {
     const dir = tmp();
@@ -119,7 +98,7 @@ describe('using packs', () => {
     expect(env.PIP_CACHE_DIR.startsWith(path.join(dir, 'python-3.13.9'))).toBe(true);
     expect(goEnv('/p').GOTOOLCHAIN).toBe('local');   // never downloads another Go by itself
   });
-  it('runs Pyright with Lithograph\'s own Node.js and tells it which Python to use', () => {
+  it('runs Pyright with SkyCodeX\'s own Node.js and tells it which Python to use', () => {
     const dir = tmp();
     fakeManifest(dir, 'pyright-1.1.414', 'pyright', '1.1.414', '.');
     fakeManifest(dir, 'python-3.13.9', 'python', '3.13.9');
@@ -163,16 +142,6 @@ describe('installing new formats (local server)', () => {
     expect(m.bin).toBe('.');
     expect(fs.existsSync(path.join(dir, 'pyright-1.1.414', 'langserver.index.js'))).toBe(true);
     expect(listPacks(dir).map((p) => p.id)).toEqual(['pyright-1.1.414']);
-  });
-  it('an archive from this computer is unpacked and indexed, and the original file is kept', async () => {
-    const dir = tmp(), src = path.join(tmp(), 'html-book-20250209.tar.gz');
-    fs.writeFileSync(src, tgz(tarEntry('reference/en/cpp/algorithm/sort.html', '<title>std::sort - cppreference.com</title>')));
-    const m = await installRelease({ kind: 'cppref', name: 'cppref', version: '20250209', asset: 'html-book-20250209.tar.gz', url: pathToFileURL(src).href, size: fs.statSync(src).size, sha256: '', format: 'tar.gz', source: 'this computer', id: 'cppref-20250209' }, dir, () => {}, sig(), stepsFor('cppref'));
-    expect(m.note).toBe('1 names indexed');
-    expect(fs.existsSync(src)).toBe(true);
-    expect(refIndex(dir)!.names['std::sort']).toBe('en/cpp/algorithm/sort.html');
-    removePack(dir, 'cppref-20250209');
-    expect(listPacks(dir)).toEqual([]);
   });
   it('removes a pack whose files were made read-only (Go\'s module cache)', () => {
     const dir = tmp();

@@ -3,11 +3,12 @@ import { spawn, execFileSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string };
 
 const EXE = process.platform === 'win32' ? 'clangd.exe' : 'clangd';
-/** The clangd that ships inside Lithograph (tools/clangd/bin), if this build has one. */
+/** The clangd that ships inside SkyCodeX (tools/clangd/bin), if this build has one. */
 export function inbuiltClangd(toolsDir: string): string | null {
   for (const p of [path.join(toolsDir, 'clangd', 'bin', EXE), path.join(toolsDir, 'clangd', EXE)]) if (fs.existsSync(p)) return p;
   return null;
@@ -49,6 +50,59 @@ export function findCompileCommands(root: string): string | null {
   return null;
 }
 
+const SKIP_DIR = /^(\.|node_modules$|__pycache__$|language_packs$|third[_-]?party$|vendor$)/i;
+const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|m|mm)$/i, HEADER = /\.(h|hh|hpp|hxx|h\+\+|inl|ipp|tcc|tpp)$/i;
+const MAX_SOURCES = 20000;
+
+/** Source files and the folders that hold headers, shallow folders first. */
+export function scanProject(root: string): { sources: string[]; headerDirs: string[] } {
+  const sources: string[] = [], headerDirs: string[] = [];
+  let level = [root];
+  for (let depth = 0; level.length && depth < 12 && sources.length < MAX_SOURCES; depth++) {
+    const next: string[] = [];
+    for (const dir of level) {
+      let hasHeader = false;
+      let entries: fs.Dirent[] = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (e.isDirectory()) { if (!SKIP_DIR.test(e.name)) next.push(path.join(dir, e.name)); }
+        else if (SOURCE.test(e.name)) { if (sources.length < MAX_SOURCES) sources.push(path.join(dir, e.name)); }
+        else if (!hasHeader && HEADER.test(e.name)) hasHeader = true;
+      }
+      if (hasHeader) headerDirs.push(dir);
+    }
+    level = next.sort();
+  }
+  return { sources: sources.sort(), headerDirs };
+}
+
+/**
+ * A folder with no compile_commands.json (a Meson or Make project not yet built, a plain folder of sources):
+ * SkyCodeX writes one into its own state folder, never into the project, so clangd indexes the whole project
+ * and the project's own #includes resolve. Flags come from compile_flags.txt when the root has one; otherwise
+ * every folder that holds headers is an include path. With a toolchain pack's compiler (cxx), its standard headers
+ * are used. Returns that folder, or null when the project has its own.
+ */
+export function ensureCompileCommands(root: string, stateDir: string, cxx?: string | null): string | null {
+  if (!root || findCompileCommands(root)) return null;
+  const { sources, headerDirs } = scanProject(root);
+  if (!sources.length) return null;
+  const own = path.join(root, 'compile_flags.txt');
+  const flags = fs.existsSync(own)
+    ? fs.readFileSync(own, 'utf8').split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+    : [root, ...headerDirs.filter((d) => d !== root)].slice(0, 400).map((d) => `-I${d}`);
+  const db = sources.map((file) => ({
+    directory: root, file,
+    arguments: [cxx ? (/\.(c|m)$/i.test(file) ? cxx.replace(/clang\+\+(\.exe)?$/i, 'clang$1') : cxx) : /\.(c|m)$/i.test(file) ? 'clang' : 'clang++', ...flags, '-c', file],
+  }));
+  const dir = path.join(stateDir, 'compile-db', createHash('sha1').update(root).digest('hex').slice(0, 12));
+  const out = path.join(dir, 'compile_commands.json'), text = JSON.stringify(db, null, 1);
+  fs.mkdirSync(dir, { recursive: true });
+  // unchanged commands keep clangd's index for this folder (kept beside the file) valid
+  if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) fs.writeFileSync(out, text);
+  return dir;
+}
+
 export class LspClient {
   private proc: ChildProcess | null = null;
   private buf = Buffer.alloc(0);
@@ -68,9 +122,14 @@ export class LspClient {
   /** Answers workspace/configuration (pyright reads its Python from it). */
   settings: Record<string, unknown> = {};
 
-  start(clangd: string, root: string, extraArgs: string[]): Promise<unknown> {
+  /** The compile_commands.json folder in use: the project's own, or the one SkyCodeX wrote for it. */
+  ccDir: string | null = null;
+
+  start(clangd: string, root: string, extraArgs: string[], stateDir?: string, cxx?: string | null): Promise<unknown> {
     const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
-    const cc = findCompileCommands(root);
+    let cc = findCompileCommands(root);
+    if (!cc && stateDir) { try { cc = ensureCompileCommands(root, stateDir, cxx); } catch (e) { this.onLog(`compile database: ${e}`); } }
+    this.ccDir = cc;
     if (cc) args.push(`--compile-commands-dir=${cc}`);
     args.push(...extraArgs);
     return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true } });
@@ -238,10 +297,10 @@ export function flagsOf(args: string[], input: string): string[] {
 }
 
 /** A command for a C/C++ file whose name clang doesn't recognise, or null when clangd needs none. */
-export function headerCommand(file: string, root: string): HeaderCommand | null {
+export function headerCommand(file: string, root: string, ccDirInUse?: string | null): HeaderCommand | null {
   if (CLANG_KNOWS.test(file) || STDLIB.test(file) || FRAGMENT.test(file)) return null;
   let dir = root || path.dirname(file), flags: string[] = [], compiler = 'clang++';
-  const ccDir = root ? findCompileCommands(root) : null;
+  const ccDir = ccDirInUse ?? (root ? findCompileCommands(root) : null);
   if (ccDir) {
     // the entry that lives closest to this file lends its flags
     try {

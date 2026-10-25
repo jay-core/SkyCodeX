@@ -9,7 +9,6 @@ const mod = navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+';
 const shift = navigator.platform.startsWith('Mac') ? '⇧' : 'Shift+';
 const ITEMS: ([string, string, string] | null)[] = [
   ['new file', 'newFile', `${mod}N`],
-  ['new project…', 'newProject', ''],
   ['open file', 'openFile', `${shift}${mod}O`],
   ['open folder', 'openFolder', `${mod}O`],
   null,
@@ -21,15 +20,6 @@ const ITEMS: ([string, string, string] | null)[] = [
   ['quick open', 'quickOpen', `${mod}P`],
   ['go to symbol', 'goToSymbol', `${mod}T`],
   ['command palette', 'commandPalette', `${shift}${mod}P`],
-  null,
-  ['format document', 'formatDocument', `${shift}${navigator.platform.startsWith('Mac') ? '⌥' : 'Alt+'}F`],
-  ['to-do list', 'todoList', ''],
-  ['code style', 'codeStyle', ''],
-  ['C++ reference', 'reference', `${shift}F1`],
-  null,
-  ['run with checks', 'runChecks', ''],
-  ['profile', 'profile', ''],
-  ['problem report', 'report', ''],
   null,
   ['settings', 'settings', `${mod},`],
 ];

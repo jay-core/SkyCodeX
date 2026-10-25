@@ -40,10 +40,6 @@ jobs:
       - name: Electron for this system
         run: node node_modules/electron/install.js
 
-      - name: Terminal module, compiled for Electron (Linux has no ready-built one)
-        if: runner.os == 'Linux'
-        run: npx electron-rebuild -f -w node-pty
-
       - name: Icon tool (Windows, for this build only)
         if: runner.os == 'Windows'
         run: npm install --no-save rcedit@5.0.2
@@ -63,8 +59,8 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -yq xvfb libgtk-3-0 libnss3 libxss1 libgbm1 libasound2
-          dir=$(ls -d release/Lithograph-*-linux-x64)
-          timeout 360 xvfb-run -a "$dir/lithograph" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
+          dir=$(ls -d release/SkyCodeX-*-linux-x64)
+          timeout 360 xvfb-run -a "$dir/skycodex" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
           node src/build/check-smoke.mjs "$dir"
 
       - name: Boot check (Windows)
@@ -73,9 +69,9 @@ jobs:
         run: |
           $dir = (Get-ChildItem release -Directory | Select-Object -First 1).FullName
           # wait for the app itself only (with -Wait, Start-Process also waits for every process it started), at most 6 minutes
-          $p = Start-Process -FilePath "$dir\Lithograph.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -PassThru
+          $p = Start-Process -FilePath "$dir\SkyCodeX.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -PassThru
           if (-not $p.WaitForExit(360000)) { Stop-Process -Id $p.Id -Force; Write-Host 'the app did not finish in 6 minutes' }
-          Get-Process clangd, Lithograph -ErrorAction SilentlyContinue | Format-Table Id, Name
+          Get-Process clangd, SkyCodeX -ErrorAction SilentlyContinue | Format-Table Id, Name
           node src/build/check-smoke.mjs "$dir"
 
       - name: Screenshot and logs of the check
@@ -112,6 +108,6 @@ jobs:
         run: |
           ls -la out
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Lithograph ${TAG#v}" --notes "Portable builds for each system."
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SkyCodeX ${TAG#v}" --notes "Portable builds for each system."
           # the archives only; the artifacts also hold the unpacked folders
           gh release upload "$TAG" out/*.zip out/*.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
