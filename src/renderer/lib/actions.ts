@@ -6,6 +6,11 @@ import { files, states, openFile, onDocChanged, getMainView, root, flash, save, 
 import { undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
 import { posToOffset, offsetToPos } from './cm';
+import { newProject, todoList, formatDocument, openReference, nameAtCursor } from './extras';
+import { setStyleOpen } from '../components/StyleWindow';
+import { openHelp } from '../components/Help';
+import { startTour } from '../components/Tour';
+import { setRunOpen } from '../components/RunWindow';
 
 export interface PaletteItem { label: string; detail?: string; run: () => void }
 export interface PaletteState { placeholder: string; items?: PaletteItem[]; prompt?: { value: string; accept: (v: string) => void } }
@@ -166,6 +171,13 @@ export async function saveAs() {
 export const closeActive = () => { if (files.active) closeFile(files.active); };
 const withView = (f: (v: any) => boolean) => () => { const v = getMainView(); if (v && files.active) { v.focus(); f(v); } };
 
+/** A report for asking for help, written to the logs folder and opened for reading first. Nothing is sent. */
+export async function problemReport() {
+  const file = await api.report.build();
+  await openFile(file);
+  flash('problem report written to the logs folder — nothing was sent; read it, then share it if you choose', 7000);
+}
+
 /** Every command reachable from the menus, by id. */
 export const COMMANDS: Record<string, () => void> = {
   newFile, openFile: openFileDialog, openFolder: openFolderDialog, save: () => save(), saveAs, saveAll, closeFile: closeActive,
@@ -174,12 +186,16 @@ export const COMMANDS: Record<string, () => void> = {
   showEditor: () => setPage('editor'), showFlow: () => setPage('flow'), showMemory: () => setPage('memory'),
   toggleTerminal: () => setTerminalOpen(!terminalOpen()), settings: () => setSettingsOpen(true),
   togglePreview: () => api.settings.get().then((x: any) => api.settings.set('preview.enabled', !x.settings['preview.enabled'])),
+  newProject: () => newProject(), todoList: () => todoList(), formatDocument: () => formatDocument(),
+  reference: () => openReference(nameAtCursor() || undefined), codeStyle: () => setStyleOpen(true), help: () => openHelp('start'), tour: () => startTour(),
+  runChecks: () => setRunOpen('memory'), profile: () => setRunOpen('profile'), report: () => problemReport(),
 };
 api.menu.onCommand((id) => COMMANDS[id]?.());
 
 export function commandPalette() {
   const cmds: [string, string, () => void][] = [
     ['New file', '⌘/Ctrl N', newFile],
+    ['New project from a template…', '', newProject],
     ['Open file…', '⌘/Ctrl ⇧ O', openFileDialog],
     ['Open folder…', '⌘/Ctrl O', openFolderDialog],
     ['Save as…', '⌘/Ctrl ⇧ S', saveAs],
@@ -191,6 +207,15 @@ export function commandPalette() {
     ['Rename symbol', 'F2', rename],
     ['Fixes and refactorings', '⌘/Ctrl .', quickFix],
     ['Find references', '⇧F12', findReferences],
+    ['Format document', '⇧⌥F', formatDocument],
+    ['To-do list', '', todoList],
+    ['C++ reference for the name under the cursor', '⇧F1', () => openReference(nameAtCursor() || undefined)],
+    ['Code style (.clang-format)…', '', () => setStyleOpen(true)],
+    ['Run with checks (memory, threads, undefined behaviour)…', '', () => setRunOpen('memory')],
+    ['Profile: how often each line runs…', '', () => setRunOpen('profile')],
+    ['Write a problem report…', '', problemReport],
+    ['Help', 'F1', () => openHelp('start')],
+    ['Take the tour', '', startTour],
     ['Show flow', '', () => setPage('flow')],
     ['Show memory', '', () => setPage('memory')],
     ['Show editor', '', () => setPage('editor')],

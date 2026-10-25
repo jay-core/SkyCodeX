@@ -4,9 +4,11 @@ import { api } from '../lib/api';
 import { settings, problems, setSettingsOpen, openFile, info, flash, applySettings } from '../lib/store';
 import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
 import { afterPaint } from '../lib/motion';
+import { t, LANGUAGES } from '../lib/i18n';
 
 const PAGES: { name: string; sections: string[] }[] = [
   { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion'] },
+  { name: 'interface', sections: ['ui', 'power'] },
   { name: 'editor', sections: ['editor', 'window'] },
   { name: 'preview', sections: ['preview'] },
   { name: 'clangd', sections: ['clangd'] },
@@ -157,32 +159,32 @@ function Control(props: { d: SettingDef }) {
   const v = () => settings()[props.d.key];
   const d = props.d;
   const changed = () => JSON.stringify(v()) !== JSON.stringify(d.default);
-  const reset = () => <Show when={changed()}><button class="rst" title={`back to ${JSON.stringify(d.default)}`} onClick={() => set(d.key, d.default)}>reset</button></Show>;
+  const reset = () => <Show when={changed()}><button class="rst" title={`back to ${JSON.stringify(d.default)}`} onClick={() => set(d.key, d.default)}>{t('reset')}</button></Show>;
   // a setting that only matters with another one: dimmed until it applies
   const idle = () => d.key === 'editor.autosave_delay_ms' && settings()['editor.autosave'] !== 'delay';
-  const Lab = () => <div class="lab">{label(d)}{reset()}</div>;
+  const Lab = () => <div class="lab">{t(label(d))}{reset()}</div>;
   const wrap = (body: any) => <div class="ctl" classList={{ idle: idle() }}>{body}</div>;
   if (d.type === 'boolean') return (
     <div class="ctl" style={{ display: 'flex', 'align-items': 'center' }}>
-      <div><Lab /><Show when={d.doc !== 'true | false'}><div class="doc">{d.doc}</div></Show></div>
+      <div><Lab /><Show when={d.doc !== 'true | false'}><div class="doc">{t(d.doc)}</div></Show></div>
       <button class="tog" classList={{ on: !!v() }} onClick={() => set(d.key, !v())}><b /><i /></button>
     </div>
   );
-  if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{x}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{d.doc}</div></Show></>);
+  if (d.type === 'enum') return wrap(<><Lab /><div class="choices"><For each={d.values}>{(x) => <button classList={{ on: v() === x }} onClick={() => set(d.key, x)}>{d.key === 'ui.language' ? (LANGUAGES.find((l) => l.code === x)?.name ?? t(x)) : t(x)}</button>}</For></div><Show when={d.doc !== d.values!.join(' | ')}><div class="doc">{t(d.doc)}</div></Show></>);
   if (/(^font|_font)\.?weight|font_weight/.test(d.key)) return wrap(<><Lab /><WeightCtl d={d} family={() => String(settings()['font.family'])} /></>);
-  if (d.type === 'number') return wrap(<><Lab /><NumberCtl d={d} /><div class="doc">{d.doc}</div></>);
+  if (d.type === 'number') return wrap(<><Lab /><NumberCtl d={d} /><div class="doc">{t(d.doc)}</div></>);
   if (d.key === 'font.family' || d.key === 'font.ui.family') return wrap(<>
     <Lab /><Combo value={String(v())} load={fontOpts(d.key === 'font.family')} onPick={(x) => set(d.key, x)} font hint="installed fonts couldn't be listed — type a font name" />
     <div class="doc">{d.key === 'font.family' ? 'monospace fonts first · type to filter, or any font name' : 'any installed font · type to filter'}</div></>);
   if (d.key === 'terminal.shell') return wrap(<>
     <Lab /><Combo value={String(v())} load={shellOpts} onPick={(x) => set(d.key, x)} hint="type the path to a shell" />
-    <div class="doc">{d.doc} · new terminals use it</div></>);
+    <div class="doc">{t(d.doc)} · {t('new terminals use it')}</div></>);
   if (d.key === 'clangd.path') return wrap(<>
     <Lab /><div class="pathrow">
       <input type="text" value={String(v())} spellcheck={false} onChange={(e) => set(d.key, e.currentTarget.value.trim() || 'auto')} />
-      <button class="chip" onClick={async () => { const p = (await api.fs.pickFile('')) as string | null; if (p) set(d.key, p); }}>browse</button>
-      <Show when={v() !== 'auto'}><button class="chip" onClick={() => set(d.key, 'auto')}>auto</button></Show>
-    </div><div class="doc">{d.doc}</div></>);
+      <button class="chip" onClick={async () => { const p = (await api.fs.pickFile('')) as string | null; if (p) set(d.key, p); }}>{t('browse')}</button>
+      <Show when={v() !== 'auto'}><button class="chip" onClick={() => set(d.key, 'auto')}>{t('auto')}</button></Show>
+    </div><div class="doc">{t(d.doc)}</div></>);
   // lists: JSON or plain space-separated words
   const text = () => (d.type === 'string[]' ? ((v() as string[]) ?? []).join(' ') : String(v() ?? ''));
   return wrap(<>
@@ -193,7 +195,7 @@ function Control(props: { d: SettingDef }) {
       if (raw.startsWith('[')) { try { set(d.key, JSON.parse(raw)); } catch { flash('write a list like --clang-tidy --header-insertion=never'); } }
       else set(d.key, raw ? raw.split(/\s+/) : []);
     }} />
-    <div class="doc">{d.type === 'string[]' ? 'separate arguments with spaces, e.g. --clang-tidy' : d.doc}</div></>);
+    <div class="doc">{d.type === 'string[]' ? t('separate items with spaces') : t(d.doc)}</div></>);
 }
 
 export default function Settings() {
@@ -220,13 +222,13 @@ export default function Settings() {
   onCleanup(() => window.removeEventListener('keydown', onKey));
   const defs = () => SETTINGS.filter((d) => PAGES[pg()].sections.includes(sectionOf(d.key)));
   return (
-    <div class="set" ref={el}>
+    <div class="set" ref={el} data-help="settings" role="dialog" aria-label="settings">
       <div class="si" style={{ display: 'flex' }}>
         <span class="app-title">LITHOGRAPH</span><span style={{ flex: 1 }} />
-        <button class="chip" style={{ 'font-size': '14px' }} onClick={() => { openFile(info()!.settingsFile); close(); }}>open settings.toml</button>
-        <button class="chip" style={{ 'font-size': '14px', 'margin-left': '24px' }} onClick={close}>close · esc</button>
+        <button class="chip" style={{ 'font-size': '14px' }} onClick={() => { openFile(info()!.settingsFile); close(); }}>{t('open settings.toml')}</button>
+        <button class="chip" style={{ 'font-size': '14px', 'margin-left': '24px' }} onClick={close}>{t('close · esc')}</button>
       </div>
-      <div class="pv si"><For each={PAGES}>{(p, i) => <button classList={{ on: pg() === i() }} onClick={() => setPg(i())}>{p.name}</button>}</For></div>
+      <div class="pv si"><For each={PAGES}>{(p, i) => <button classList={{ on: pg() === i() }} onClick={() => setPg(i())}>{t(p.name)}</button>}</For></div>
       <Show when={problems().length}>
         <div class="problem si"><For each={problems()}>{(p) => <div>{p.line ? `line ${p.line}: ` : ''}{p.message}</div>}</For></div>
       </Show>

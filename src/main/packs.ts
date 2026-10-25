@@ -5,14 +5,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
-import { extractZip, extractTarZst, UnpackStats } from './unpack';
+import { fileURLToPath } from 'node:url';
+import { extractZip, extractTarZst, extractTarGz, extractGzProgram, UnpackStats } from './unpack';
 
-export type PackKind = 'toolchain' | 'clangd';
+/** toolchain = C/C++ (clang); the rest are other languages and references (see langpacks.ts). */
+export type PackKind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go' | 'cppref';
 export interface PackManifest {
   id: string; kind: PackKind; name: string; version: string; bin: string;
-  source: string; asset: string; sha256: string; bytes: number; installedAt: string;
+  source: string; asset: string; sha256: string; bytes: number; installedAt: string; note?: string;
 }
-export interface Release { kind: PackKind; name: string; version: string; asset: string; url: string; size: number; sha256: string; format: 'zip' | 'tar.zst'; source: string; id: string }
+/** sha256 is hex; sha512 (npm's published integrity) is base64 and, when present, is what gets checked. */
+export interface Release { kind: PackKind; name: string; version: string; asset: string; url: string; size: number; sha256: string; sha512?: string; format: 'zip' | 'tar.zst' | 'tar.gz' | 'gz'; source: string; id: string; note?: string }
+/** Kind-specific steps: what the unpacked folder must contain, and anything to do before it is moved into place. */
+export interface InstallSteps { check?: (root: string) => boolean; prepare?: (root: string, onProgress: (p: Progress) => void, signal: AbortSignal) => Promise<string | void>; bin?: string; program?: string }
 export type Progress = { phase: 'download' | 'verify' | 'unpack' | 'done' | 'failed' | 'cancelled'; done: number; total: number; note?: string };
 
 export const MANIFEST = 'lithograph-pack.json';
@@ -103,10 +108,10 @@ export function freeBytes(dir: string): number {
 // ---------- install ----------
 const insideDir = (dir: string, p: string) => { const r = path.resolve(p), d = path.resolve(dir); return r.startsWith(d + path.sep); };
 
-async function download(url: string, to: string, total: number, onProgress: (p: Progress) => void, signal: AbortSignal): Promise<string> {
+async function download(url: string, to: string, total: number, onProgress: (p: Progress) => void, signal: AbortSignal, algo: 'sha256' | 'sha512' = 'sha256'): Promise<string> {
   const res = await fetch(url, { signal, headers: { 'User-Agent': 'Lithograph' } });
   if (!res.ok || !res.body) throw new Error(`download failed (${res.status})`);
-  const hash = crypto.createHash('sha256'), out = fs.createWriteStream(to);
+  const hash = crypto.createHash(algo), out = fs.createWriteStream(to);
   let done = 0, last = 0;
   try {
     for await (const chunk of Readable.fromWeb(res.body as any)) {
@@ -116,7 +121,14 @@ async function download(url: string, to: string, total: number, onProgress: (p: 
       if (done - last > 1 << 20 || done === total) { last = done; onProgress({ phase: 'download', done, total }); }
     }
   } finally { await new Promise<void>((r) => out.end(() => r())); }
-  return hash.digest('hex');
+  return hash.digest(algo === 'sha512' ? 'base64' : 'hex');
+}
+
+async function hashFile(file: string, onProgress: (p: Progress) => void): Promise<string> {
+  const h = crypto.createHash('sha256'), total = fs.statSync(file).size;
+  let done = 0;
+  for await (const c of fs.createReadStream(file)) { h.update(c as Buffer); done += (c as Buffer).length; onProgress({ phase: 'download', done, total, note: 'reading the file' }); }
+  return h.digest('hex');
 }
 
 function duSync(dir: string): number {
@@ -129,38 +141,46 @@ function duSync(dir: string): number {
 }
 
 /** Downloads, verifies and unpacks a release into dir/<id>. A failure or cancel leaves nothing behind. */
-export async function installRelease(rel: Release, dir: string, onProgress: (p: Progress) => void, signal: AbortSignal): Promise<PackManifest> {
+export async function installRelease(rel: Release, dir: string, onProgress: (p: Progress) => void, signal: AbortSignal, steps: InstallSteps = {}): Promise<PackManifest> {
   const final = path.join(dir, rel.id);
   if (!insideDir(dir, final)) throw new Error('bad pack name');
   if (fs.existsSync(path.join(final, MANIFEST))) throw new Error(`${rel.id} is already installed`);
   const need = rel.size + expectedBytes(rel);
   if (freeBytes(dir) < need) throw new Error(`not enough free space: about ${Math.ceil(need / 1e9)} GB is needed`);
-  const dl = path.join(dir, '.downloading'), tmp = path.join(dir, '.unpacking', rel.id), file = path.join(dl, rel.asset);
+  // a file:// release is an archive the person chose on their own disk: it is hashed and recorded, not checked, and never deleted
+  const local = rel.url.startsWith('file:');
+  const dl = path.join(dir, '.downloading'), tmp = path.join(dir, '.unpacking', rel.id), file = local ? fileURLToPath(rel.url) : path.join(dl, rel.asset);
   fs.mkdirSync(dl, { recursive: true });
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.mkdirSync(tmp, { recursive: true });
   try {
-    const sha = await download(rel.url, file, rel.size, onProgress, signal);
+    const sha = local ? await hashFile(file, onProgress) : await download(rel.url, file, rel.size, onProgress, signal, rel.sha512 ? 'sha512' : 'sha256');
+    const want = local ? sha : rel.sha512 ?? rel.sha256;
     onProgress({ phase: 'verify', done: 0, total: 1 });
-    if (sha !== rel.sha256) throw new Error(`checksum mismatch — the download was damaged or altered, so it was deleted (expected ${rel.sha256.slice(0, 12)}…, got ${sha.slice(0, 12)}…)`);
+    if (sha !== want) throw new Error(`checksum mismatch — the download was damaged or altered, so it was deleted (expected ${want.slice(0, 12)}…, got ${sha.slice(0, 12)}…)`);
     const tick = (files: number) => onProgress({ phase: 'unpack', done: files, total: 0 });
-    const stats: UnpackStats = rel.format === 'zip' ? await extractZip(file, tmp, tick, signal) : await extractTarZst(file, tmp, tick, signal);
+    const stats: UnpackStats = rel.format === 'zip' ? await extractZip(file, tmp, tick, signal)
+      : rel.format === 'tar.gz' ? await extractTarGz(file, tmp, tick, signal)
+      : rel.format === 'gz' ? await extractGzProgram(file, path.join(tmp, rel.id), (steps.program ?? rel.name) + (process.platform === 'win32' ? '.exe' : ''), signal)
+      : await extractTarZst(file, tmp, tick, signal);
     // archives hold one top folder; that folder becomes the pack
     const tops = fs.readdirSync(tmp).filter((n) => !n.startsWith('.'));
     const root = tops.length === 1 && fs.statSync(path.join(tmp, tops[0])).isDirectory() ? path.join(tmp, tops[0]) : tmp;
     const exe = (n: string) => path.join(root, 'bin', process.platform === 'win32' ? `${n}.exe` : n);
-    if (!fs.existsSync(exe(rel.kind === 'clangd' ? 'clangd' : 'clang'))) throw new Error('the archive does not contain the expected programs');
+    const ok = steps.check ? steps.check(root) : fs.existsSync(exe(rel.kind === 'clangd' ? 'clangd' : 'clang'));
+    if (!ok) throw new Error('the archive does not contain the expected programs');
+    const note = (await steps.prepare?.(root, onProgress, signal)) || undefined;
     const manifest: PackManifest = {
-      id: rel.id, kind: rel.kind, name: rel.name, version: rel.version, bin: 'bin', source: rel.source, asset: rel.asset,
-      sha256: rel.sha256, bytes: duSync(root), installedAt: new Date().toISOString(),
+      id: rel.id, kind: rel.kind, name: rel.name, version: rel.version, bin: steps.bin ?? 'bin', source: rel.source, asset: rel.asset,
+      sha256: want, bytes: duSync(root), installedAt: new Date().toISOString(), note,
     };
     fs.writeFileSync(path.join(root, MANIFEST), JSON.stringify(manifest, null, 1));
     fs.rmSync(final, { recursive: true, force: true });
     fs.renameSync(root, final);
-    onProgress({ phase: 'done', done: 1, total: 1, note: stats.refused.length ? `${stats.refused.length} unsafe entries were skipped` : undefined });
+    onProgress({ phase: 'done', done: 1, total: 1, note: [stats.refused.length ? `${stats.refused.length} unsafe entries were skipped` : '', note ?? ''].filter(Boolean).join(' · ') || undefined });
     return manifest;
   } finally {
-    fs.rmSync(file, { force: true });
+    if (!local) fs.rmSync(file, { force: true });
     fs.rmSync(path.join(dir, '.unpacking'), { recursive: true, force: true });
   }
 }
@@ -168,7 +188,16 @@ export async function installRelease(rel: Release, dir: string, onProgress: (p: 
 export function removePack(dir: string, id: string) {
   const p = path.join(dir, id);
   if (!insideDir(dir, p) || !fs.existsSync(path.join(p, MANIFEST))) throw new Error(`${id} is not an installed pack`);
+  makeWritable(p);   // Go's module cache is read-only by default
   fs.rmSync(p, { recursive: true, force: true });
+}
+
+function makeWritable(dir: string) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isSymbolicLink()) continue;
+    try { if (e.isDirectory()) { fs.chmodSync(p, 0o755); makeWritable(p); } } catch { /* rmSync reports what it can't remove */ }
+  }
 }
 
 /** bin folders of a pack, if it has the program. */

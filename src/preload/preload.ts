@@ -1,5 +1,5 @@
 // The only bridge between the sandboxed interface and the main process.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 const invoke = (ch: string, ...a: unknown[]) => ipcRenderer.invoke(ch, ...a);
 const on = (ch: string, cb: (...a: any[]) => void) => {
@@ -15,6 +15,7 @@ const api = {
   packs: {
     available: (kind: string) => invoke('packs:available', kind),
     install: (kind: string, version: string, replaces?: string) => invoke('packs:install', kind, version, replaces),
+    installFile: (kind: string) => invoke('packs:installFile', kind),
     cancel: () => invoke('packs:cancel'),
     remove: (id: string) => invoke('packs:remove', id),
     show: () => invoke('packs:show'),
@@ -44,6 +45,23 @@ const api = {
     load: () => invoke('buffers:load'),
   },
   session: { get: () => invoke('session:get'), set: (s: unknown) => invoke('session:set', s) },
+  lang: {
+    start: (lang: string, root: string) => invoke('lang:start', lang, root),
+    request: (lang: string, method: string, params: unknown) => invoke('lang:request', lang, method, params),
+    notify: (lang: string, method: string, params: unknown) => invoke('lang:notify', lang, method, params),
+    onNotify: (cb: (lang: string, method: string, params: any) => void) => on('lang:notify', cb),
+  },
+  ref: { index: () => invoke('ref:index') as Promise<Record<string, string> | null> },
+  templates: { list: () => invoke('templates:list'), create: (parent: string, name: string, id: string) => invoke('templates:create', parent, name, id) },
+  format: { preview: (style: string, sample: string) => invoke('format:preview', style, sample) },
+  checks: { run: (root: string, kind: string, args: string[]) => invoke('checks:run', root, kind, args), flags: (kind: string) => invoke('checks:flags', kind) },
+  power: { battery: () => invoke('power:battery') as Promise<boolean>, onChange: (cb: (battery: boolean) => void) => on('power:battery', cb) },
+  report: { log: (line: string) => invoke('report:log', line), build: () => invoke('report:build') as Promise<string> },
+  // the system's spelling checker, used for words in comments and strings
+  spell: {
+    misspelt: (words: string[]) => words.filter((w) => webFrame.isWordMisspelled(w)),
+    suggest: (word: string) => webFrame.getWordSuggestions(word),
+  },
   lsp: {
     start: (root: string) => invoke('lsp:start', root),
     request: (method: string, params: unknown) => invoke('lsp:request', method, params),
@@ -67,6 +85,7 @@ const api = {
     maximize: () => invoke('win:maximize'),
     close: () => invoke('win:close'),
     onMaximized: (cb: (m: boolean) => void) => on('win:maximized', cb),
+    zoom: (f: number) => webFrame.setZoomFactor(Math.min(2, Math.max(0.75, f || 1))),
   },
   menu: { onCommand: (cb: (id: string) => void) => on('menu:command', cb) },
   smoke: {

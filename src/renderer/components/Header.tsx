@@ -3,6 +3,13 @@ import { api, basename } from '../lib/api';
 import { files, page, setPage, crumb, cursorPos, root, closeFile, setFiles } from '../lib/store';
 import { lspState, indexing } from '../lib/lsp';
 import { memoryAlert } from './Memory';
+import { serverLang } from '../lib/langs';
+import { saver } from '../lib/power';
+import { langStatus } from '../lib/langlsp';
+
+// the long "install one from the compiler window" message stays in the tooltip
+const shortStatus = (s?: string) => (!s ? '' : s === 'starting' ? t('starting…') : s.endsWith(' ready') ? s : t('no language engine'));
+import { t } from '../lib/i18n';
 
 export const GEAR = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -15,10 +22,10 @@ export const GEAR = (
 export default function Header() {
   return (
     <div class="hdr">
-      <div class="pivot nodrag">
+      <div class="pivot nodrag" data-tour="tabs">
         <Show when={root()}>
-          <button classList={{ on: page() === 'flow' }} onClick={() => setPage('flow')}>flow</button>
-          <button classList={{ on: page() === 'memory' }} onClick={() => setPage('memory')}>memory</button>
+          <button classList={{ on: page() === 'flow' }} onClick={() => setPage('flow')}>{t('flow')}</button>
+          <button classList={{ on: page() === 'memory' }} onClick={() => setPage('memory')}>{t('memory')}</button>
         </Show>
         <For each={files.list}>{(f) => (
           <>
@@ -26,21 +33,22 @@ export default function Header() {
               <button classList={{ on: page() === 'editor' && files.active === f.path, dirty: f.dirty }} title={f.path}
                 onClick={() => { setPage('editor'); setFiles('active', f.path); }}
                 onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{basename(f.path)}</button>
-              <button class="tabx" title="Close (⌘/Ctrl W)" onClick={() => closeFile(f.path)}>×</button>
+              <button class="tabx" title={t('Close (⌘/Ctrl W)')} aria-label={`${t('Close')} ${basename(f.path)}`} onClick={() => closeFile(f.path)}>×</button>
             </span>
             <Show when={page() === 'editor' && files.active === f.path && crumb()}><span class="crumb">{crumb()}</span></Show>
           </>
         )}</For>
       </div>
-      <div class="status">
+      <div class="status" role="status" aria-live="polite">
         <Show when={memoryAlert()}><span class="warn">{memoryAlert()}</span></Show>
+        <Show when={saver()}><span title={t('on battery: animations off, background work spaced out (settings → interface → power)')}>{t('battery saver')}</span></Show>
         <Show when={page() === 'editor' && files.active}><span>{cursorPos().line}:{cursorPos().col}</span></Show>
-        <span>{indexing() ?? (lspState() === 'ready' ? 'clangd ready' : lspState() === 'starting' ? 'clangd starting…' : lspState() === 'failed' ? 'clangd unavailable' : '')}</span>
+        <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>
       </div>
       <div class="wctl">
-        <button title="Minimise" onClick={() => api.win.minimize()}><svg viewBox="0 0 10 10"><path d="M0 5.5h10" /></svg></button>
-        <button title="Maximise" onClick={() => api.win.maximize()}><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" /></svg></button>
-        <button class="x" title="Close" onClick={() => api.win.close()}><svg viewBox="0 0 10 10"><path d="M.5 .5l9 9M9.5 .5l-9 9" /></svg></button>
+        <button title={t('Minimise')} aria-label={t('Minimise')} onClick={() => api.win.minimize()}><svg viewBox="0 0 10 10"><path d="M0 5.5h10" /></svg></button>
+        <button title={t('Maximise')} aria-label={t('Maximise')} onClick={() => api.win.maximize()}><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" /></svg></button>
+        <button class="x" title={t('Close')} aria-label={t('Close')} onClick={() => api.win.close()}><svg viewBox="0 0 10 10"><path d="M.5 .5l9 9M9.5 .5l-9 9" /></svg></button>
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ import { setDiagnostics, Diagnostic as CmDiagnostic, linter } from '@codemirror/
 import { api, fileToUri, uriToFile, CallItem, OutgoingCall, DocSymbol, Diagnostic, Pos, FN_KINDS } from './api';
 import { posToOffset, offsetToPos } from './cm';
 import { parseCpp, offsetOf, lineOf } from '../../shared/flowcore';
+import { serverLang } from './langs';
+import * as other from './langlsp';
 
 export const [lspState, setLspState] = createSignal<'off' | 'starting' | 'ready' | 'failed'>('off');
 export const [lspMessage, setLspMessage] = createSignal('');
@@ -20,6 +22,7 @@ let root = '';
 
 export async function startLsp(folder: string) {
   root = folder;
+  other.resetLanguages(folder);
   versions.clear(); diags.clear();
   setLspState('starting');
   const r = (await api.lsp.start(folder)) as { ok: boolean; message?: string; clangd?: string };
@@ -46,6 +49,7 @@ api.lsp.onNotify((method, params) => {
 const isCpp = (f: string) => /\.(c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|ipp|inl)$/i.test(f);
 
 export function openDoc(file: string, text: string): void {
+  if (serverLang(file)) return other.openDoc(file, text);
   if (!isCpp(file) || lspState() !== 'ready') return;
   if (versions.has(file)) return changeDoc(file, text);
   versions.set(file, 1);
@@ -55,6 +59,7 @@ const changeTimers = new Map<string, number>();
 /** Text may be passed lazily, so a burst of keystrokes costs one copy of the document, when it is actually sent. */
 export function changeDoc(file: string, text: string | (() => string)): void {
   const get = typeof text === 'function' ? text : () => text;
+  if (serverLang(file)) return other.changeDoc(file, get);
   if (!versions.has(file)) return openDoc(file, get());
   clearTimeout(changeTimers.get(file));
   changeTimers.set(file, window.setTimeout(() => {
@@ -71,8 +76,9 @@ export function flushDoc(file: string, text: string) {
   const v = versions.get(file)! + 1; versions.set(file, v);
   api.lsp.notify('textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text }] });
 }
-export function savedDoc(file: string) { if (versions.has(file)) api.lsp.notify('textDocument/didSave', { textDocument: { uri: fileToUri(file) } }); }
+export function savedDoc(file: string) { if (serverLang(file)) return other.savedDoc(file); if (versions.has(file)) api.lsp.notify('textDocument/didSave', { textDocument: { uri: fileToUri(file) } }); }
 export function attachView(file: string, view: EditorView | null) {
+  if (serverLang(file)) return other.attachView(file, view);
   if (view) { views.set(file, view); pushDiagnostics(view, file); } else views.delete(file);
 }
 
@@ -120,17 +126,18 @@ const req = <T>(method: string, params: unknown) => (lspState() === 'ready' ? (a
 
 // ---------- completion ----------
 const KIND: Record<number, string> = { 2: 'method', 3: 'function', 4: 'function', 5: 'property', 6: 'variable', 7: 'class', 8: 'interface', 9: 'namespace', 10: 'property', 13: 'enum', 14: 'keyword', 21: 'constant', 22: 'class', 25: 'type' };
-export function completionFor(file: () => string) {
+type Send = (method: string, params: unknown) => Promise<any>;
+export function completionFor(file: () => string, send: Send = req, flush: (file: string, text: string) => void = flushDoc) {
   return autocompletion({
     activateOnTyping: true,
     override: [async (ctx: CompletionContext): Promise<CompletionResult | null> => {
       const word = ctx.matchBefore(/[A-Za-z_][\w]*/);
       const trigger = ctx.matchBefore(/(\.|->|::)$/);
       if (!word && !trigger && !ctx.explicit) return null;
-      flushDoc(file(), ctx.state.doc.toString());
+      flush(file(), ctx.state.doc.toString());
       const pos = offsetToPos(ctx.state.doc, ctx.pos);
       let res: any;
-      try { res = await req('textDocument/completion', { textDocument: { uri: fileToUri(file()) }, position: pos }); } catch { return null; }
+      try { res = await send('textDocument/completion', { textDocument: { uri: fileToUri(file()) }, position: pos }); } catch { return null; }
       const items: any[] = Array.isArray(res) ? res : res?.items ?? [];
       if (!items.length) return null;
       const from = word ? word.from : ctx.pos;
@@ -147,10 +154,10 @@ export function completionFor(file: () => string) {
 }
 
 // ---------- hover ----------
-export function hoverFor(file: () => string) {
+export function hoverFor(file: () => string, send: Send = req) {
   return hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
     let res: any;
-    try { res = await req('textDocument/hover', { textDocument: { uri: fileToUri(file()) }, position: offsetToPos(view.state.doc, pos) }); } catch { return null; }
+    try { res = await send('textDocument/hover', { textDocument: { uri: fileToUri(file()) }, position: offsetToPos(view.state.doc, pos) }); } catch { return null; }
     const v: string = typeof res?.contents === 'string' ? res.contents : res?.contents?.value ?? '';
     if (!v.trim()) return null;
     return {
@@ -158,7 +165,7 @@ export function hoverFor(file: () => string) {
       create() {
         const dom = document.createElement('div');
         dom.className = 'hov';
-        for (const part of v.split(/```(?:cpp|c\+\+)?\n?/)) {
+        for (const part of v.split(/```(?:cpp|c\+\+|rust|python|go)?\n?/)) {
           if (!part.trim()) continue;
           const isCode = /^\s*(\/\/|[\w:<>*&\s,()]+\s[\w:~]+\(|[\w:]+\s*$|(class|struct|enum|using|template|namespace)\b)/.test(part) && part.length < 400;
           const el = document.createElement(isCode ? 'pre' : 'div');
@@ -175,6 +182,7 @@ export function hoverFor(file: () => string) {
 // ---------- navigation ----------
 export interface Loc { file: string; line: number; character: number }
 export async function definitionAt(file: string, pos: Pos): Promise<Loc | null> {
+  if (serverLang(file)) return other.definitionAt(file, pos);
   await ensureOpen(file);
   let res: any;
   try { res = await req('textDocument/definition', { textDocument: { uri: fileToUri(file) }, position: pos }); } catch { return null; }

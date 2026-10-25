@@ -1,6 +1,7 @@
 import { For, Show, createSignal, onMount, onCleanup } from 'solid-js';
 import { COMMANDS } from '../lib/actions';
 import { afterPaint } from '../lib/motion';
+import { t } from '../lib/i18n';
 
 export const [menuOpen, setMenuOpen] = createSignal(false);
 
@@ -8,6 +9,7 @@ const mod = navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+';
 const shift = navigator.platform.startsWith('Mac') ? '⇧' : 'Shift+';
 const ITEMS: ([string, string, string] | null)[] = [
   ['new file', 'newFile', `${mod}N`],
+  ['new project…', 'newProject', ''],
   ['open file', 'openFile', `${shift}${mod}O`],
   ['open folder', 'openFolder', `${mod}O`],
   null,
@@ -19,6 +21,15 @@ const ITEMS: ([string, string, string] | null)[] = [
   ['quick open', 'quickOpen', `${mod}P`],
   ['go to symbol', 'goToSymbol', `${mod}T`],
   ['command palette', 'commandPalette', `${shift}${mod}P`],
+  null,
+  ['format document', 'formatDocument', `${shift}${navigator.platform.startsWith('Mac') ? '⌥' : 'Alt+'}F`],
+  ['to-do list', 'todoList', ''],
+  ['code style', 'codeStyle', ''],
+  ['C++ reference', 'reference', `${shift}F1`],
+  null,
+  ['run with checks', 'runChecks', ''],
+  ['profile', 'profile', ''],
+  ['problem report', 'report', ''],
   null,
   ['settings', 'settings', `${mod},`],
 ];
@@ -45,7 +56,7 @@ function MenuPanel(props: { close: () => void }) {
   });
   return (
     <div class="appmenu" ref={el} onMouseDown={(e) => e.stopPropagation()}>
-      <For each={ITEMS}>{(it) => it ? <button onClick={() => { props.close(); COMMANDS[it[1]]?.(); }}>{it[0]}<span>{it[2]}</span></button> : <hr />}</For>
+      <For each={ITEMS}>{(it) => it ? <button onClick={() => { props.close(); COMMANDS[it[1]]?.(); }}>{t(it[0])}<span>{it[2]}</span></button> : <hr />}</For>
     </div>
   );
 }

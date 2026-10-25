@@ -7,13 +7,14 @@ import { getMainView, settings, cursorPos, root, files } from '../lib/store';
 import { api } from '../lib/api';
 import { posToOffset } from '../lib/cm';
 import { lspState, lspMessage, indexing } from '../lib/lsp';
+import { t } from '../lib/i18n';
 
 const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)', IN = 'cubic-bezier(0.55, 0, 1, 0.45)';
 const stored = (k: string, d: number) => { try { const v = Number(localStorage.getItem(k)); return v > 0 ? v : d; } catch { return d; } };
 const store = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* not kept */ } };
 const MIN_COL = 170;
 const IDX_W = 34;   // the call index: a thin column of colour squares
-const KIND_LABEL: Record<string, string> = { macro: 'macro', assert: 'compile-time check', lambda: 'lambda', indirect: 'called through a pointer' };
+const KIND_LABEL: Record<string, string> = { macro: 'macro', assert: 'compile-time check', lambda: 'lambda', indirect: t('called through a pointer') };
 /** Where the call-like things start in a level, or -1 when it has only functions. */
 const firstOther = (lv: Level | undefined) => lv?.cards.findIndex((c) => c.kind !== 'call') ?? -1;
 
@@ -240,11 +241,11 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const levelCount = () => levels().length;
 
   return (
-    <div class="pane prev" style={{ flex: 1 }} ref={area}>
+    <div class="pane prev" style={{ flex: 1 }} ref={area} data-help="preview" data-tour="preview">
       <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 2, padding: 0 }}>
         <For each={[0, 1]}>{(c) => (
           <>
-            <span title="calls in this function" style={{ width: `${IDX()}px`, 'text-align': 'center', 'font-size': '12px', color: '#4f564f', flex: 'none' }}>{levels()[win() + c]?.cards.length || ''}</span>
+            <span title={t('calls in this function')} style={{ width: `${IDX()}px`, 'text-align': 'center', 'font-size': '12px', color: '#4f564f', flex: 'none' }}>{levels()[win() + c]?.cards.length || ''}</span>
             <span style={{ width: `${c === 0 ? w1() : w2()}px`, flex: 'none', 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>
               {title(levels()[win() + c], win() + c) || (c === 0 ? 'preview' : '')}
             </span>
@@ -257,22 +258,22 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
           <div class="pcol-in">
             <For each={lv().cards}>{(card, k) => (
               <>
-                <Show when={k() === firstOther(lv())}><div class="pdiv"><span>not functions · macros, static_assert, lambdas, calls through pointers</span></div></Show>
+                <Show when={k() === firstOther(lv())}><div class="pdiv"><span>{t('not functions · macros, static_assert, lambdas, calls through pointers')}</span></div></Show>
                 <Card card={card} id={`${li}:${k()}`} color={PAL[k() % PAL.length]} focus={lv().focus === k()} lit={isLit(li, k())} onFocus={() => focusCard(li, k())} onScroll={redraw} />
               </>
             )}</For>
             <Show when={lv().more.length}><div class="more">+{lv().more.length} more · {lv().more.slice(0, 4).join(', ')}{lv().more.length > 4 ? '…' : ''}</div></Show>
-            <Show when={lv().hidden}><div class="pnote">{lv().hidden} standard-library call{lv().hidden > 1 ? 's' : ''} hidden · <button class="lnk" onClick={() => api.settings.set('preview.include_std', true)}>show</button></div></Show>
-            <Show when={!lv().cards.length && !lv().hidden}><div class="pnote">no calls</div></Show>
+            <Show when={lv().hidden}><div class="pnote">{lv().hidden} standard-library call{lv().hidden > 1 ? 's' : ''} hidden · <button class="lnk" onClick={() => api.settings.set('preview.include_std', true)}>{t('show')}</button></div></Show>
+            <Show when={!lv().cards.length && !lv().hidden}><div class="pnote">{t('no calls')}</div></Show>
           </div>
         </div>
       )}</Index>
       <Show when={levelCount() === 1 || (levelCount() > 0 && !levels()[win() + 1])}>
-        <div class="empty" style={{ position: 'absolute', left: `${idx2() + IDX()}px`, right: 0, top: '36px', bottom: '40px' }}>click into a card<br />to go one level deeper</div>
+        <div class="empty" style={{ position: 'absolute', left: `${idx2() + IDX()}px`, right: 0, top: '36px', bottom: '40px' }}>{t('click into a card')}<br />{t('to go one level deeper')}</div>
       </Show>
       <Show when={!levelCount()}>
         <div class="empty" style={{ position: 'absolute', inset: '36px 0 40px 0' }}>
-          {lspState() === 'failed' ? lspMessage() : lspState() !== 'ready' ? 'open a folder to start' : busy() ? '…' : mainFn() ? 'no calls in this function' : 'cursor is outside any function\n— nothing to preview'}
+          {lspState() === 'failed' ? lspMessage() : lspState() !== 'ready' ? t('open a folder to start') : busy() ? '…' : mainFn() ? t('no calls in this function') : 'cursor is outside any function\n— nothing to preview'}
           <Show when={indexing()}><div class="sub" style={{ 'margin-top': '10px' }}>{indexing()}</div></Show>
         </div>
       </Show>
@@ -282,7 +283,10 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
             <>
               <Show when={k() === firstOther(levels()[win() + c])}><div class="ixdiv" /></Show>
               <div class="ix" classList={{ lit: lit()[c] === k(), other: card.kind !== 'call' }} style={{ '--c': PAL[k() % PAL.length] }} ref={(el) => (ixs[c][k()] = el)}
+                role="button" tabindex="0" aria-label={card.name}
                 onClick={() => { pin(c, k()); reveal(c, k()); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pin(c, k()); reveal(c, k()); } }}
+                onFocus={(e) => setTip({ c, k: k(), y: e.currentTarget.getBoundingClientRect().top - area.getBoundingClientRect().top + 11 })} onBlur={() => setTip(null)}
                 onMouseEnter={(e) => setTip({ c, k: k(), y: e.currentTarget.getBoundingClientRect().top - area.getBoundingClientRect().top + 11 })} onMouseLeave={() => setTip(null)}>
                 <i class="sq" />
               </div>
@@ -293,19 +297,19 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       <Show when={tip() && levels()[win() + tip()!.c]?.cards[tip()!.k]}>{(card) => (
         <div class="ixtip" classList={{ other: card().kind !== 'call' }} style={{ left: `${(tip()!.c === 0 ? 0 : idx2()) + IDX() + 6}px`, top: `${tip()!.y}px`, '--c': PAL[tip()!.k % PAL.length] }}>
           <i class="sq" /><span class="nm">{card().name}</span>
-          <span class="loc">{KIND_LABEL[card().kind] ? `${KIND_LABEL[card().kind]} · ` : ''}{card().std ? (card().kind === 'call' ? 'standard library' : 'library') : cardLoc(card())}</span>
+          <span class="loc">{KIND_LABEL[card().kind] ? `${KIND_LABEL[card().kind]} · ` : ''}{card().std ? (card().kind === 'call' ? t('standard library') : 'library') : cardLoc(card())}</span>
         </div>
       )}</Show>
       <Show when={levelCount()}>
         <Handle left={IDX() + w1()} onDrag={(dx) => setFrac(Math.max(0.15, Math.min(0.85, (w1() + dx) / cardsW())))} onEnd={() => store('litho.preview.split', frac())} />
       </Show>
       <div class="shiftbar">
-        <button disabled={win() === 0} onClick={() => doShift(0)}>‹ source</button>
+        <button disabled={win() === 0} onClick={() => doShift(0)}>{t('‹ source')}</button>
         <span style={{ 'font-size': '12.5px', color: '#3a3f3a' }}>{levelCount() ? `levels ${win() + 1}–${win() + 2}` : ''}</span>
         <span style={{ flex: 1 }} />
-        <button title="macros, static_assert, lambdas and calls through pointers, listed after the functions" onClick={() => api.settings.set('preview.include_other', settings()['preview.include_other'] === false)}>{settings()['preview.include_other'] === false ? 'show non-functions' : 'hide non-functions'}</button>
-        <button onClick={() => api.settings.set('preview.include_std', !settings()['preview.include_std'])}>{settings()['preview.include_std'] ? 'hide std calls' : 'show std calls'}</button>
-        <button disabled={!canShift()} onClick={() => doShift(1)}>shift preview ›</button>
+        <button title={t('macros, static_assert, lambdas and calls through pointers, listed after the functions')} onClick={() => api.settings.set('preview.include_other', settings()['preview.include_other'] === false)}>{settings()['preview.include_other'] === false ? t('show non-functions') : t('hide non-functions')}</button>
+        <button onClick={() => api.settings.set('preview.include_std', !settings()['preview.include_std'])}>{settings()['preview.include_std'] ? t('hide std calls') : t('show std calls')}</button>
+        <button disabled={!canShift()} onClick={() => doShift(1)}>{t('shift preview ›')}</button>
       </div>
     </div>
   );

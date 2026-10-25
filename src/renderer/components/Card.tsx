@@ -6,6 +6,7 @@ import { definitionAt } from '../lib/lsp';
 import { openFile } from '../lib/store';
 import type { Card as CardData } from '../lib/preview';
 import { cardLoc } from '../lib/preview';
+import { t } from '../lib/i18n';
 
 export const cardViews = new Map<string, EditorView>();
 /** The last cursor move inside any card: which card, and where. Drives the highlight in the next column. */
@@ -62,14 +63,14 @@ export default function Card(props: { card: CardData; id: string; color: string;
         <span class="sw" style={{ background: props.color }} />
         <Show when={props.num}><span class="num">{props.num}</span></Show>
         <span class="nm">{props.card.name}</span>
-        <Show when={props.card.kind !== 'call'} fallback={<Show when={props.card.std}><span class="chip">std</span></Show>}><span class="chip kind">{KIND_CHIP[props.card.kind]}</span></Show>
+        <Show when={props.card.kind !== 'call'} fallback={<Show when={props.card.std}><span class="chip">{t('std')}</span></Show>}><span class="chip kind">{t(KIND_CHIP[props.card.kind])}</span></Show>
         <span class="loc">{props.card.std ? props.card.file.split('/').slice(-2).join('/') : cardLoc(props.card)}</span>
       </div>
       <div ref={host} />
       <Show when={props.card.std || props.card.kind !== 'call'}>
         <div class="std-act">
-          <button onClick={openSrc}>open ›</button>
-          <span style={{ color: '#3f453f' }}>{props.card.kind !== 'call' ? KIND_NOTE[props.card.kind] + (props.card.std ? ' · library' : '')
+          <button onClick={openSrc}>{t('open ›')}</button>
+          <span style={{ color: '#3f453f' }}>{props.card.kind !== 'call' ? t(KIND_NOTE[props.card.kind]) + (props.card.std ? t(' · library') : '')
             : props.card.declOnly ? 'declaration only — the body is compiled into the library' : 'standard library · read-only'}</span>
         </div>
       </Show>

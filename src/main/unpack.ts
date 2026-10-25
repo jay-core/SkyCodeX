@@ -221,3 +221,21 @@ export function extractTarZst(file: string, dest: string, onProgress?: UnpackPro
   if (!z) throw new Error('this build cannot read .zst archives');
   return extractTar(fs.createReadStream(file).pipe(z()), dest, onProgress, signal);
 }
+
+/** .tar.gz / .tgz through Node's gzip decoder. */
+export function extractTarGz(file: string, dest: string, onProgress?: UnpackProgress, signal?: AbortSignal) {
+  return extractTar(fs.createReadStream(file).pipe(zlib.createGunzip()), dest, onProgress, signal);
+}
+
+/** A single gzipped program (rust-analyzer ships this way): written to dest/bin/<name>, executable. */
+export async function extractGzProgram(file: string, dest: string, name: string, signal?: AbortSignal): Promise<UnpackStats> {
+  const out = path.join(dest, 'bin', name);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const src = fs.createReadStream(file), w = fs.createWriteStream(out, { mode: 0o755 });
+    const stop = () => { src.destroy(new Error('cancelled')); };
+    signal?.addEventListener('abort', stop, { once: true });
+    src.pipe(zlib.createGunzip()).on('error', reject).pipe(w).on('error', reject).on('finish', () => { signal?.removeEventListener('abort', stop); resolve(); });
+  });
+  return { files: 1, dirs: 1, links: 0, refused: [] };
+}

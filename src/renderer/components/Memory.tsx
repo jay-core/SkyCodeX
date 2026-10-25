@@ -2,6 +2,7 @@ import { For, Show, createSignal, createResource, createMemo } from 'solid-js';
 import { api, relPath } from '../lib/api';
 import { root, settings, openFile, flash } from '../lib/store';
 import { locateSymbol, locAt, SymbolLoc, setKnownLocations, warmIndex, clearSymbolLocations } from '../lib/memloc';
+import { t } from '../lib/i18n';
 
 interface Report {
   binary: string; format: string; arch: string; note?: string; storage: number; ram: number;
@@ -64,7 +65,7 @@ const at = (e: MouseEvent) => {
 /** Hovering a symbol looks up its definition; clicking opens it. */
 function hoverSymbol(e: MouseEvent, name: string, kind: string, size: number) {
   const p = at(e);
-  setTip({ ...p, title: name, what: `${SECTION[kind] ?? kind} · ${kb(size)}`, loc: 'looking' });
+  setTip({ ...p, title: name, what: `${t(SECTION[kind] ?? kind)} · ${kb(size)}`, loc: 'looking' });
   locateSymbol(name, kind).then((loc) => setTip((t) => (t && t.title === name ? { ...t, loc: loc ?? 'none' } : t)));
 }
 async function openSymbol(name: string, kind: string) {
@@ -79,12 +80,12 @@ const absPath = (rel: string) => (/^([\\/]|[A-Za-z]:)/.test(rel) ? rel : `${root
 
 function MemTip() {
   return (
-    <Show when={tip()}>{(t) => (
-      <div class="memtip" classList={{ up: !!t().up }} style={{ left: `${t().x}px`, top: `${t().y}px` }}>
-        <div class="nm">{t().title}</div>
-        <div class="what">{t().what}</div>
-        <Show when={typeof t().loc === 'object' && t().loc} fallback={<div class="loc">{t().loc === 'looking' ? 'finding it in the source…' : 'couldn\'t trace this one to your source — the compiler made it, or it comes from a library'}</div>}>
-          {(() => { const l = t().loc as SymbolLoc; return (
+    <Show when={tip()}>{(tp) => (
+      <div class="memtip" classList={{ up: !!tp().up }} style={{ left: `${tp().x}px`, top: `${tp().y}px` }}>
+        <div class="nm">{tp().title}</div>
+        <div class="what">{tp().what}</div>
+        <Show when={typeof tp().loc === 'object' && tp().loc} fallback={<div class="loc">{tp().loc === 'looking' ? t('finding it in the source…') : 'couldn\'t trace this one to your source — the compiler made it, or it comes from a library'}</div>}>
+          {(() => { const l = tp().loc as SymbolLoc; return (
             <>
               <Show when={l.snippet}><pre class="src"><span class="ln">{l.line + 1}</span>{l.snippet}</pre></Show>
               <div class="loc">{l.inProject ? relPath(root(), l.file) : l.file.split('/').slice(-2).join('/')}:{l.line + 1}{l.inProject ? '' : ' · library, read-only'} · click to open</div>
@@ -128,31 +129,31 @@ export default function Memory() {
   return (
     <div class="page" style={{ top: 0, position: 'relative', height: '100%' }}>
       <div class="ph" style={{ padding: '0 30px', gap: '18px' }}>
-        <span>program</span>
+        <span>{t('program')}</span>
         <select style={{ background: 'transparent', border: 0, color: 'var(--bright)', 'max-width': '520px', font: '300 14px var(--ui)' }} value={chosen()} onChange={(e) => setBin(e.currentTarget.value)}>
           <Show when={bin() && !(bins() ?? []).includes(bin())}><option value={bin()}>{relPath(root(), bin())}</option></Show>
           <For each={bins() ?? []}>{(b) => <option value={b}>{relPath(root(), b)}</option>}</For>
         </select>
-        <button class="chip on" onClick={run} disabled={!chosen()}>analyse</button>
-        <button class="chip" onClick={browse}>browse…</button>
-        <button class="chip" onClick={() => setScan(scan() + 1)}>rescan</button>
+        <button class="chip on" onClick={run} disabled={!chosen()}>{t('analyse')}</button>
+        <button class="chip" onClick={browse}>{t('browse…')}</button>
+        <button class="chip" onClick={() => setScan(scan() + 1)}>{t('rescan')}</button>
         <span class="grow" />
         <Show when={report()}><span class="sub">{report()!.format} · {report()!.arch}{report()!.note ? ` · ${report()!.note}` : ''}</span></Show>
       </div>
       <div class="mem">
-        <Show when={!bins()?.length && !bin() && root()}><div class="empty">No built program found in this folder yet.<br />Build in the terminal and press rescan, or choose any file with browse….</div></Show>
+        <Show when={!bins()?.length && !bin() && root()}><div class="empty">{t('No built program found in this folder yet.')}<br />{t('Build in the terminal and press rescan, or choose any file with browse….')}</div></Show>
         <Show when={err()}><div class="alert">{err()}</div></Show>
-        <Show when={(bins()?.length || bin()) && !report()}><div class="empty">Choose a program and press <b style={{ color: 'var(--bright)', 'font-weight': 400 }}>analyse</b>.<br />Budgets are set in settings → memory.</div></Show>
+        <Show when={(bins()?.length || bin()) && !report()}><div class="empty">{t('Choose a program and press')} <b style={{ color: 'var(--bright)', 'font-weight': 400 }}>{t('analyse')}</b>.<br />{t('Budgets are set in settings → memory.')}</div></Show>
         <Show when={report()}>{(r) => (
           <>
             <Show when={overMsg()}><div class="alert">{overMsg()}</div></Show>
             <Region name="ram" used={r().ram} budgetKb={settings()['memory.ram_budget_kb']} parts={[['data', r().byKind.data, '#5a6f73'], ['zero-initialised', r().byKind.bss, '#4e6a5a']]} />
-            <Region name="storage" used={r().storage} budgetKb={settings()['memory.storage_budget_kb']} parts={[['code', r().byKind.code, '#4e6a5a'], ['constants', r().byKind.rodata, '#5a6f73'], ['initial data', r().byKind.data, '#5c5068']]} />
+            <Region name="storage" used={r().storage} budgetKb={settings()['memory.storage_budget_kb']} parts={[['code', r().byKind.code, '#4e6a5a'], ['constants', r().byKind.rodata, '#5a6f73'], [t('initial data'), r().byKind.data, '#5c5068']]} />
             <div style={{ display: 'grid', 'grid-template-columns': 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '40px', 'max-width': '1300px' }}>
               <div>
                 <div style={{ display: 'flex', gap: '18px', font: '300 15px var(--ui)', 'margin-bottom': '8px' }}>
-                  <button class="chip" classList={{ on: which() === 'ram' }} style={{ 'font-size': '15px' }} onClick={() => setWhich('ram')}>ram</button>
-                  <button class="chip" classList={{ on: which() === 'storage' }} style={{ 'font-size': '15px' }} onClick={() => setWhich('storage')}>storage</button>
+                  <button class="chip" classList={{ on: which() === 'ram' }} style={{ 'font-size': '15px' }} onClick={() => setWhich('ram')}>{t('ram')}</button>
+                  <button class="chip" classList={{ on: which() === 'storage' }} style={{ 'font-size': '15px' }} onClick={() => setWhich('storage')}>{t('storage')}</button>
                   <span style={{ 'margin-left': 'auto' }} class="sub">largest first{r().symbolSizesExact ? '' : ' · sizes derived from symbol addresses'}</span>
                 </div>
                 <For each={rows().slice(0, 40)}>{(s) => (
@@ -162,7 +163,7 @@ export default function Memory() {
                 )}</For>
               </div>
               <div>
-                <div class="label">stack · per function</div>
+                <div class="label">{t('stack · per function')}</div>
                 <Show when={r().stack.length} fallback={<div class="sub">{r().stackNote}</div>}>
                   <For each={r().stack.slice(0, 12)}>{(s) => (
                     <div class="mrow go" style={{ 'grid-template-columns': '1fr 70px' }}
@@ -177,7 +178,7 @@ export default function Memory() {
                   )}</For>
                 </Show>
                 <div class="label" style={{ 'margin-top': '22px' }}>heap · allocation sites ({r().heap.length})</div>
-                <div class="sub" style={{ 'margin-bottom': '6px' }}>found by scanning source text</div>
+                <div class="sub" style={{ 'margin-bottom': '6px' }}>{t('found by scanning source text')}</div>
                 <For each={r().heap.slice(0, 30)}>{(h) => (
                   <div style={{ font: '12.5px var(--mono)', 'line-height': '1.8' }}>
                     <span style={{ color: 'var(--err)', display: 'inline-block', width: '110px' }}>{h.call}</span>

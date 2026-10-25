@@ -4,6 +4,8 @@ import { createStore } from 'solid-js/store';
 import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { api, basename } from './api';
+import { setLanguage } from './i18n';
+import { setPowerPrefs } from './power';
 import { openDoc, changeDoc, savedDoc, startLsp, promote } from './lsp';
 
 export type Settings = Record<string, any>;
@@ -43,6 +45,10 @@ export function applySettings(s: Settings, p: Problem[]) {
   r.setProperty('--mono', `'${s['font.family']}', 'ArX F1', ui-monospace, Menlo, Consolas, monospace`);
   r.setProperty('--ui', `'${s['font.ui.family']}', 'Selawik', -apple-system, 'Segoe UI', system-ui, sans-serif`);
   document.body.style.fontVariantLigatures = s['font.ligatures'] ? 'normal' : 'none';
+  setLanguage(s['ui.language'] as string);
+  (api.win as any).zoom?.(Number(s['ui.scale']) || 1);
+  document.documentElement.classList.toggle('hc', !!s['ui.high_contrast']);
+  setPowerPrefs(s['power.saver'] as string, !!s['motion.reduce']);
 }
 
 export function flash(msg: string, ms = 3200) {

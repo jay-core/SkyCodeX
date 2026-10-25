@@ -42,17 +42,23 @@ export const highlight = HighlightStyle.define([
   { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--cm)', fontStyle: 'italic' },
   { tag: [t.namespace], color: 'var(--fg)' },
   { tag: [t.operator, t.punctuation, t.bracket, t.separator], color: 'var(--fg)' },
+  { tag: t.heading, color: 'var(--bright)', fontWeight: '600' },
+  { tag: [t.emphasis], fontStyle: 'italic' },
+  { tag: [t.strong], fontWeight: '600', color: 'var(--bright)' },
+  { tag: [t.link, t.url], color: 'var(--link)' },
+  { tag: [t.quote, t.monospace], color: 'var(--str)' },
+  { tag: [t.labelName, t.self], color: 'var(--kw)' },
   { tag: t.invalid, color: 'var(--err)' },
 ]);
 
 export const baseTheme = EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } }, { dark: true });
 
-export function editorExtensions(opts: { tabSize: number; wrap: boolean }): Extension[] {
+export function editorExtensions(opts: { tabSize: number; wrap: boolean; language?: Extension }): Extension[] {
   return [
     lineNumbers(), highlightActiveLineGutter(), foldGutter({ markerDOM: (open) => { const s = document.createElement('span'); s.textContent = open ? '⌄' : '›'; return s; } }),
     history(), drawSelection(), dropCursor(), EditorState.allowMultipleSelections.of(true), indentOnInput(),
     bracketMatching(), closeBrackets(), rectangularSelection(), crosshairCursor(), highlightActiveLine(), highlightSelectionMatches(),
-    syntaxHighlighting(highlight), cpp(), baseTheme,
+    syntaxHighlighting(highlight), opts.language ?? cpp(), baseTheme,
     EditorState.tabSize.of(opts.tabSize),
     opts.wrap ? EditorView.lineWrapping : [],
     keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),

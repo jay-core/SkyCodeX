@@ -41,7 +41,7 @@ export function listDir(dir: string): DirEntry[] {
     .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
 }
 
-const SOURCE_EXT = new Set(['.c', '.cc', '.cpp', '.cxx', '.c++', '.h', '.hh', '.hpp', '.hxx', '.ipp', '.inl']);
+const SOURCE_EXT = new Set(['.rs', '.py', '.pyi', '.go', '.c', '.cc', '.cpp', '.cxx', '.c++', '.h', '.hh', '.hpp', '.hxx', '.ipp', '.inl']);
 export const isSource = (p: string) => SOURCE_EXT.has(path.extname(p).toLowerCase());
 
 /** All C/C++ files under root, skipping build output and hidden folders. Capped for huge trees. */

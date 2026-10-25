@@ -1,4 +1,4 @@
-// A small Language Server Protocol client for clangd, running in the main process.
+// A small Language Server Protocol client, running in the main process: clangd, and the servers of other language packs.
 import { spawn, execFileSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -64,25 +64,35 @@ export class LspClient {
   /** Edits clangd asks the client to apply (e.g. from a refactoring); forwarded to the interface. */
   onApplyEdit: (edit: unknown) => void = () => {};
 
+  name = 'clangd';
+  /** Answers workspace/configuration (pyright reads its Python from it). */
+  settings: Record<string, unknown> = {};
+
   start(clangd: string, root: string, extraArgs: string[]): Promise<unknown> {
-    this.stop();
     const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
     const cc = findCompileCommands(root);
     if (cc) args.push(`--compile-commands-dir=${cc}`);
     args.push(...extraArgs);
-    const p = spawn(clangd, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
+    return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true } });
+  }
+
+  startServer(cmd: string, args: string[], root: string, opts: { env?: Record<string, string>; name?: string; initializationOptions?: unknown; settings?: Record<string, unknown> } = {}): Promise<unknown> {
+    this.stop();
+    if (opts.name) this.name = opts.name;
+    this.settings = opts.settings ?? {};
+    const p = spawn(cmd, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...opts.env } });
     this.proc = p;
     p.stdout!.on('data', (d: Buffer) => this.onData(d));
     p.stderr!.on('data', (d: Buffer) => this.onLog(d.toString()));
     p.on('exit', (code) => {
       if (this.proc !== p) return;
-      this.onLog(`clangd exited (${code})`);
-      for (const q of this.pending.values()) q.reject(new Error(`clangd exited (${code})`));
+      this.onLog(`${this.name} exited (${code})`);
+      for (const q of this.pending.values()) q.reject(new Error(`${this.name} exited (${code})`));
       this.pending.clear();
       this.proc = null;
       this.onNotify('$/exit', { code });
     });
-    p.on('error', (e) => { this.onLog(`clangd failed to start: ${e.message}`); });
+    p.on('error', (e) => { this.onLog(`${this.name} failed to start: ${e.message}`); });
     const rootUri = pathToFileURL(root).href;
     this.ready = this.request('initialize', {
       processId: process.pid,
@@ -100,13 +110,14 @@ export class LspClient {
           signatureHelp: { signatureInformation: { parameterInformation: { labelOffsetSupport: true } } },
           codeAction: {},
         },
-        workspace: { workspaceFolders: true, symbol: {} },
+        workspace: { workspaceFolders: true, symbol: {}, configuration: true },
         window: { workDoneProgress: true },
       },
-      initializationOptions: { clangdFileStatus: true },
+      initializationOptions: opts.initializationOptions,
     }).then((r) => {
       this.capabilities = ((r as { capabilities?: Record<string, unknown> }).capabilities) ?? {};
       this.notify('initialized', {});
+      if (Object.keys(this.settings).length) this.notify('workspace/didChangeConfiguration', { settings: this.settings });
       return r;
     });
     return this.ready;
@@ -122,7 +133,7 @@ export class LspClient {
     p.stderr?.removeAllListeners('data');
     p.kill();
     this.proc = null;
-    for (const q of this.pending.values()) q.reject(new Error('clangd restarted'));
+    for (const q of this.pending.values()) q.reject(new Error(`${this.name} restarted`));
     this.pending.clear();
     this.buf = Buffer.alloc(0);
   }
@@ -130,7 +141,7 @@ export class LspClient {
   get running(): boolean { return !!this.proc; }
 
   private send(msg: unknown): void {
-    if (!this.proc?.stdin?.writable) throw new Error('clangd is not running');
+    if (!this.proc?.stdin?.writable) throw new Error(`${this.name} is not running`);
     const body = Buffer.from(JSON.stringify(msg), 'utf8');
     this.proc.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
     this.proc.stdin.write(body);
@@ -174,9 +185,13 @@ export class LspClient {
     }
   }
 
-  // clangd asks a few things of the client; reply minimally so it never waits on us.
+  // servers ask a few things of the client; reply minimally so they never wait on us.
   private answerServerRequest(id: number, method: string, params?: unknown): void {
-    let result: unknown = method === 'workspace/configuration' ? [] : null;
+    let result: unknown = null;
+    if (method === 'workspace/configuration') {
+      // each item names a section such as "python" or "python.analysis"
+      result = ((params as { items?: { section?: string }[] })?.items ?? []).map((it) => (it.section ?? '').split('.').reduce<any>((o, k) => (o && k ? o[k] : o), this.settings) ?? null);
+    }
     if (method === 'workspace/applyEdit') { this.onApplyEdit((params as { edit: unknown }).edit); result = { applied: true }; }
     this.send({ jsonrpc: '2.0', id, result });
   }

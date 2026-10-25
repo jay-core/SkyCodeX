@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { api } from '../lib/api';
 import { root, settings, terminalOpen } from '../lib/store';
+import { t } from '../lib/i18n';
 
 interface Session { id: number; name: string; term: XTerm; fit: FitAddon; el: HTMLDivElement }
 let nextId = 1;
@@ -85,7 +86,7 @@ export default function TerminalPane() {
     <div class="term" style={{ height: '100%' }}>
       <div class="tt">
         <For each={sessions()}>{(s) => <button classList={{ on: active() === s.id }} onClick={() => show(s.id)}>{s.name}</button>}</For>
-        <button onClick={add} title="New terminal">+</button>
+        <button onClick={add} title={t('New terminal')}>+</button>
       </div>
       <div class="xt" ref={host} />
     </div>

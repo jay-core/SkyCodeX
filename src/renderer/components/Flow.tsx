@@ -6,17 +6,20 @@ import { indexEpoch, lspState } from '../lib/lsp';
 import { api } from '../lib/api';
 import Card from './Card';
 import { PAL } from '../lib/lines';
+import { routeEdges, folderFrames, Route, Rect } from '../lib/flowlayout';
 import type { Card as CardData } from '../lib/preview';
+import { t } from '../lib/i18n';
 
 const BW = 190, BH = 66;
 const elk = new ELK();
 
-interface Placed { box: FlowBox; x: number; y: number }
-interface Routed { d: string; label: { x: number; y: number; text: string; thread: boolean }; thread: boolean; from: string; to: string; head: { x: number; y: number; ang: number } }
+interface Placed { box: FlowBox; x: number; y: number; pinned: boolean }
+type Routed = Route;
 
 const [graph, setGraph] = createSignal<FlowGraph | null>(null);
 const [status, setStatus] = createSignal('');
 let builtFor = '';
+const [grouped, setGrouped] = createSignal((() => { try { return localStorage.getItem('flow.group') === '1'; } catch { return false; } })());
 
 export default function Flow() {
   const [placed, setPlaced] = createSignal<Placed[]>([]);
@@ -25,13 +28,15 @@ export default function Flow() {
   const [sel, setSel] = createSignal<string | null>(null);
   const [view, setView] = createSignal({ x: 40, y: 50, k: 1 });
   const [selCards, setSelCards] = createSignal<CardData[]>([]);
+  const [frames, setFrames] = createSignal<(Rect & { folder: string })[]>([]);
+  const folderOf = (file: string) => { const r = shortName(root(), file); const i = r.lastIndexOf('/'); return i < 0 ? '' : r.slice(0, i); };
   let canvas!: HTMLDivElement;
 
   async function rebuild() {
     if (!root() || lspState() !== 'ready') return;
     if (builtFor !== root()) firstBuild = Date.now();
     builtFor = root();
-    setStatus('tracing calls from main…');
+    setStatus(t('tracing calls from main…'));
     const g = await buildFlow(root(), (n) => setStatus(`tracing calls from main… ${n} functions`));
     setGraph(g);
     await layout(g);
@@ -41,38 +46,60 @@ export default function Flow() {
   }
   let firstBuild = Date.now();
 
-  async function layout(g: FlowGraph) {
+  async function layout(g: FlowGraph, fit = true) {
     const live = g.boxes.filter((b) => !b.dead);
+    const node = (b: FlowBox) => ({ id: b.file, width: BW, height: BH + (b.loops.length ? 44 : 0) });   // room for a two-line loop note under the box
+    const folders = [...new Set(live.map((b) => folderOf(b.file)))];
     const res = await elk.layout({
       id: 'root',
-      layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.layered.spacing.nodeNodeBetweenLayers': '120', 'elk.spacing.nodeNode': '56', 'elk.edgeRouting': 'SPLINES', 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES' },
-      children: live.map((b) => ({ id: b.file, width: BW, height: BH + (b.loops.length ? 44 : 0) })),   // room for a two-line loop note under the box
+      layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.layered.spacing.nodeNodeBetweenLayers': '120', 'elk.spacing.nodeNode': '56', 'elk.edgeRouting': 'SPLINES', 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES', ...(grouped() ? { 'elk.hierarchyHandling': 'INCLUDE_CHILDREN' } : {}) },
+      children: grouped()
+        ? folders.map((f) => ({ id: `dir:${f}`, layoutOptions: { 'elk.padding': '[top=44,left=30,bottom=30,right=30]' }, children: live.filter((b) => folderOf(b.file) === f).map(node) }))
+        : live.map(node),
       edges: g.edges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to] })),
     } as any);
-    const pos = new Map((res.children ?? []).map((c: any) => [c.id, c]));
-    const out: Placed[] = live.map((b) => ({ box: b, x: (pos.get(b.file) as any)?.x ?? 0, y: (pos.get(b.file) as any)?.y ?? 0 }));
+    // positions inside a folder are relative to it
+    const pos = new Map<string, { x: number; y: number }>();
+    for (const c of (res.children ?? []) as any[]) {
+      if (c.children) for (const k of c.children) pos.set(k.id, { x: (c.x ?? 0) + (k.x ?? 0), y: (c.y ?? 0) + (k.y ?? 0) });
+      else pos.set(c.id, { x: c.x ?? 0, y: c.y ?? 0 });
+    }
+    const pins = loadPins();
+    const out: Placed[] = live.map((b) => ({ box: b, ...(pins[b.file] ?? pos.get(b.file) ?? { x: 0, y: 0 }), pinned: !!pins[b.file] }));
     const maxY = Math.max(0, ...out.map((p) => p.y + BH + 40));
-    g.boxes.filter((b) => b.dead).forEach((b, i) => out.push({ box: b, x: (i % 4) * (BW + 30), y: maxY + 60 + Math.floor(i / 4) * (BH + 30) }));
+    g.boxes.filter((b) => b.dead).forEach((b, i) => out.push({ box: b, ...(pins[b.file] ?? { x: (i % 4) * (BW + 30), y: maxY + 60 + Math.floor(i / 4) * (BH + 30) }), pinned: !!pins[b.file] }));
     setPlaced(out);
-    // fit the whole diagram in view on first layout
+    reroute(out);
+    if (!fit) return;
+    // fit the whole diagram in view
     const w = Math.max(...out.map((p) => p.x + BW)) + 60, h = Math.max(...out.map((p) => p.y + BH)) + 80;
     const cw = canvas?.clientWidth || 900, ch = canvas?.clientHeight || 600;
     const k = Math.min(1, (cw - 80) / w, (ch - 60) / h);
-    setView({ k, x: 60, y: 40 });
-    const at = new Map(out.map((p) => [p.box.file, p]));
-    setRoutes(g.edges.map((e) => {
-      const a = at.get(e.from)!, b = at.get(e.to)!;
-      let x1 = a.x + BW, y1 = a.y + BH / 2, x2 = b.x, y2 = b.y + BH / 2, ang = 0;
-      if (b.x <= a.x + BW / 2) { // same column or backwards: leave from the bottom
-        x1 = a.x + BW / 2; y1 = a.y + BH; x2 = b.x + BW / 2; y2 = b.y - 2; ang = 90;
-        if (b.y < a.y) { y1 = a.y; y2 = b.y + BH + 2; ang = -90; }
-      }
-      const d = ang === 0
-        ? `M${x1} ${y1} C${x1 + Math.max(40, (x2 - x1) / 2)} ${y1} ${x2 - Math.max(40, (x2 - x1) / 2)} ${y2} ${x2 - 2} ${y2}`
-        : `M${x1} ${y1} C${x1} ${y1 + (ang > 0 ? 60 : -60)} ${x2} ${y2 - (ang > 0 ? 60 : -60)} ${x2} ${y2}`;
-      const text = e.thread ? 'spawns thread' : e.nums.join(' · ');
-      return { d, thread: e.thread, from: e.from, to: e.to, label: { x: (x1 + x2) / 2, y: (y1 + y2) / 2, text, thread: e.thread }, head: { x: ang === 0 ? x2 - 2 : x2, y: y2, ang } };
-    }));
+    const x0 = Math.min(0, ...out.map((p) => p.x)), y0 = Math.min(0, ...out.map((p) => p.y));
+    setView({ k, x: 60 - x0 * k, y: 40 - y0 * k });
+  }
+
+  const boxAt = (p: Placed) => ({ id: p.box.file, x: p.x, y: p.y, w: BW, h: BH, extra: { left: p.box.entries.length ? 46 : 0, top: p.box.thread || p.pinned ? 20 : 0, bottom: p.box.loops.length ? 44 : 0 } });
+  function reroute(list = placed()) {
+    const g = graph();
+    if (!g) return;
+    setRoutes(routeEdges(list.map(boxAt), g.edges.map((e) => ({ from: e.from, to: e.to, thread: e.thread, text: e.thread ? t('spawns thread') : e.nums.join(' · ') }))));
+    setFrames(grouped() ? folderFrames(list.filter((p) => !p.box.dead).map((p) => ({ ...boxAt(p), folder: folderOf(p.box.file) }))) : []);
+  }
+
+  // ---- pins: a box dragged somewhere stays there, for this folder, until unpinned ----
+  const pinKey = () => `flow.pins:${root()}`;
+  function loadPins(): Record<string, { x: number; y: number }> { try { return JSON.parse(localStorage.getItem(pinKey()) || '{}'); } catch { return {}; } }
+  function savePins(list: Placed[]) {
+    const o: Record<string, { x: number; y: number }> = {};
+    for (const p of list) if (p.pinned) o[p.box.file] = { x: Math.round(p.x), y: Math.round(p.y) };
+    try { localStorage.setItem(pinKey(), JSON.stringify(o)); } catch { /* pins last for this run only */ }
+  }
+  function unpin(file?: string) {
+    const list = placed().map((p) => (!file || p.box.file === file ? { ...p, pinned: false } : p));
+    savePins(list);
+    const g = graph();
+    if (g) layout(g, false);
   }
 
   onMount(() => { if (builtFor !== root()) rebuild(); else if (graph()) layout(graph()!); });
@@ -92,11 +119,49 @@ export default function Flow() {
     }));
   }));
 
-  // ---- pan and zoom ----
+  // ---- pan and zoom; dragging a box moves and pins it ----
   let drag: { x: number; y: number; vx: number; vy: number } | null = null;
-  const onDown = (e: MouseEvent) => { if ((e.target as HTMLElement).closest('.fbox')) return; drag = { x: e.clientX, y: e.clientY, vx: view().x, vy: view().y }; canvas.classList.add('drag'); };
-  const onMove = (e: MouseEvent) => { if (drag) setView({ ...view(), x: drag.vx + e.clientX - drag.x, y: drag.vy + e.clientY - drag.y }); };
-  const onUp = () => { drag = null; canvas.classList.remove('drag'); };
+  let boxDrag: { file: string; x: number; y: number; bx: number; by: number; moved: boolean } | null = null;
+  let justDragged = false;
+  // pointers: mouse, touch and pen alike; two fingers pinch to zoom
+  const fingers = new Map<number, { x: number; y: number }>();
+  let pinch: { d: number; k: number } | null = null;
+  const onDown = (e: PointerEvent) => {
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.size === 2) { const [a, b] = [...fingers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view().k }; drag = null; boxDrag = null; return; }
+    if ((e.target as HTMLElement).closest('.fbox')) return;
+    canvas.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, vx: view().x, vy: view().y }; canvas.classList.add('drag');
+  };
+  const onBoxDown = (e: PointerEvent, p: Placed) => { if (e.button !== 0) return; boxDrag = { file: p.box.file, x: e.clientX, y: e.clientY, bx: p.x, by: p.y, moved: false }; };
+  const onMove = (e: PointerEvent) => {
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && fingers.size === 2) {
+      const [a, b] = [...fingers.values()], r = canvas.getBoundingClientRect(), v = view();
+      const k = Math.min(2.5, Math.max(0.3, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+      const cx = (a.x + b.x) / 2 - r.left, cy = (a.y + b.y) / 2 - r.top;
+      setView({ k, x: cx - ((cx - v.x) * k) / v.k, y: cy - ((cy - v.y) * k) / v.k });
+      return;
+    }
+    if (boxDrag) {
+      const dx = (e.clientX - boxDrag.x) / view().k, dy = (e.clientY - boxDrag.y) / view().k;
+      if (!boxDrag.moved && Math.hypot(dx, dy) < 4) return;
+      boxDrag.moved = true;
+      canvas.classList.add('drag');
+      const f = boxDrag.file, nx = boxDrag.bx + dx, ny = boxDrag.by + dy;
+      const list = placed().map((p) => (p.box.file === f ? { ...p, x: nx, y: ny, pinned: true } : p));
+      setPlaced(list);
+      reroute(list);
+      return;
+    }
+    if (drag) setView({ ...view(), x: drag.vx + e.clientX - drag.x, y: drag.vy + e.clientY - drag.y });
+  };
+  const onUp = (e?: PointerEvent) => {
+    if (e) fingers.delete(e.pointerId);
+    if (fingers.size < 2) pinch = null;
+    if (boxDrag?.moved) { savePins(placed()); justDragged = true; setTimeout(() => (justDragged = false), 0); }
+    boxDrag = null; drag = null; canvas.classList.remove('drag');
+  };
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const v = view();
@@ -114,9 +179,12 @@ export default function Flow() {
   return (
     <div class="body" style={{ height: '100%' }}>
       <div class="pane" style={{ flex: 1 }}>
-        <div class="ph" style={{ padding: '0 22px' }}><span>{status()}</span><span class="grow" /><button class="chip" onClick={rebuild}>refresh</button><button class="chip" onClick={() => { const g = graph(); if (g) layout(g); }}>fit</button></div>
-        <div class="flow" ref={canvas} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} onWheel={onWheel}>
+        <div class="ph" style={{ padding: '0 22px' }}><span>{status()}</span><span class="grow" /><Show when={placed().some((p) => p.pinned)}><button class="chip" title={t('let the layout place every box again')} onClick={() => unpin()}>{t('unpin all')}</button></Show>
+          <button class="chip" classList={{ on: grouped() }} aria-pressed={grouped()} title={t("draw a frame around each folder's files")} onClick={() => { setGrouped(!grouped()); try { localStorage.setItem('flow.group', grouped() ? '1' : '0'); } catch { /* kept for this run */ } const g = graph(); if (g) layout(g); }}>{t('group by folder')}</button>
+          <button class="chip" onClick={rebuild}>{t('refresh')}</button><button class="chip" onClick={() => { const g = graph(); if (g) layout(g); }}>{t('fit')}</button></div>
+        <div class="flow" ref={canvas} style={{ 'touch-action': 'none' }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onWheel={onWheel}>
           <div style={{ position: 'absolute', left: 0, top: 0, 'transform-origin': '0 0', transform: `translate(${view().x}px, ${view().y}px) scale(${view().k})` }}>
+            <For each={frames()}>{(f) => <div class="fgroup" style={{ left: `${f.x}px`, top: `${f.y}px`, width: `${f.w}px`, height: `${f.h}px` }}><span>{f.folder || t('top folder')}</span></div>}</For>
             <svg width="4000" height="3000" style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
               <For each={routes()}>{(r) => (
                 <g opacity={touches(r) ? 1 : 0.25}>
@@ -127,17 +195,20 @@ export default function Flow() {
             </svg>
             <For each={routes()}>{(r) => <div class="flab" classList={{ t: r.thread }} style={{ left: `${r.label.x}px`, top: `${r.label.y}px`, opacity: touches(r) ? 1 : 0.25 }}>{r.label.text}</div>}</For>
             <Show when={placed().some((p) => p.box.dead)}>
-              <div class="sub" style={{ position: 'absolute', 'white-space': 'nowrap', left: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.x))}px`, top: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.y)) - 30}px` }}>not reached from any entry point</div>
+              <div class="sub" style={{ position: 'absolute', 'white-space': 'nowrap', left: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.x))}px`, top: `${Math.min(...placed().filter((p) => p.box.dead).map((p) => p.y)) - 30}px` }}>{t('not reached from any entry point')}</div>
             </Show>
             <For each={placed()}>{(p, i) => (
-              <div class="fbox" classList={{ dead: p.box.dead, on: sel() === p.box.file }}
-                style={{ left: `${p.x}px`, top: `${p.y}px`, width: `${BW}px`, height: `${BH}px`, animation: reduce() ? 'none' : `fadeUp .45s cubic-bezier(.16,1,.3,1) ${i() * 60}ms backwards` }}
+              <div class="fbox" classList={{ dead: p.box.dead, on: sel() === p.box.file, pinned: p.pinned }}
+                style={{ left: `${p.x}px`, top: `${p.y}px`, width: `${BW}px`, height: `${BH}px`, animation: reduce() || p.pinned ? 'none' : `fadeUp .45s cubic-bezier(.16,1,.3,1) ${i() * 60}ms backwards` }}
                 onMouseEnter={() => setHover(p.box.file)} onMouseLeave={() => setHover(null)}
-                onClick={() => setSel(sel() === p.box.file ? null : p.box.file)}>
+                onPointerDown={(e) => onBoxDown(e, p)} tabindex="0" role="button" aria-label={`${shortName(root(), p.box.file)}, ${p.box.fns.length} functions`}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(sel() === p.box.file ? null : p.box.file); } }}
+                onClick={() => { if (!justDragged) setSel(sel() === p.box.file ? null : p.box.file); }}>
+                <Show when={p.pinned}><button class="pin" title={t('unpin: let the layout place this box')} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); unpin(p.box.file); }}>{t('pinned ×')}</button></Show>
                 <Show when={p.box.entries.length}><span class="start">{p.box.entries.length > 1 ? `start ▸ ${p.box.entries.length}` : 'start ▸'}</span></Show>
-                <Show when={p.box.thread}><span class="tag">thread</span></Show>
+                <Show when={p.box.thread}><span class="tag">{t('thread')}</span></Show>
                 <div class="t">{shortName(root(), p.box.file)}</div>
-                <div class="s">{p.box.fns.length} functions · {p.box.dead ? 'none run' : `${run(p.box)} run`}</div>
+                <div class="s">{p.box.fns.length} functions · {p.box.dead ? t('none run') : `${run(p.box)} run`}</div>
                 <Show when={p.box.loops.length && hover() !== p.box.file}><div class="loop" title={p.box.loops.join('\n')}>{p.box.loops[0]}{p.box.loops.length > 1 ? ` · +${p.box.loops.length - 1}` : ''}</div></Show>
                 <Show when={hover() === p.box.file}>
                   <div class="hpop" style={{ left: '-1px', top: `${BH + 6}px` }}>
@@ -148,11 +219,11 @@ export default function Flow() {
               </div>
             )}</For>
           </div>
-          <Show when={!placed().length}><div class="empty" style={{ position: 'absolute', inset: 0 }}>{lspState() === 'ready' ? status() || 'building…' : 'open a folder to see how it runs'}</div></Show>
+          <Show when={!placed().length}><div class="empty" style={{ position: 'absolute', inset: 0 }}>{lspState() === 'ready' ? status() || t('building…') : t('open a folder to see how it runs')}</div></Show>
         </div>
       </div>
       <div class="pane prev" style={{ width: '440px', flex: 'none' }}>
-        <Show when={sel()} fallback={<div class="empty">click a box to see what’s inside</div>}>
+        <Show when={sel()} fallback={<div class="empty">{t('click a box to see what’s inside')}</div>}>
           <div style={{ padding: '14px 20px 0' }}>
             <div style={{ font: '300 28px var(--ui)', color: 'var(--bright)' }}>{shortName(root(), sel()!)}</div>
             <div class="sub" style={{ margin: '2px 0 12px' }}>{placed().find((p) => p.box.file === sel())?.box.dead ? `not reached from any entry point · ${selCards().length} functions, in file order` : `${selCards().length} of ${placed().find((p) => p.box.file === sel())?.box.fns.length ?? 0} functions run in this flow · in execution order`}</div>

@@ -19,6 +19,7 @@ export const SECTIONS: { name: string; doc: string }[] = [
   { name: 'font.ui', doc: 'Interface font.' },
   { name: 'font.preview', doc: 'Preview panes inherit the code font, then apply these.' },
   { name: 'theme', doc: 'Appearance.' },
+  { name: 'ui', doc: 'Interface language and accessibility.' },
   { name: 'editor', doc: 'Editing behaviour.' },
   { name: 'preview', doc: 'Preview panes.' },
   { name: 'window', doc: 'Window frame.' },
@@ -27,6 +28,7 @@ export const SECTIONS: { name: string; doc: string }[] = [
   { name: 'terminal', doc: 'Integrated terminal.' },
   { name: 'memory', doc: 'Memory view budgets (0 = no budget).' },
   { name: 'motion', doc: 'Animation.' },
+  { name: 'power', doc: 'Running on battery.' },
 ];
 
 export const SETTINGS: SettingDef[] = [
@@ -39,10 +41,15 @@ export const SETTINGS: SettingDef[] = [
   { key: 'font.ui.family', type: 'string', default: 'Selawik', doc: 'interface text' },
   { key: 'font.preview.scale', type: 'number', default: 0.9, min: 0.5, max: 1.5, doc: 'preview text size', unit: '× code size' },
   { key: 'theme.name', type: 'enum', default: 'charcoal', values: ['charcoal'], doc: 'charcoal' },
+  { key: 'ui.language', type: 'enum', default: 'auto', values: ['auto', 'en', 'hi', 'es', 'fr', 'de', 'pt', 'ja', 'zh'], doc: '"auto" follows the system language; help pages are in English' },
+  { key: 'ui.scale', type: 'number', default: 1, min: 0.75, max: 2, doc: 'size of the whole interface', unit: '×' },
+  { key: 'ui.high_contrast', type: 'boolean', default: false, doc: 'brighter text and borders' },
   { key: 'theme.focus_dimming', type: 'boolean', default: true, doc: 'fade code outside the current function' },
   { key: 'editor.tab_size', type: 'number', default: 4, min: 1, max: 16, doc: 'indent width', unit: 'spaces' },
   { key: 'editor.word_wrap', type: 'boolean', default: false, doc: 'true | false' },
   { key: 'editor.autosave', type: 'enum', default: 'off', values: ['off', 'focus', 'delay'], doc: 'focus saves when you leave the window; delay saves after a pause' },
+  { key: 'editor.spellcheck', type: 'boolean', default: true, doc: 'underline misspelt words in comments and strings' },
+  { key: 'editor.todo_words', type: 'string[]', default: ['TODO', 'FIXME', 'HACK', 'XXX', 'BUG'], doc: 'comment words collected in the to-do list' },
   { key: 'editor.autosave_delay_ms', type: 'number', default: 1000, min: 200, max: 60000, doc: 'for autosave = "delay"', unit: 'ms' },
   { key: 'preview.enabled', type: 'boolean', default: true, doc: 'true | false' },
   { key: 'preview.include_std', type: 'boolean', default: true, doc: 'show standard-library and system calls' },
@@ -61,6 +68,7 @@ export const SETTINGS: SettingDef[] = [
   { key: 'memory.storage_budget_kb', type: 'number', default: 0, min: 0, max: 1e9, doc: 'flash / disk image budget', unit: 'KB' },
   { key: 'memory.warn_percent', type: 'number', default: 90, min: 1, max: 100, doc: 'warn above this share of a budget', unit: '%' },
   { key: 'motion.reduce', type: 'boolean', default: false, doc: 'true turns animations into instant changes' },
+  { key: 'power.saver', type: 'enum', default: 'auto', values: ['auto', 'always', 'never'], doc: '"auto" calms animations and background work while on battery' },
 ];
 
 export type Settings = Record<string, unknown>;

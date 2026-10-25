@@ -1,6 +1,7 @@
 import { For, Show, createSignal, createResource } from 'solid-js';
 import { api, DirEntry, basename } from '../lib/api';
 import { root, files, openFile, openFolder } from '../lib/store';
+import { t } from '../lib/i18n';
 
 const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
 const [listVersion, setListVersion] = createSignal(0);
@@ -34,8 +35,8 @@ export default function FilesPane() {
   const pick = async () => { const p = await api.fs.pickFolder(); if (p) openFolder(p as string); };
   return (
     <div class="pane files" style={{ height: '100%' }}>
-      <div class="ph"><span style={{ color: 'var(--dim)' }}>{root() ? basename(root()) : 'files'}</span><span class="grow" /><button class="chip" onClick={pick}>open…</button></div>
-      <Show when={root()} fallback={<div class="empty"><button style={{ color: 'var(--bright)', 'font-size': '15px' }} onClick={pick}>open a folder</button></div>}>
+      <div class="ph"><span style={{ color: 'var(--dim)' }}>{root() ? basename(root()) : 'files'}</span><span class="grow" /><button class="chip" onClick={pick}>{t('open…')}</button></div>
+      <Show when={root()} fallback={<div class="empty"><button style={{ color: 'var(--bright)', 'font-size': '15px' }} onClick={pick}>{t('open a folder')}</button></div>}>
         <div class="tree"><Dir path={root()} depth={0} /></div>
       </Show>
     </div>

@@ -3,6 +3,8 @@ import { menuOpen, setMenuOpen } from './AppMenu';
 import { terminalOpen, setTerminalOpen, setSettingsOpen, settings } from '../lib/store';
 import { api } from '../lib/api';
 import { compilerOpen, setCompilerOpen } from './CompilerWindow';
+import { helpTopic, setHelpTopic } from './Help';
+import { t } from '../lib/i18n';
 
 /** The bottom-left app bar, below a faint separator: options, settings, terminal, compiler and preview. */
 export default function AppBar() {
@@ -10,12 +12,13 @@ export default function AppBar() {
   return (
     <>
       <div class="appsep" />
-      <div class="appbar">
-        <button class="barbtn" classList={{ on: menuOpen() }} title="Options" onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenuOpen(!menuOpen())}>options</button>
-        <button class="gear" title="Settings (⌘/Ctrl ,)" onClick={() => setSettingsOpen(true)}>{GEAR}</button>
-        <button class="barbtn" classList={{ on: terminalOpen() }} title="Show or hide the terminal (⌃`)" onClick={() => setTerminalOpen(!terminalOpen())}>{terminalOpen() ? 'hide terminal' : 'terminal'}</button>
-        <button class="barbtn" classList={{ on: compilerOpen() }} title="Language engine, compiler toolchains and language packs" onClick={() => setCompilerOpen(!compilerOpen())}>compiler</button>
-        <button class="barbtn" classList={{ on: previewOn() }} title="Show or hide the preview panes (⌘/Ctrl ⇧ E)" onClick={() => api.settings.set('preview.enabled', !previewOn())}>{previewOn() ? 'hide preview' : 'preview'}</button>
+      <div class="appbar" data-tour="appbar" data-help="start" role="toolbar">
+        <button class="barbtn" classList={{ on: menuOpen() }} title={t('Options')} onMouseDown={(e) => e.stopPropagation()} onClick={() => setMenuOpen(!menuOpen())}>{t('options')}</button>
+        <button class="gear" title={t('Settings (⌘/Ctrl ,)')} aria-label={t('settings')} onClick={() => setSettingsOpen(true)}>{GEAR}</button>
+        <button class="barbtn" classList={{ on: terminalOpen() }} title={t('Show or hide the terminal (⌃`)')} onClick={() => setTerminalOpen(!terminalOpen())}>{terminalOpen() ? t('hide terminal') : t('terminal')}</button>
+        <button class="barbtn" classList={{ on: compilerOpen() }} title={t('Language engine, compiler toolchains and language packs')} onClick={() => setCompilerOpen(!compilerOpen())}>{t('compiler')}</button>
+        <button class="barbtn" classList={{ on: previewOn() }} title={t('Show or hide the preview panes (⌘/Ctrl ⇧ E)')} onClick={() => api.settings.set('preview.enabled', !previewOn())}>{previewOn() ? t('hide preview') : t('preview')}</button>
+        <button class="barbtn" data-tour="help" classList={{ on: !!helpTopic() }} title={t('Help (F1)')} onClick={() => setHelpTopic(helpTopic() ? null : 'start')}>{t('help')}</button>
       </div>
     </>
   );

@@ -1,14 +1,21 @@
 // Lithograph main process: window, portable data, settings, files, clangd, terminals, memory analysis.
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, protocol, net, powerMonitor, crashReporter } from 'electron';
+import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers } from './files';
 import { LspClient, findClangd, inbuiltClangd, systemClangd } from './lsp';
-import { resolvePacksDir, listPacks, availableReleases, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
+import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { launchWithPacks } from './shellinit';
+import { releasesFor, stepsFor, KIND_INFO, languageBins, languageEnv, serverFor, refIndex, Lang } from './langpacks';
+import { safeJoin } from './unpack';
+import { TEMPLATES, createProject } from './templates';
+import { runWithChecks, CheckKind, Tools, flagsFor } from './checks';
+import { buildReport } from './report';
 import { execFile, execFileSync } from 'node:child_process';
 import { findBinaries, analyze } from './memory';
 
@@ -65,8 +72,16 @@ function createWindow() {
     frame: native,
     backgroundColor: '#171817',
     title: 'Lithograph',
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: true },
   });
+  // spelling uses the system's checker (macOS, Windows); on Linux, dictionaries are read only from data/dictionaries, never downloaded
+  try {
+    const ses = win.webContents.session;
+    ses.setSpellCheckerDictionaryDownloadURL(pathToFileURL(path.join(data.dir, 'dictionaries')).href + '/');
+    if (process.platform !== 'darwin') ses.setSpellCheckerLanguages(['en-US']);
+  } catch (e) { log(`spellcheck: ${e}`); }
+  // the reference viewer may move between its own pages; nothing in a frame may load from the network
+  win.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame && !e.url.startsWith('litho-ref:')) e.preventDefault(); });
   // the interface may list installed fonts (settings) and write to the clipboard; nothing else is granted
   const allowed = new Set(['local-fonts', 'clipboard-sanitized-write']);
   win.webContents.session.setPermissionRequestHandler((wc, perm, cb) => cb(wc === win?.webContents && allowed.has(perm)));
@@ -161,6 +176,7 @@ ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stri
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
 lsp.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
 ipcMain.handle('lsp:start', async (_e, root: string) => {
+  for (const c of langServers.values()) c.stop();   // a new folder: other languages' servers start again when one of their files opens
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
   try {
@@ -169,6 +185,100 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
   } catch (e) { return { ok: false, message: String(e) }; }
 });
 ipcMain.handle('lsp:request', (_e, method: string, params: unknown) => lsp.request(method, params));
+
+// ---------- language servers of other packs (Rust, Python, Go), started when a file of that language opens ----------
+const langServers = new Map<Lang, LspClient>();
+ipcMain.handle('lang:start', async (_e, lang: Lang, root: string) => {
+  const s = serverFor(lang, PACKS.dir);
+  if (!s) return { ok: false, message: `no ${lang === 'rust' ? 'Rust' : lang === 'go' ? 'Go' : 'Python'} language engine yet — install one from the compiler window` };
+  let c = langServers.get(lang);
+  if (!c) {
+    c = new LspClient((m, p) => send('lang:notify', lang, m, p), (l) => log(`${lang}: ${l}`));
+    c.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
+    langServers.set(lang, c);
+  }
+  try { await c.startServer(s.cmd, s.args, root, { env: s.env, name: s.name, settings: s.settings }); return { ok: true, name: s.name }; }
+  catch (e) { return { ok: false, message: String((e as Error).message ?? e) }; }
+});
+ipcMain.handle('lang:request', (_e, lang: Lang, method: string, params: unknown) => {
+  const c = langServers.get(lang);
+  if (!c?.running) throw new Error(`the ${lang} language engine is not running`);
+  return c.request(method, params);
+});
+ipcMain.handle('lang:notify', (_e, lang: Lang, method: string, params: unknown) => { const c = langServers.get(lang); if (c?.running) c.notify(method, params); });
+
+// ---------- run with checks, and profile ----------
+function which(prog: string): string | null {
+  const exe = process.platform === 'win32' ? `${prog}.exe` : prog;
+  for (const d of (process.env.PATH ?? '').split(path.delimiter)) if (d && fs.existsSync(path.join(d, exe))) return path.join(d, exe);
+  return null;
+}
+function xcrunFind(prog: string): string | null { try { return execFileSync('xcrun', ['--find', prog], { encoding: 'utf8', timeout: 5000 }).trim() || null; } catch { return null; } }
+/** The compiler for checks: the toolchain pack in use, else the system's clang. */
+function checkTools(): Tools {
+  const tc = activeToolchain();
+  const fromPack = (p: string) => (tc ? packExe(PACKS.dir, tc, p) : null);
+  const env: Record<string, string> = {};
+  if (process.platform === 'darwin') { const sdk = sdkPath(); if (sdk) env.SDKROOT = sdk; }
+  const sys = (p: string, fb: string[]) => (process.platform === 'darwin' ? (fs.existsSync(`/usr/bin/${p}`) ? `/usr/bin/${p}` : null) : which(p)) ?? fb.map(which).find(Boolean) ?? p;
+  const llvm = (p: string) => fromPack(p) ?? (process.platform === 'darwin' ? xcrunFind(p) : which(p));
+  return { cxx: fromPack('clang++') ?? sys('clang++', ['c++', 'g++']), cc: fromPack('clang') ?? sys('clang', ['cc', 'gcc']), profdata: llvm('llvm-profdata'), cov: llvm('llvm-cov'), cxxfilt: llvm('llvm-cxxfilt') ?? (process.platform === 'darwin' ? xcrunFind('c++filt') : which('c++filt')), env };
+}
+let checking = false;
+ipcMain.handle('checks:run', async (_e, root: string, kind: CheckKind, args: string[]) => {
+  if (checking) return { ok: false, stage: 'build', message: 'a run is already going', reports: [] };
+  checking = true;
+  try { return await runWithChecks(root, kind, args, checkTools(), path.join(STATE, 'checks')); }
+  catch (e) { return { ok: false, stage: 'build', message: String((e as Error).message ?? e), reports: [] }; }
+  finally { checking = false; }
+});
+ipcMain.handle('checks:flags', (_e, kind: CheckKind) => flagsFor(kind).join(' '));
+
+// ---------- power: calmer on battery ----------
+const sendPower = () => send('power:battery', powerMonitor.isOnBatteryPower());
+ipcMain.handle('power:battery', () => powerMonitor.isOnBatteryPower());
+
+// ---------- problem reports: written to the logs folder, never sent anywhere ----------
+ipcMain.handle('report:log', (_e, line: string) => log(`interface: ${String(line).slice(0, 4000)}`));
+ipcMain.handle('report:build', async () => {
+  const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
+  const text = buildReport({
+    version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node,
+    platform: process.platform, arch: process.arch, osRelease: os.release(), dataDir: data.dir,
+    clangd, clangdVersion: await clangdVersion(clangd), packs: listPacks(PACKS.dir).map((m) => `${m.id} (${m.kind})`),
+    settingsText: fs.readFileSync(SETTINGS_FILE, 'utf8'), logDir: path.join(data.dir, 'logs'), home: app.getPath('home'),
+  });
+  const file = path.join(data.dir, 'logs', `problem-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`);
+  atomicWrite(file, text);
+  return file;
+});
+
+// ---------- new projects ----------
+ipcMain.handle('templates:list', () => TEMPLATES.map(({ id, title, note }) => ({ id, title, note })));
+ipcMain.handle('templates:create', (_e, parent: string, name: string, id: string) => createProject(parent, name, id));
+
+// ---------- code style: clangd formats a sample beside a candidate .clang-format, so the style can be tried before it is saved ----------
+ipcMain.handle('format:preview', async (_e, style: string, sample: string) => {
+  if (!lsp.running) return { ok: false, message: 'the language engine is not running — open a folder first' };
+  const dir = path.join(STATE, 'format-preview'), file = path.join(dir, 'sample.cpp'), uri = pathToFileURL(file).href;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.clang-format'), style);
+  fs.writeFileSync(file, sample);
+  lsp.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'cpp', version: 1, text: sample } });
+  try { return { ok: true, edits: await lsp.request('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 4, insertSpaces: true } }) }; }
+  catch (e) { return { ok: false, message: String((e as Error).message ?? e).replace(/^textDocument\/formatting: /, '') }; }
+  finally { lsp.notify('textDocument/didClose', { textDocument: { uri } }); }
+});
+
+// ---------- offline C++ reference: pages served from the installed pack only ----------
+ipcMain.handle('ref:index', () => { const r = refIndex(PACKS.dir); return r ? r.names : null; });
+function serveReference(req: Request): Promise<Response> | Response {
+  const r = refIndex(PACKS.dir);
+  const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '');
+  const file = r ? safeJoin(path.join(r.root, r.base), rel) : null;
+  if (!file || !fs.existsSync(file) || /\.(js|mjs)$/i.test(file)) return new Response('not found', { status: 404 });
+  return net.fetch(pathToFileURL(file).href);
+}
 ipcMain.handle('lsp:notify', (_e, method: string, params: unknown) => { if (lsp.running) lsp.notify(method, params); });
 
 // ---------- terminals ----------
@@ -187,7 +297,8 @@ ipcMain.handle('pty:spawn', (_e, id: number, cwd: string, cols: number, rows: nu
   // the active toolchain pack comes first on PATH in this terminal only (see shellinit.ts)
   const tc = activeToolchain(), extra: Record<string, string> = { TERM_PROGRAM: 'Lithograph' };
   if (tc && process.platform === 'darwin') { const sdk = sdkPath(); if (sdk) extra.SDKROOT = sdk; }   // LLVM's clang finds the macOS headers through this
-  const go = launchWithPacks(sh.file, sh.args, tc ? [path.join(PACKS.dir, tc.id, tc.bin)] : [], STATE, extra);
+  Object.assign(extra, languageEnv(PACKS.dir));   // Cargo, Go and pip keep their caches inside their packs
+  const go = launchWithPacks(sh.file, sh.args, [...(tc ? [path.join(PACKS.dir, tc.id, tc.bin)] : []), ...languageBins(PACKS.dir)], STATE, extra);
   const p = nodePty.spawn(go.file, go.args, { name: 'xterm-256color', cols, rows, cwd: fs.existsSync(cwd) ? cwd : process.env.HOME, env: { ...process.env, ...go.env } });
   ptys.set(id, p);
   p.onData((d) => send('pty:data', id, d));
@@ -245,23 +356,38 @@ ipcMain.handle('compiler:info', async () => {
     system: sys ? { path: sys, version: await clangdVersion(sys) } : null,
     packs, packsDir: PACKS.dir, packsNote: PACKS.note ?? null,
     toolchainSetting: String(settings['compiler.toolchain'] ?? 'auto'), toolchain: activeToolchain()?.id ?? null,
-    headers: headersStatus(), installing: installing?.rel.id ?? null,
+    headers: headersStatus(), installing: installing?.rel.id ?? null, kinds: KIND_INFO,
   };
 });
 let installing: { ctrl: AbortController; rel: Release } | null = null;
 ipcMain.handle('packs:available', async (_e, kind: PackKind) => {
-  try { return { ok: true, list: await availableReleases(kind) }; } catch (e) { return { ok: false, message: (e as Error).message ?? String(e) }; }
+  try { return { ok: true, list: await releasesFor(kind) }; } catch (e) { return { ok: false, message: (e as Error).message ?? String(e) }; }
 });
 /** Installs a release; with `replaces`, the older pack is removed afterwards and settings that named it move to the new one. */
 ipcMain.handle('packs:install', async (_e, kind: PackKind, version: string, replaces?: string) => {
   if (installing) return { ok: false, message: `${installing.rel.id} is still installing` };
   let rel: Release | undefined;
-  try { rel = (await availableReleases(kind)).find((r) => r.version === version); } catch (e) { return { ok: false, message: (e as Error).message }; }
+  try { rel = (await releasesFor(kind)).find((r) => r.version === version); } catch (e) { return { ok: false, message: (e as Error).message }; }
   if (!rel) return { ok: false, message: `${kind} ${version} isn't available for this machine` };
-  const ctrl = new AbortController(), r = rel;
+  return runInstall(rel, replaces);
+});
+/** A pack from an archive on this computer (the C++ reference, whose source publishes no checksum). */
+ipcMain.handle('packs:installFile', async (_e, kind: PackKind) => {
+  if (installing) return { ok: false, message: `${installing.rel.id} is still installing` };
+  const pick = await dialog.showOpenDialog(win!, { title: `Choose the ${KIND_INFO[kind].title} archive`, properties: ['openFile'], filters: [{ name: 'Archives', extensions: ['zip', 'gz', 'tgz', 'zst'] }] });
+  const file = pick.filePaths[0];
+  if (pick.canceled || !file) return { ok: false, message: 'cancelled' };
+  const name = path.basename(file), version = name.match(/(\d{8})/)?.[1] ?? new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const format = /\.zip$/i.test(name) ? 'zip' : /\.(tar\.gz|tgz)$/i.test(name) ? 'tar.gz' : /\.tar\.zst$/i.test(name) ? 'tar.zst' : null;
+  if (!format) return { ok: false, message: 'choose a .zip, .tar.gz or .tar.zst archive (.tar.xz can\'t be read; use the .zip)' };
+  return runInstall({ kind, name: kind, version, asset: name, url: pathToFileURL(file).href, size: fs.statSync(file).size, sha256: '', format, source: `this computer (${file})`, id: `${kind}-${version}` });
+});
+async function runInstall(r: Release, replaces?: string) {
+  const ctrl = new AbortController();
   installing = { ctrl, rel: r };
   try {
-    const m = await installRelease(r, PACKS.dir, (p) => send('packs:progress', { id: r.id, ...p }), ctrl.signal);
+    const m = await installRelease(r, PACKS.dir, (p) => send('packs:progress', { id: r.id, ...p }), ctrl.signal, stepsFor(r.kind));
+    for (const c of langServers.values()) c.stop();   // a new engine is picked up the next time a file of its language opens
     if (replaces && replaces !== m.id) {
       try { removePack(PACKS.dir, replaces); } catch { /* already gone */ }
       if (settings['clangd.path'] === `pack:${replaces}`) writeSetting('clangd.path', `pack:${m.id}`);
@@ -274,7 +400,7 @@ ipcMain.handle('packs:install', async (_e, kind: PackKind, version: string, repl
     send('packs:progress', { id: r.id, phase: cancelled ? 'cancelled' : 'failed', done: 0, total: 0, note: (e as Error).message });
     return { ok: false, message: cancelled ? 'cancelled' : (e as Error).message };
   } finally { installing = null; }
-});
+}
 ipcMain.handle('packs:cancel', () => installing?.ctrl.abort());
 ipcMain.handle('packs:remove', (_e, id: string) => {
   if (installing?.rel.id === id) return { ok: false, message: 'it is installing right now' };
@@ -317,17 +443,26 @@ function buildMenu() {
   const template: MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin' ? [{ label: 'Lithograph', submenu: [{ role: 'about' }, { type: 'separator' }, cmd('settings', 'Settings…', 'Cmd+,'), { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
     { label: 'File', submenu: [
-      cmd('newFile', 'New File', 'CmdOrCtrl+N'), cmd('openFile', 'Open File…', 'CmdOrCtrl+Shift+O'), cmd('openFolder', 'Open Folder…', 'CmdOrCtrl+O'),
+      cmd('newFile', 'New File', 'CmdOrCtrl+N'), cmd('newProject', 'New Project from a Template…'), cmd('openFile', 'Open File…', 'CmdOrCtrl+Shift+O'), cmd('openFolder', 'Open Folder…', 'CmdOrCtrl+O'),
       { type: 'separator' }, cmd('save', 'Save', 'CmdOrCtrl+S'), cmd('saveAs', 'Save As…', 'CmdOrCtrl+Shift+S'), cmd('saveAll', 'Save All', 'CmdOrCtrl+Alt+S'),
       { type: 'separator' }, cmd('closeFile', 'Close File', 'CmdOrCtrl+W'),
     ] },
-    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F')] },
-    { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P')] },
+    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F'), { type: 'separator' }, cmd('formatDocument', 'Format Document', 'Shift+Alt+F'), cmd('codeStyle', 'Code Style…')] },
+    { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P'), { type: 'separator' }, cmd('todoList', 'To-do List'), cmd('reference', 'C++ Reference', 'Shift+F1')] },
     { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('showMemory', 'Memory'), cmd('toggleTerminal', 'Terminal', 'Ctrl+`'), cmd('togglePreview', 'Preview Panes', 'CmdOrCtrl+Shift+E')] },
     { role: 'windowMenu' },
+    { label: 'Run', submenu: [cmd('runChecks', 'Run with Checks…'), cmd('profile', 'Profile…')] },
+    { role: 'help', submenu: [cmd('help', 'Lithograph Help', 'F1'), cmd('tour', 'Take the Tour'), { type: 'separator' }, cmd('report', 'Write a Problem Report…')] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => { buildMenu(); createWindow(); });
-app.on('window-all-closed', () => { lsp.stop(); for (const p of ptys.values()) p.kill(); app.quit(); });
+protocol.registerSchemesAsPrivileged([{ scheme: 'litho-ref', privileges: { standard: true, secure: true } }]);
+// crash dumps stay in data/logs/crashes; nothing is uploaded
+crashReporter.start({ uploadToServer: false, compress: true });
+app.whenReady().then(() => {
+  protocol.handle('litho-ref', serveReference);
+  powerMonitor.on('on-battery', sendPower); powerMonitor.on('on-ac', sendPower);
+  buildMenu(); createWindow();
+});
+app.on('window-all-closed', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); for (const p of ptys.values()) p.kill(); app.quit(); });

@@ -1,5 +1,6 @@
 import { For, Show, createSignal, createMemo, onMount, createEffect, on } from 'solid-js';
 import { palette, setPalette, fuzzy, PaletteItem, symbolQuery, clearSymbolQuery } from '../lib/actions';
+import { t } from '../lib/i18n';
 
 export default function Palette() {
   const [q, setQ] = createSignal(palette()?.prompt?.value ?? '');
@@ -30,19 +31,19 @@ export default function Palette() {
   };
   return (
     <div style={{ position: 'fixed', inset: 0, 'z-index': 30 }} onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div class="pal">
-        <input ref={input} value={q()} placeholder={palette()?.placeholder} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={key} spellcheck={false} />
+      <div class="pal" role="dialog" aria-label={palette()?.placeholder}>
+        <input ref={input} value={q()} placeholder={palette()?.placeholder} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={key} spellcheck={false} aria-label={palette()?.placeholder} role="combobox" aria-expanded={!palette()?.prompt} aria-controls="pal-list" aria-activedescendant={palette()?.prompt ? undefined : `pal-${sel()}`} />
         <Show when={!palette()?.prompt}>
-          <div class="pal-list">
+          <div class="pal-list" id="pal-list" role="listbox">
             <For each={items()}>{(it, i) => (
-              <div class="pal-it" classList={{ on: i() === sel() }} onMouseEnter={() => setSel(i())} onMouseDown={(e) => { e.preventDefault(); accept(i()); }}>
+              <div class="pal-it" id={`pal-${i()}`} role="option" aria-selected={i() === sel()} classList={{ on: i() === sel() }} onMouseEnter={() => setSel(i())} onMouseDown={(e) => { e.preventDefault(); accept(i()); }}>
                 <span class="l">{it.label}</span><span class="d">{it.detail}</span>
               </div>
             )}</For>
-            <Show when={!items().length}><div class="pal-it"><span class="d">{symbolQuery && !q() ? 'type a name' : 'nothing matches'}</span></div></Show>
+            <Show when={!items().length}><div class="pal-it"><span class="d">{symbolQuery && !q() ? t('type a name') : t('nothing matches')}</span></div></Show>
           </div>
         </Show>
-        <Show when={palette()?.prompt}><div class="pal-it"><span class="d">⏎ apply · esc cancel</span></div></Show>
+        <Show when={palette()?.prompt}><div class="pal-it"><span class="d">{t('⏎ apply · esc cancel')}</span></div></Show>
       </div>
     </div>
   );

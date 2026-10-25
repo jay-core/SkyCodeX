@@ -112,7 +112,7 @@ const HEAP_RE = /\b(malloc|calloc|realloc|aligned_alloc|strdup|free|make_shared|
 /** Allocation sites found by scanning source text (syntactic: macros and templates can hide or add hits). */
 export function scanHeap(root: string, cap = 2000): MemoryReport['heap'] {
   const out: MemoryReport['heap'] = [];
-  for (const f of listSources(root)) {
+  for (const f of listSources(root).filter((f) => !/\.(rs|py|pyi|go)$/i.test(f))) {   // C and C++ only
     const code = stripCode(fs.readFileSync(f, 'utf8'));
     const lines = code.split('\n');
     lines.forEach((l, i) => {

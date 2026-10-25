@@ -38,7 +38,7 @@ const known = new Map<string, { file: string; line: number }>();
 export function setKnownLocations(stack: { fn: string; file: string; line: number }[]) { for (const s of stack) known.set(s.fn, s); }
 
 let sources: Promise<string[]> | null = null;
-const projectSources = () => (sources ??= (api.fs.sources(projectRoot()) as Promise<string[]>).catch(() => []));
+const projectSources = () => (sources ??= (api.fs.sources(projectRoot()) as Promise<string[]>).then((l) => l.filter((f) => !/\.(rs|py|pyi|go)$/i.test(f))).catch(() => []));
 /** clangd indexes a project only once a file of it is open: open a couple in the background. */
 export async function warmIndex() {
   for (const f of (await projectSources()).slice(0, 2)) ensureOpen(f).catch(() => {});

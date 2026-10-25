@@ -6,14 +6,22 @@ import { afterPaint } from '../lib/motion';
 
 export const [compilerOpen, setCompilerOpen] = createSignal(false);
 
-interface Pack { id: string; kind: 'toolchain' | 'clangd'; name: string; version: string; bytes: number; source: string; clangd: string | null; clang: string | null }
+type Kind = 'toolchain' | 'clangd' | 'rust' | 'rust-analyzer' | 'python' | 'pyright' | 'go' | 'cppref';
+interface Pack { id: string; kind: Kind; name: string; version: string; bytes: number; source: string; clangd: string | null; clang: string | null; note?: string }
 interface Info {
   setting: string; active: string | null; activeVersion: string | null;
   inbuilt: { path: string; version: string | null } | null; system: { path: string; version: string | null } | null;
   packs: Pack[]; packsDir: string; packsNote: string | null; toolchainSetting: string; toolchain: string | null;
   headers: { ok: boolean; detail: string }; installing: string | null;
+  kinds: Record<Kind, { title: string; language: string; what: string }>;
 }
-interface Release { kind: 'toolchain' | 'clangd'; name: string; version: string; asset: string; size: number; source: string; id: string; format: string }
+// the other languages: each row installs one kind of pack
+const MORE: { language: string; kinds: Kind[] }[] = [
+  { language: 'Rust', kinds: ['rust', 'rust-analyzer'] },
+  { language: 'Python', kinds: ['python', 'pyright'] },
+  { language: 'Go', kinds: ['go'] },
+];
+interface Release { kind: Kind; name: string; version: string; asset: string; size: number; source: string; id: string; format: string; sha512?: string; note?: string }
 type Progress = { id: string; phase: string; done: number; total: number; note?: string };
 
 const mb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.round(n / 1e6)} MB`);
@@ -48,10 +56,11 @@ export default function CompilerWindow() {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
-  const listFor = async (kind: 'toolchain' | 'clangd') => {
+  const [pickKind, setPickKind] = createSignal<Kind | null>(null);
+  const listFor = async (kind: Kind) => {
     setRel({ ...rel(), [kind]: 'looking…' });
     const r = (await api.packs.available(kind)) as { ok: boolean; list?: Release[]; message?: string };
-    setRel({ ...rel(), [kind]: r.ok ? r.list! : `couldn't reach GitHub — ${r.message}. Installed packs keep working offline.` });
+    setRel({ ...rel(), [kind]: r.ok ? (r.list!.length ? r.list! : 'no release for this computer') : `couldn't list versions — ${r.message}. Installed packs keep working offline.` });
   };
   const releases = (kind: string) => (Array.isArray(rel()[kind]) ? (rel()[kind] as Release[]) : []);
   const latest = (kind: string) => releases(kind)[0];
@@ -62,7 +71,7 @@ export default function CompilerWindow() {
     if (root()) startLsp(root());   // the new engine takes over at once
   };
   const install = async (r: Release, replaces?: string) => {
-    setConfirm(null); setPicking(false);
+    setConfirm(null); setPicking(false); setPickKind(null);
     setProg({ id: r.id, phase: 'download', done: 0, total: r.size });
     const res = (await api.packs.install(r.kind, r.version, replaces)) as { ok: boolean; message?: string };
     await refetch();
@@ -85,7 +94,7 @@ export default function CompilerWindow() {
   const busy = () => !!prog() && !['done', 'failed', 'cancelled'].includes(prog()!.phase);
 
   return (
-    <div class="cwin" ref={el} style={{ left: `${pos().x}px`, top: `${pos().y}px` }}>
+    <div class="cwin" ref={el} data-help="compiler" role="dialog" aria-label="compiler" style={{ left: `${pos().x}px`, top: `${pos().y}px` }}>
       <div class="cwin-h" onPointerDown={drag}>
         <span class="t">compiler</span>
         <span class="grow" />
@@ -154,12 +163,56 @@ export default function CompilerWindow() {
                 </div>
               </Show>
 
+              {/* ---- other languages ---- */}
+              <div class="csec">more languages <span class="dim">· each in its own pack, used by the editor and Lithograph's terminal</span></div>
+              <For each={MORE}>{(g) => (
+                <div class="clang">
+                  <div class="cl">{g.language}</div>
+                  <div class="grow">
+                    <For each={g.kinds}>{(k) => {
+                      const have = () => i().packs.filter((p) => p.kind === k);
+                      return (
+                        <div class="cpack">
+                          <div class="grow">
+                            <div>{i().kinds[k].title} <span class="dim">· {i().kinds[k].what}</span></div>
+                            <For each={have()}>{(p) => (
+                              <div class="dim">{p.version} · {mb(p.bytes)} on disk{p.note ? ` · ${p.note}` : ''}
+                                <Show when={latest(k) && newer(latest(k)!.version, p.version)}> <button class="lnk" disabled={busy()} onClick={() => setConfirm({ r: latest(k)!, replaces: p.id })}>update to {latest(k)!.version}</button></Show>
+                                {' '}<button class="lnk warn" disabled={busy()} onClick={() => remove(p)}>remove</button></div>
+                            )}</For>
+                            <Show when={typeof rel()[k] === 'string'}><div class="dim">{rel()[k] as string}</div></Show>
+                          </div>
+                          <button class="lnk" disabled={busy()} onClick={() => { if (pickKind() === k) setPickKind(null); else { setPickKind(k); listFor(k); } }}>{pickKind() === k ? 'hide' : have().length ? 'versions' : 'install'}</button>
+                        </div>
+                      );
+                    }}</For>
+                  </div>
+                </div>
+              )}</For>
+              <div class="clang">
+                <div class="cl">C++ reference</div>
+                <div class="grow">
+                  <For each={i().packs.filter((p) => p.kind === 'cppref')}>{(p) => <div class="dim">{p.version}{p.note ? ` · ${p.note}` : ''} <button class="lnk warn" disabled={busy()} onClick={() => remove(p)}>remove</button></div>}</For>
+                  <div class="dim">cppreference.com's pages, offline. Download <b>html-book-….zip</b> from github.com/PeterFeicht/cppreference-doc/releases yourself (it publishes no checksum), then choose it here. Shift F1 on a name opens its page.</div>
+                </div>
+                <button class="lnk" disabled={busy()} onClick={async () => { const r = (await api.packs.installFile('cppref')) as { ok: boolean; message?: string }; await refetch(); if (!r.ok && r.message !== 'cancelled') flash(`couldn't install the reference: ${r.message}`, 8000); else if (r.ok) flash('C++ reference installed', 4000); }}>install from a file…</button>
+              </div>
+              <Show when={pickKind()}>{(k) => (
+                <div class="cvers">
+                  <For each={releases(k()).slice(0, 8)}>{(r) => (
+                    <button classList={{ have: i().packs.some((p) => p.id === r.id) }} disabled={i().packs.some((p) => p.id === r.id) || busy()} onClick={() => setConfirm({ r })}>
+                      <span>{i().kinds[k()].title} {r.version}</span><span class="dim">{r.asset} · {r.size ? mb(r.size) : 'size unknown'}</span>{i().packs.some((p) => p.id === r.id) ? <span class="tag">installed</span> : null}
+                    </button>
+                  )}</For>
+                </div>
+              )}</Show>
+
               {/* ---- confirm a download ---- */}
               <Show when={confirm()}>{(c) => (
                 <div class="cconfirm">
-                  <div>Download <b>{c().r.asset}</b> ({mb(c().r.size)}) from {c().r.source}?</div>
+                  <div>Download <b>{c().r.asset}</b> ({c().r.size ? mb(c().r.size) : 'size not published'}) from {c().r.source}?</div>
                   <div class="dim">It goes into {i().packsDir}{c().replaces ? `, replacing ${c().replaces}` : ''} and needs about {mb(c().r.size * (c().r.format === 'zip' ? 4 : 7))} free.
-                    It is checked against the SHA-256 GitHub publishes for it and unpacked by Lithograph itself — no installer runs, and nothing outside that folder or in your environment changes.</div>
+                    It is checked against the {c().r.sha512 ? 'SHA-512 the npm registry' : 'SHA-256 ' + (c().r.source.startsWith('github') ? 'GitHub' : c().r.source)} publishes for it and unpacked by Lithograph itself — no installer runs, and nothing outside that folder or in your environment changes.{c().r.note ? ` Note: ${c().r.note}.` : ''}</div>
                   <div class="crow"><button class="barbtn" onClick={() => install(c().r, c().replaces)}>download and install</button><button class="lnk" onClick={() => setConfirm(null)}>cancel</button></div>
                 </div>
               )}</Show>

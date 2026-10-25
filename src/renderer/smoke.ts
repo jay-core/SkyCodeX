@@ -11,6 +11,13 @@ import { setMenuOpen } from './components/AppMenu';
 import { cardViews } from './components/Card';
 import { files, states } from './lib/store';
 import { offsetToPos } from './lib/cm';
+import { toast } from './lib/store';
+import { setLanguage } from './lib/i18n';
+import { setHelpTopic } from './components/Help';
+import { startTour } from './components/Tour';
+import { setStyleOpen } from './components/StyleWindow';
+import { setRunOpen } from './components/RunWindow';
+import { openReference, todoList } from './lib/extras';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -38,6 +45,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'memory') return memoryDemo(report);
   if (info()?.scenario === 'compiler') return compilerDemo(report);
   if (info()?.scenario === 'fonts') return fontsDemo(report);
+  if (info()?.scenario === 'extras') return extrasDemo(report);
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -490,6 +498,132 @@ async function fontsDemo(report: Record<string, unknown>) {
     await api.smoke.capture('f1-arx-f1');
   } catch (e) {
     errors.push(`fonts demo: ${e}`);
+  }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario extras`: help and the tour, translations, spelling, flow pins and folders, code style, to-do list,
+ *  the reference without its pack, and run with checks / profile on a project made from a template (in the scratch folder). */
+async function extrasDemo(report: Record<string, unknown>) {
+  const q = (sel: string) => document.querySelector(sel) as HTMLElement | null;
+  try {
+    await until(() => lspState() === 'ready', 20000);
+    const src = (await api.fs.sources(root()) as string[]).find((f) => /server\.cpp$/.test(f))!;
+    await openFile(src);
+    await sleep(800);
+    // ---- spelling: a misspelt word in a comment, none in code ----
+    const v = getMainView()!;
+    v.dispatch({ changes: { from: 0, insert: '// the quick brwon fox jumps over teh lazy dog\nint smokeIdentifierWithoutSpaces = 0;\n' } });
+    await until(() => document.querySelectorAll('.cm-misspelt').length >= 2, 4000);
+    report.misspelt = [...document.querySelectorAll('.cm-misspelt')].map((e) => e.textContent);
+    await api.smoke.capture('x1-spelling');
+    v.dispatch({ changes: { from: 0, to: v.state.doc.line(3).from, insert: '' } });
+    // ---- help: F1 over the preview opens its page ----
+    const pr = q('.pane.prev')!.getBoundingClientRect();
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: pr.left + 40, clientY: pr.top + 80 }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', bubbles: true }));
+    await until(() => !!q('.help h1'), 3000);
+    report.helpForPreview = q('.help h1')?.textContent;
+    (q('.help-q') as HTMLInputElement).value = 'pin box';
+    q('.help-q')!.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await sleep(150);
+    report.helpSearch = [...document.querySelectorAll('.help-nav button')].map((b) => b.textContent);
+    await api.smoke.capture('x2-help');
+    setHelpTopic(null);
+    // ---- the tour ----
+    startTour();
+    await sleep(500);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await sleep(600);
+    report.tourStep = q('.tour-note .tt')?.textContent;
+    report.tourSpot = (() => { const r = q('.tour-spot')!.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })();
+    await api.smoke.capture('x3-tour');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(200);
+    report.tourClosed = !q('.tour');
+    // ---- translations (interface only; settings.toml is not touched) ----
+    for (const l of ['hi', 'ja', 'de']) {
+      setLanguage(l);
+      await sleep(150);
+      (report.translated ??= {} as any)[l] = [...document.querySelectorAll('.appbar .barbtn')].map((b) => b.textContent).join(' | ');
+      if (l === 'hi') await api.smoke.capture('x4-hindi');
+    }
+    setLanguage('auto');
+    // ---- code style: a sample re-formatted by clangd with the chosen options ----
+    setStyleOpen(true);
+    await sleep(1500);
+    const before = q('.style-code .cm-content')?.textContent ?? '';
+    ([...document.querySelectorAll('.sopt')].find((o) => /braces/.test(o.textContent ?? ''))?.querySelectorAll('button') as any)?.[3]?.click();   // Allman
+    ([...document.querySelectorAll('.sopt')].find((o) => /pointer/.test(o.textContent ?? ''))?.querySelectorAll('button') as any)?.[0]?.click();   // Left
+    await sleep(1500);
+    const after = q('.style-code .cm-content')?.textContent ?? '';
+    report.style = { changed: before !== after, sample: [...document.querySelectorAll('.style-code .cm-line')].slice(4, 9).map((l) => l.textContent), note: q('.style-prev .sub')?.textContent };
+    await api.smoke.capture('x5-code-style');
+    setStyleOpen(false);
+    // ---- to-do list and the reference without its pack ----
+    await todoList();
+    await sleep(500);
+    report.todo = palette()?.placeholder;
+    setPalette(null);
+    await openReference('std::vector');
+    await sleep(200);
+    report.referenceWithoutPack = toast();
+    // ---- flow: drag a box to pin it, group by folder ----
+    setPage('flow');
+    await until(() => document.querySelectorAll('.fbox').length > 1, 30000);
+    await sleep(1500);
+    const box = q('.fbox')!, b0 = box.getBoundingClientRect(), canvas = q('.flow')!;
+    box.dispatchEvent(new PointerEvent('pointerdown', { clientX: b0.left + 20, clientY: b0.top + 20, bubbles: true, pointerId: 1, button: 0 }));
+    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: b0.left + 120, clientY: b0.top + 160, bubbles: true, pointerId: 1 }));
+    canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: b0.left + 120, clientY: b0.top + 160, bubbles: true, pointerId: 1 }));
+    await sleep(300);
+    report.pinned = document.querySelectorAll('.fbox.pinned').length;
+    const labels = [...document.querySelectorAll('.flab')].map((l) => l.getBoundingClientRect());
+    const boxes = [...document.querySelectorAll('.fbox')].map((b) => b.getBoundingClientRect());
+    report.labelsOnBoxes = labels.filter((l) => boxes.some((b) => l.left < b.right && l.right > b.left && l.top < b.bottom && l.bottom > b.top)).length;
+    report.labels = labels.length;
+    ([...document.querySelectorAll('.flow ~ *, .ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'group by folder')?.click();
+    await sleep(1200);
+    report.folderFrames = [...document.querySelectorAll('.fgroup span')].map((s) => s.textContent);
+    await api.smoke.capture('x6-flow-pinned-grouped');
+    ([...document.querySelectorAll('.ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'group by folder')?.click();
+    ([...document.querySelectorAll('.ph .chip')] as HTMLButtonElement[]).find((b) => b.textContent === 'unpin all')?.click();
+    await sleep(800);
+    report.unpinned = document.querySelectorAll('.fbox.pinned').length === 0;
+    setPage('editor');
+    // ---- run with checks and profile on a new project from a template, beside the smoke folder ----
+    const parent = root().replace(/[\\/][^\\/]+$/, '');
+    const made = (await api.templates.create(parent, `smoke-proj-${Date.now()}`, 'cpp-console')) as any;
+    report.template = made.ok;
+    await api.fs.write(made.open, '#include <cstdio>\nint twice(int x) { return x * 2; }\nint main() {\n  int s = 0;\n  for (int i = 0; i < 500; i++) s += twice(i);\n  int* p = new int(s);\n  delete p;\n  std::printf("%d\\n", *p);\n}\n');
+    await openFolder(made.dir);
+    await openFile(made.open);
+    setRunOpen('memory');
+    await sleep(400);
+    ([...document.querySelectorAll('.runwin .barbtn')] as HTMLButtonElement[])[0].click();
+    await until(() => !!q('.runwin .runres'), 90000);
+    report.checks = { status: q('.runwin .runres .csub')?.textContent, problems: [...document.querySelectorAll('.runrep .tt')].map((e) => e.textContent), firstFrame: q('.runrep .frame.mine')?.textContent };
+    await api.smoke.capture('x7-run-with-checks');
+    (q('.runrep .frame.mine') as HTMLButtonElement | null)?.click();
+    await sleep(500);
+    report.jumpedTo = cursorPos();
+    ([...document.querySelectorAll('.runwin .copt')] as HTMLButtonElement[])[3].click();   // profile
+    await sleep(200);
+    ([...document.querySelectorAll('.runwin .barbtn')] as HTMLButtonElement[])[0].click();
+    await until(() => !!q('.runwin .runres'), 90000);
+    await sleep(800);
+    report.profile = { status: q('.runwin .runres .csub')?.textContent, top: [...document.querySelectorAll('.runwin .frame.prof')].slice(0, 3).map((e) => e.textContent), gutter: [...document.querySelectorAll('.cm-heat-gutter .cm-gutterElement')].map((e) => e.textContent).filter(Boolean).slice(0, 8) };
+    await api.smoke.capture('x8-profile');
+    setRunOpen(null);
+    // ---- problem report: written to the logs folder and opened ----
+    COMMANDS.report();
+    await until(() => /problem-report/.test(files.active), 5000);
+    report.problemReport = { opened: files.active.split(/[\\/]/).pop(), redacted: !(states.get(files.active)?.doc.toString() ?? '').includes('/Users/') };
+  } catch (e) {
+    errors.push(`extras demo: ${e}`);
   }
   report.errors = errors;
   await api.smoke.done(report);
