@@ -8,7 +8,7 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 
 ## Status
 
-**Version 1.0 for macOS (Apple silicon)**: a portable app built with `npm run package` (see below). Windows and Linux are designed for, but not yet packaged or tested. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
+**Version 1.0** for macOS (Apple silicon), Windows (x64) and Linux (x64): portable apps, downloadable from the repository's [Releases](https://github.com/jay-core/lithograph-editor/releases) page. Each build is checked by opening the packaged app on its own system before it is published. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
 
 Working now:
 - **Portable and offline:** a `data/` folder beside the app holds `settings.toml` (live reload) and the session. Saves are atomic, and unsaved edits survive crashes.
@@ -55,20 +55,36 @@ Not planned: a debugger. Lithograph is a hobby project, and run-with-checks plus
 
 ## Using the release
 
-1. Unzip `Lithograph-1.0.0-mac-arm64.zip` and move the `Lithograph-1.0.0-mac-arm64` folder wherever you like: a projects folder, or a USB drive. While macOS still has it quarantined, don't run it from Downloads; it would run as a read-only copy.
-2. Open `Lithograph.app`. On first launch, see *First launch* below.
-3. Lithograph creates `data/` (settings, session, logs) and `language_packs/` beside the app. Nothing is installed anywhere else, and nothing is sent over the network.
+Download the file for your system from [Releases](https://github.com/jay-core/lithograph-editor/releases):
 
-The app is about 630 MB on disk (224 MB zipped): Electron plus the inbuilt clangd, which is most of it. It needs macOS 13 or later on Apple silicon. For C/C++ standard headers, install the Xcode Command Line Tools (`xcode-select --install`).
+| System | File | Download |
+|---|---|---|
+| macOS 13+, Apple silicon | `Lithograph-1.0.0-mac-arm64.zip` | 224 MB |
+| Windows 10/11, x64 | `Lithograph-1.0.0-win-x64.zip` | 191 MB |
+| Linux x64 (built on Ubuntu 22.04; needs a distribution of that age or newer) | `Lithograph-1.0.0-linux-x64.tar.gz` | 244 MB |
+
+Unpack it and move the folder wherever you like: a projects folder, or a USB drive. Nothing is installed anywhere else. Lithograph creates `data/` (settings, session, logs) and `language_packs/` beside the app on first run, and sends nothing over the network. Unpacked, the macOS app is 630 MB, most of it Electron plus the inbuilt clangd.
+
+- **macOS**: open `Lithograph.app`. While macOS still has the folder quarantined, don't run it from Downloads; it would run as a read-only copy. For the C/C++ standard headers, install the Xcode Command Line Tools (`xcode-select --install`).
+- **Windows**: open `Lithograph.exe`. For the C/C++ standard headers, install the llvm-mingw pack from the compiler window, or use Visual Studio's.
+- **Linux**: run `./lithograph` from the folder. If it stops at once with a message about the "SUID sandbox helper" (Ubuntu 24.04 and later restrict Chromium's sandbox), give the helper its rights once with `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`, or start it with `./lithograph --no-sandbox`. For the C/C++ standard headers, install your distribution's development packages (for example `build-essential`).
+
+On first launch, see *First launch* below.
 
 ## Building a release
 
 ```
 npm run fetch-clangd   # once: the inbuilt clangd, checked against its pinned SHA-256
-npm run package        # builds, assembles release/Lithograph-<version>-mac-<arch>/ and zips it
+npm run package        # builds, assembles release/Lithograph-<version>-<os>-<arch>/ and packs it
 ```
 
-`src/build/package.mjs` needs no extra downloads. It renames Electron's own app bundle and adds Lithograph's built files, node-pty's ready-built binary and the inbuilt clangd (inside `Lithograph.app/Contents/Resources/tools/`). It then signs the app ad hoc, which is free. The icon is made from `assets/icon/lithograph-1024.png` (any 1024 × 1024 PNG); `npm run icon` renders it from `assets/icon/lithograph.svg`. Output goes to `release/`, which git ignores.
+`npm run package` builds for the system it runs on. `src/build/package.mjs` renames Electron's own app and adds Lithograph's built files, node-pty's binary and the inbuilt clangd (in `resources/tools/`, or `Contents/Resources/tools/` on macOS):
+
+- **macOS**: the app bundle and its helpers are renamed and signed ad hoc, which is free; zipped.
+- **Windows**: `Lithograph.exe` gets its icon and version details from `rcedit` (install it for the build only: `npm install --no-save rcedit@5.0.2`); zipped.
+- **Linux**: node-pty has no ready-built Linux binary, so compile it first with `npx electron-rebuild -f -w node-pty`; packed as `.tar.gz`.
+
+The Windows and Linux releases are built by GitHub Actions ([`.github/workflows/release.yml`](.github/workflows/release.yml)) on each system. It runs the tests, packages, then opens the packaged app with `--smoke … --scenario boot` and fails unless the inbuilt clangd, preview cards, go-to-definition, the terminal and the flow view all work (`src/build/check-smoke.mjs`). Pushing a `v…` tag attaches the builds to that tag's release; the macOS zip is built on a Mac and added to the same release. The icon is made from `assets/icon/lithograph-1024.png` (any 1024 × 1024 PNG); `npm run icon` renders it from `assets/icon/lithograph.svg`. Output goes to `release/`, which git ignores.
 
 ## Running from source
 

@@ -120,9 +120,13 @@ Lithograph/
 
 ## 8. Packaging
 
-**Version 1.0 (built):** `npm run package` (`src/build/package.mjs`) assembles the macOS app from Electron's own bundle. It is renamed (helpers included), carries Lithograph's built files, node-pty's ready-built binary for the processor and the inbuilt clangd in `Resources/tools/`, and is ad-hoc signed (free, not notarised). The result is a folder with `Lithograph.app`, a short read-me and the licence, zipped. `data/` and `language_packs/` are created beside the app on first run.
+**Version 1.0 (built):** `npm run package` (`src/build/package.mjs`) builds for the system it runs on, from Electron's own app, with no installer:
 
-**Planned:** a Windows zip folder (node-pty ships Windows binaries; Electron and clangd for Windows are downloaded at build time) and a Linux folder in a `.tar.gz` (no AppImage, so no FUSE dependency; node-pty must be compiled there).
+- **macOS:** the bundle is renamed (helpers included), carries Lithograph's built files, node-pty's ready-built binary for the processor and the inbuilt clangd in `Resources/tools/`, and is ad-hoc signed (free, not notarised). Zipped.
+- **Windows:** a folder with `Lithograph.exe` (icon and version details set with `rcedit`), node-pty's ready-built Windows binary and clangd in `resources/tools/`. Zipped.
+- **Linux:** a folder with `lithograph`, node-pty compiled for Electron at build time, packed as `.tar.gz` (no AppImage, so no FUSE dependency).
+
+Each folder holds a short read-me and the licence; `data/` and `language_packs/` are created beside the app on first run. Windows and Linux are built by GitHub Actions (`.github/workflows/release.yml`), which opens each packaged app in a boot check before attaching it to the tagged release.
 
 ### Size budget (no loss of speed or quality)
 
