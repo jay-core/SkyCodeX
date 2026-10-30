@@ -222,7 +222,6 @@ input, select { font: inherit; color: var(--bright); }
 .lv-files .fbox .s2, .lv-folders .fbox .s2 { top: calc(46px * var(--inv)); }
 .lv-files .fbox .lc, .lv-folders .fbox .lc { font-size: calc(11px * var(--inv)); right: calc(10px * var(--inv)); top: calc(10px * var(--inv)); }
 .lv-files .fbox .start, .lv-folders .fbox .start { font-size: calc(12px * var(--inv)); top: calc(9px * var(--inv)); right: calc(100% + 10px * var(--inv)); }
-.lv-files .hpop, .lv-folders .hpop { transform: scale(var(--inv)); transform-origin: 0 0; }
 .lv-files .fbox, .lv-folders .fbox { cursor: pointer; } .lv-files .fbox:hover, .lv-folders .fbox:hover { border-color: #4a504a; }
 .fbox .fr { position: absolute; left: 0; right: 0; height: 21px; display: flex; align-items: baseline; gap: 9px; padding: 0 12px; font: 13px var(--mono); line-height: 21px; color: #8b9189; white-space: nowrap; cursor: pointer; transition: opacity .3s, background .3s, color .3s; }
 .fbox .fr:hover { color: #c9cdc5; }
@@ -252,10 +251,12 @@ input, select { font: inherit; color: var(--bright); }
 .bxr .t { font: 12.5px var(--mono); color: #c9cdc5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .bxr .t b { color: var(--accent); font-weight: 400; margin-right: 12px; } .bxr .t i { font-style: normal; color: #3f453f; padding: 0 5px; }
 .bxr .w { font: 300 12px var(--ui); color: #6f766e; margin: 4px 0 2px 22px; display: flex; gap: 14px; } .bxr .f { font: 300 11.5px var(--ui); color: #5a7a7a; margin-left: 22px; }
 .bxr.on { background: rgba(173,155,111,.09); border-left-color: var(--flow-now); } .bxr.dim { opacity: .45; }
-.hpop { position: absolute; background: #222422; box-shadow: 0 18px 40px rgba(0, 0, 0, .55); padding: 8px 0; z-index: 8; min-width: 220px; pointer-events: none; }
+.hpop { position: fixed; overflow: hidden; max-width: calc(100vw - 16px); background: #222422; box-shadow: 0 18px 40px rgba(0, 0, 0, .55); padding: 8px 0; z-index: 8; min-width: 220px; pointer-events: none; }
 .hpop div { display: flex; gap: 12px; padding: 3px 14px; font: 13px var(--mono); color: var(--bright); white-space: nowrap; }
-.hpop .n { width: 26px; text-align: right; color: #c9b98f; }
-.hpop .no { color: #4a4f4a; }
+.hpop .n { width: 26px; text-align: right; color: #c9b98f; flex: none; }
+.hpop .nm { flex: none; }
+.hpop .more { font: 300 12px var(--ui); color: var(--dim); }
+.hpop .no { color: #4a4f4a; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .bar { position: relative; height: 16px; background: #1d1f1d; margin-top: 8px; }
 .bar i { position: absolute; top: 0; bottom: 0; }
@@ -522,13 +523,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scode .cm-editor { height: 100%; }
 .scode .snext { background: rgba(173, 155, 111, .14); box-shadow: inset 3px 0 #ad9b6f; }
 .lanes { display: flex; gap: 10px; margin-right: 12px; }
-.epick { position: relative; margin-right: 6px; }
-.eplist { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 520px; max-width: 70vw; background: #1f201f; box-shadow: 0 18px 40px rgba(0,0,0,.55); }
-.eplist input { width: 100%; box-sizing: border-box; padding: 9px 14px; background: none; border: 0; border-bottom: 1px solid #2a2d2a; outline: 0; font: 13px var(--mono); color: #e3e6df; }
-.eprows { max-height: 52vh; overflow: auto; padding: 4px 0; display: grid; }
-.eprows button { display: flex; gap: 12px; align-items: baseline; padding: 4px 14px; text-align: left; white-space: nowrap; overflow: hidden; }
-.eprows .nm { font: 12.5px var(--mono); color: #c9cdc5; } .eprows .w { font: 300 11.5px var(--ui); color: #5f665f; overflow: hidden; text-overflow: ellipsis; }
-.eprows button:hover, .eprows button.on { background: rgba(173,155,111,.12); } .eprows button.on .nm { color: var(--accent); }
 .seqv.still .seqin, .seqv.still .srow, .seqv.still .sframe, .seqv.still .sbar, .seqv.still .sarw, .seqv.still .sband { transition: none; animation: none; }
 
 /* ---------- call outlines (lib/callmarks.ts): a thin box in the colour of the card each call leads to ---------- */
@@ -558,3 +552,47 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .magnifier .mg-in * { transition: none !important; animation: none !important; }
 .magnifier .mg-z { position: absolute; right: 6px; bottom: 4px; font: 11px var(--mono); color: #8a7f5f; background: var(--bg); padding: 0 4px; }
 .mgchips { display: inline-flex; align-items: baseline; gap: 8px; } .mgz { font: 12px var(--mono); color: #8b9189; }
+
+/* searches: a file by name (folder tab), text in the whole folder (over the code pane) — both any case */
+.ffind { display: flex; align-items: center; gap: 8px; padding: 2px 12px 8px; flex: none; }
+.ffind input { flex: 1; min-width: 0; background: var(--card); border: 0; outline: none; padding: 5px 8px; font: 300 13px var(--ui); }
+.ffind input::placeholder, .csearch input::placeholder { color: var(--faint); }
+.found .fcount { font: 300 11.5px var(--ui); color: var(--faint); padding: 0 12px 4px; }
+.found .fdir { color: var(--dim); }
+mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e8d9ad; border-radius: 2px; }
+.mk { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.csearch { position: absolute; inset: 0; z-index: 6; background: var(--bg); display: flex; flex-direction: column; }
+.csearch .q { display: flex; align-items: center; gap: 12px; margin: 12px 18px 6px; padding: 6px 12px; background: var(--card); }
+.csearch .q input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; font: 300 16px var(--ui); }
+.csearch .d { color: var(--dim); font: 300 12.5px var(--ui); }
+.csearch .sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.cres { flex: 1; overflow: auto; padding: 0 18px 18px; }
+.cres .grp { display: flex; gap: 10px; align-items: baseline; margin: 12px 0 2px; font: 300 12.5px var(--ui); color: var(--dim); }
+.cres .grp b { font-weight: 400; color: var(--fg); }
+.cres .grp .grow { flex: 1; }
+.cres .hit { display: flex; gap: 14px; align-items: baseline; height: 23px; font: 12.5px var(--mono); color: var(--fg); cursor: default; }
+.cres .hit .ln { width: 46px; text-align: right; color: var(--faint); flex: none; }
+.cres .hit.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 var(--accent); color: var(--bright); }
+/* play controls, both flow views */
+.playc { display: inline-flex; gap: 2px; margin-right: 8px; }
+.playc button { min-width: 26px; height: 22px; padding: 0 6px; font: 300 12.5px var(--ui); color: var(--dim); background: var(--card); }
+.playc button:hover { color: var(--bright); }
+.playc button.on { color: #e8d9ad; background: color-mix(in srgb, var(--accent) 22%, var(--card)); }
+.playc .spd { min-width: 34px; }
+/* all programs: every main, most likely first, grouped by folder */
+.progs { flex: 1; overflow: auto; padding: 4px 22px 22px; }
+.progs .q { display: flex; align-items: center; gap: 12px; margin: 10px 0 6px; padding: 6px 12px; background: var(--card); }
+.progs .q input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; font: 300 15px var(--ui); }
+.progs .q input::placeholder { color: var(--faint); }
+.progs .grp { display: flex; gap: 10px; align-items: baseline; margin: 14px 0 2px; font: 300 12.5px var(--ui); color: var(--dim); }
+.progs .grp b { font-weight: 400; color: var(--fg); }
+.progs .grp .more { margin-left: auto; color: var(--dim); }
+.progs .grp .more:hover { color: var(--bright); }
+.progs .pr { display: flex; gap: 12px; align-items: baseline; width: 100%; height: 27px; padding: 0 10px; text-align: left; font: 300 14px var(--ui); color: var(--fg); white-space: nowrap; overflow: hidden; }
+.progs .pr .p { font-size: 12.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.progs .pr .w { margin-left: auto; font-size: 12px; color: var(--dim); }
+.progs .pr.on, .progs .pr:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--bright); }
+.progs .pr.on { box-shadow: inset 3px 0 var(--accent); }
+.progs .top { font-size: 17px; height: 32px; }
+.backp { font: 300 14px var(--ui); color: #ad9b6f; margin-right: 4px; }
+.backp:hover { color: #e8d9ad; }

@@ -1,13 +1,14 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
 import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, cursorPos, info, applySettings, problems } from './lib/store';
-import { relPath } from './lib/api';
+import { relPath, basename } from './lib/api';
+import { openSearch, result } from './lib/search';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
 import { lspState } from './lib/lsp';
 import { quickOpen, palette, setPalette, applyWorkspaceEdit, COMMANDS } from './lib/actions';
 import { setMenuOpen } from './components/AppMenu';
-import { files, states } from './lib/store';
+import { files, states, setFiles } from './lib/store';
 import { offsetToPos } from './lib/cm';
 import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
@@ -301,7 +302,7 @@ export async function runSmoke() {
     await api.smoke.capture('9b-menu');
     setMenuOpen(false);
     COMMANDS.newFile(); await sleep(300);
-    palette()?.prompt?.accept('smoke_new.cpp'); await sleep(900);
+    palette()?.prompt?.accept('smoke_new.cpp'); setPalette(null); await sleep(900);
     report.newFileActive = files.active.split('/').pop();
     // typing cost: 300 single-character edits in the open file (the edits are undone afterwards, never saved)
     await openFile(file); await sleep(400);
@@ -339,6 +340,38 @@ export async function runSmoke() {
       await api.settings.set('preview.include_other', true);
       await openFile(file);
     }
+    // the three searches (any case) and the play controls
+    setPage('editor'); setFiles('active', ''); await sleep(300);
+    const ff = document.querySelector('.ffind input') as HTMLInputElement;
+    ff.value = 'SERVER'; ff.dispatchEvent(new Event('input', { bubbles: true }));
+    await until(() => document.querySelectorAll('.found .ti:not(.fdir)').length > 0, 8000);
+    report.fileFilter = [...document.querySelectorAll('.found .ti:not(.fdir)')].map((e) => e.textContent);
+    await api.smoke.capture('10a-file-filter');
+    ff.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(200);
+    report.fileFilterCleared = !document.querySelector('.found') && !!document.querySelector('.files .tree');
+    openSearch('Keep_Alive');
+    await until(() => !result.running && result.hits.length > 0, 15000); await sleep(300);
+    report.contentSearch = { matches: result.matches, files: result.files, shown: document.querySelectorAll('.cres .hit').length, marked: document.querySelectorAll('.cres mark').length };
+    await api.smoke.capture('10b-content-search');
+    (document.querySelector('.cres .hit') as HTMLElement)?.click(); await sleep(600);
+    report.contentSearchOpened = { closed: !document.querySelector('.csearch'), file: basename(files.active), line: getMainView()?.state.doc.lineAt(getMainView()!.state.selection.main.head).number };
+    await openFile(file); await sleep(300);
+    const cv = document.querySelector('.pcol .card .cm-content') as HTMLElement | null;
+    if (cv) { cv.focus(); COMMANDS.find(); await sleep(300); }
+    report.cardSearch = !!document.querySelector('.pcol .card .cm-search') && !document.querySelector('.cm-editor .cm-search:not(.pcol *)');
+    await api.smoke.capture('10c-card-search');
+    (document.querySelector('.pcol .card .cm-search input') as HTMLInputElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    setPage('flow'); setFlowView('sequence');
+    await until(() => !!document.querySelector('.seqv .playc'), 10000);
+    const pc = (n: number) => document.querySelectorAll('.playc button')[n] as HTMLButtonElement;
+    const stepAt = () => document.querySelector('.seqk')?.textContent ?? '';
+    const a0 = stepAt(); pc(2).click(); await sleep(400); const a1 = stepAt();
+    pc(1).click(); await sleep(1200); const playingOn = pc(1).getAttribute('aria-pressed'); pc(1).click(); await sleep(200);
+    pc(0).click(); await sleep(300); const restarted = pc(1).getAttribute('aria-pressed'); pc(1).click();
+    setFlowView('boxes'); await until(() => !!document.querySelector('.bxv') && !!document.querySelector('.playc'), 10000);
+    report.playControls = { stepMoved: a0 !== a1, playing: playingOn, restartPlays: restarted, boxes: document.querySelectorAll('.playc button').length };
+    await api.smoke.capture('10d-play-controls');
+    setPage('editor');
     // switching folders: clangd must come back up
     const sub = `${root()}/src`;
     await openFolder(sub);
@@ -708,6 +741,11 @@ async function largeCheck(report: Record<string, unknown>) {
     }
     setFlowView('boxes');
     setPage('flow');
+    // a project with many mains opens on the list of them: the most likely one is picked, then back and again
+    await until(() => document.querySelectorAll('.progs .pr').length > 0, 30000);
+    steps.programs = { rows: document.querySelectorAll('.progs .pr').length, groups: [...document.querySelectorAll('.progs .grp b')].map((b) => b.textContent).slice(0, 10), top: document.querySelector('.progs .pr.top')?.textContent };
+    await api.smoke.capture('large-0-programs');
+    (document.querySelector('.progs .pr.top') as HTMLElement).click();
     const t5 = performance.now();
     const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
     const fl = await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0 && !/tracing/.test(flowStatus()), 240000);
@@ -737,6 +775,14 @@ async function largeCheck(report: Record<string, unknown>) {
       zooms.push({ z, at: document.querySelector('.bxctl .ro')?.textContent, level: (document.querySelector('.bxctl .lvl')?.textContent ?? '').split(' ·')[0], boxes: document.querySelectorAll('.fbox').length, labels: document.querySelectorAll('.flab').length, frameMs, collisions: bad.length, first: bad.slice(0, 2) });
     }
     steps.boxZooms = zooms;
+    // zoomed out, hovering a box lists its functions at screen size, wholly inside the window
+    const big = [...document.querySelectorAll('.fbox')].sort((a, b) => (parseInt(b.querySelector('.s')?.textContent ?? '0') || 0) - (parseInt(a.querySelector('.s')?.textContent ?? '0') || 0))[0] as HTMLElement | undefined;
+    big?.dispatchEvent(new MouseEvent('mouseenter'));
+    await sleep(300);
+    const hp = document.querySelector('.hpop') as HTMLElement | null, hr = hp?.getBoundingClientRect();
+    steps.hoverList = hp && hr ? { rows: hp.children.length, inside: hr.left >= 0 && hr.top >= 0 && hr.right <= innerWidth && hr.bottom <= innerHeight, clipped: [...hp.querySelectorAll('div')].filter((d) => d.scrollWidth > d.clientWidth + 1).length } : null;
+    await api.smoke.capture('large-4b-hover-list');
+    big?.dispatchEvent(new MouseEvent('mouseleave'));
     await api.smoke.capture('large-4-boxes-zoomed-out');
     chipOf('100%')?.click();
     await sleep(800);
@@ -762,6 +808,10 @@ async function largeCheck(report: Record<string, unknown>) {
     for (let f = 0; f < 1800 && !(back = document.querySelectorAll('.fbox:not(.dead)').length > 0); f++) await new Promise((r) => requestAnimationFrame(r));
     steps.boxesBack = back ? Math.round(performance.now() - t8) : 'timed out';
     await sleep(800);
+    (document.querySelector('.backp') as HTMLElement)?.click(); await sleep(400);
+    const backList = document.querySelectorAll('.progs .pr').length;
+    (document.querySelector('.progs .pr.top') as HTMLElement)?.click();
+    steps.programsBack = { list: backList, again: await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0, 15000) };
     steps.flowMs = (document.querySelector(".flow") as any)?.dataset?.ms;
     steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, visible: [...document.querySelectorAll('.fbox:not(.dead)')].filter((e) => +getComputedStyle(e).opacity > 0.9).length };
     await api.smoke.capture('large-2b-flow-indexed');

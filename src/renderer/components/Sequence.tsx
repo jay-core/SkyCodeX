@@ -20,6 +20,7 @@ import { lines, textTick } from '../lib/seqtext';
 import { hlLine } from '../lib/hlcode';
 import StepPreview, { openStep } from './StepPreview';
 import Magnifier from './Magnifier';
+import PlayControls from './PlayControls';
 
 const ROW = 23, SLOT = 15, TOP = 30, SPINE = 16, SKY = 50;
 const HINT = 'asdfjklghqwertyuiop';
@@ -99,13 +100,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   // ---- the change ripple: functions edited and not saved, and every chain that reaches them ----
   const changedItems = createMemo(() => { const s = S(), c = changed(), out = new Set<number>(); if (!s || !c.size) return out; s.items.forEach((row, it) => { const r = s.run.rows[row]; if (c.has(r.kind === 'ref' ? r.ref! : row)) out.add(it); }); return out; });
   const rippleChain = createMemo(() => { const s = S(), out = new Set<number>(); if (!s) return out; for (const it of changedItems()) for (let i: number | null = s.run.rows[s.items[it]].caller; i != null; i = s.run.rows[i].caller) out.add(s.itemOf[i]); return out; });
-  const rippleNote = createMemo(() => {
-    const s = S(), c = changed();
-    if (!s || !c.size) return '';
-    const names = [...c].map((r) => short(s.run.rows[r].name));
-    const at = [...changedItems()].map((it) => num(it));
-    return `edited, not saved: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} · runs at ${at.slice(0, 6).join(', ')}${at.length > 6 ? ' …' : ''}`;
-  });
 
   function askWhat(w: WhatIf) {
     setWhatMenu(null); setCompare(false); setWhat(w);
@@ -158,6 +152,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R()[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
   const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  // (after num and short, which it uses as soon as the view opens with unsaved edits)
+  const rippleNote = createMemo(() => {
+    const s = S(), c = changed();
+    if (!s || !c.size) return '';
+    const names = [...c].map((r) => short(s.run.rows[r].name));
+    const at = [...changedItems()].map((it) => num(it));
+    return `edited, not saved: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} · runs at ${at.slice(0, 6).join(', ')}${at.length > 6 ? ' …' : ''}`;
+  });
   /** Notes a row carries itself: the conditions that start at it (loops have their own label slot instead). */
   const notes = (it: number) => {
     const s = S()!, r = rowOf(it), out: string[] = [];
@@ -573,7 +575,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           </Show>
           <span class="grow" />
           <Show when={header() && runStatus()}><span class="sub">{runStatus()}</span></Show>
-          <Show when={playing()}><span class="sub">playing · {speed() === 1 ? '1×' : `${Math.round(speed() * 100) / 100}×`}</span></Show>
+          <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
+            restart={() => { stopTour(); setPlaying(false); go('home'); setPlaying(true); canvas.focus(); }} step={() => { stopTour(); setPlaying(false); go('next'); canvas.focus(); }} />
           <Show when={tour()}><span class="sub">tour · Esc stops</span></Show>
           {props.switcher}
           <span class="shr">

@@ -3,6 +3,8 @@ import Header from './components/Header';
 import Editor from './components/Editor';
 import Preview from './components/Preview';
 import FilesPane, { refreshTree } from './components/FilesPane';
+import SearchPanel from './components/SearchPanel';
+import { searchOpen, openSearch } from './lib/search';
 import Settings from './components/Settings';
 import Flow from './components/Flow';
 import { api } from './lib/api';
@@ -68,6 +70,7 @@ export default function App() {
     else if (mod && e.key.toLowerCase() === 'n' && !e.shiftKey) { e.preventDefault(); newFile(); }
     else if (mod && e.key.toLowerCase() === 's' && e.shiftKey && !e.altKey) { e.preventDefault(); saveAs(); }
     else if (mod && e.key.toLowerCase() === 'w' && !e.shiftKey) { e.preventDefault(); closeActive(); }
+    else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); openSearch(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); commandPalette(); }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); quickOpen(); }
     else if (mod && e.key.toLowerCase() === 't') { e.preventDefault(); goToSymbol(); }
@@ -96,6 +99,8 @@ export default function App() {
         </Show>
         <Split onDrag={(dx) => { setFilesW(Math.max(140, filesW() - dx)); redraw(); }} />
         <div style={{ width: `${filesW()}px`, flex: 'none' }}><FilesPane /></div>
+        {/* the folder-wide search covers the code and preview panes, leaving the folder column beside it */}
+        <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `${filesW() + 5}px`, 'z-index': 6 }}><SearchPanel /></div></Show>
         <svg class="links" ref={overlay} />
       </div>
       <Show when={page() === 'flow'}><div style={{ flex: 1, 'min-height': 0 }}><Flow /></div></Show>

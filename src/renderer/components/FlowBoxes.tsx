@@ -4,6 +4,7 @@
 // readable. The selected step is the sequence's (Tab keeps it). Shift-click a second function for every route between
 // the two; Space plays the run as a marker moving along the lines. The model and layout: src/shared/flowboxes.ts.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { seq, trail, graph, status, runStatus, stepMove, changed } from '../lib/flowstore';
 import { root, settings, flash } from '../lib/store';
@@ -15,6 +16,7 @@ import {
 import { move, loopsAt, Move } from '../../shared/flowseq';
 import StepPreview, { openStep } from './StepPreview';
 import Magnifier from './Magnifier';
+import PlayControls from './PlayControls';
 
 const elk = new ELK() as unknown as { layout: (g: unknown) => Promise<any> };
 type Zoom = 'all' | 'width' | '100' | '150' | '';
@@ -376,7 +378,19 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const startFile = () => (S()?.run.rows[0]?.file ?? '');
   const callersOf = (f: string) => { const m = model()!; return new Set(m.calls.filter((c) => R()[c.b].file === f && R()[c.a].file !== f).map((c) => R()[c.a].file)); };
   const rel = (f: string) => (f.startsWith(root() + '/') ? f.slice(root().length + 1) : f);
-  const [hoverFile, setHoverFile] = createSignal<string | null>(null);
+  /** The hovered file or folder box when zoomed out: its functions, drawn at screen size beside it, inside the window. */
+  const [hoverAt, setHoverAt] = createSignal<{ rect: DOMRect; fns: number[] } | null>(null);
+  const hoverStyle = (h: { rect: DOMRect; fns: number[] }) => {
+    const below = window.innerHeight - h.rect.bottom, above = h.rect.top, down = below >= above;
+    const room = Math.max(120, (down ? below : above) - 16);
+    return { left: `${Math.max(8, Math.min(h.rect.left, window.innerWidth - 560))}px`, [down ? 'top' : 'bottom']: `${down ? h.rect.bottom + 6 : window.innerHeight - h.rect.top + 6}px`, 'max-height': `${room}px` };
+  };
+  /** How many of its rows fit in the room beside the box (a row is 23px); the rest are counted. */
+  const hoverFits = (h: { rect: DOMRect; fns: number[] }) => {
+    const room = Math.max(120, Math.max(window.innerHeight - h.rect.bottom, h.rect.top) - 16);
+    const n = Math.max(3, Math.floor((room - 16) / 23));
+    return h.fns.length <= n ? h.fns.length : n - 1;
+  };
 
   // minimap: the whole diagram and the part in view, when the diagram is larger than the view
   const over = createMemo(() => { const l = lay(); return !!l && (l.w * k() + 2 * PAD > size().w + 2 || l.h * k() + 2 * PAD > size().h + 2); });
@@ -448,19 +462,26 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const W = () => (lay()?.w ?? 0) * k() + 2 * PAD, H = () => (lay()?.h ?? 0) * k() + 2 * PAD;
   return (
     <div class="body" style={{ height: '100%' }}>
+      <Show when={lv() !== 'functions' && hoverAt()}>{(h) => (
+        <Portal><div class="hpop" style={hoverStyle(h())}>
+          <For each={h().fns.slice(0, hoverFits(h()))}>{(i) => <div><span class="n">{R()[i].n}</span><span class="nm">{short(R()[i].name)}</span><Show when={lv() === 'folders'}><span class="no">{basename(R()[i].file)}</span></Show></div>}</For>
+          <Show when={hoverFits(h()) < h().fns.length}><div class="more">+{h().fns.length - hoverFits(h())} more · click the box to step into it</div></Show>
+        </div></Portal>
+      )}</Show>
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph" style={{ padding: '0 22px' }}>
           <span>{status()}</span>
           <Show when={header()}><span class="seqk" style={{ 'margin-left': '14px' }}>{header()}</span></Show>
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
-          <Show when={playing()}><span class="sub">playing · {speed() === 1 ? '1×' : `${Math.round(speed() * 100) / 100}×`}</span></Show>
+          <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()}
+            restart={() => { stop(); report(stepMove('home')); play(); }} step={() => { stop(); report(stepMove('next')); }} />
           {props.switcher}
           <button class="chip" classList={{ on: heat() }} aria-pressed={heat()} title="shade each row by how often it runs, from the loops around it (H)" onClick={() => setHeat(!heat())}>how often</button>
           <button class="chip" title="save the diagram as drawn, as an SVG picture" onClick={exportSvg}>export</button>
         </div>
         <div class="flow bxv" ref={canvasEl} data-ms={graph()?.ms} tabindex="0" role="application" aria-label="the run as files and the functions in them" onKeyDown={onKey}>
-          <div class="bxs" ref={scroller} onScroll={syncView} onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+          <div class="bxs" ref={scroller} onScroll={() => { syncView(); setHoverAt(null); }} onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
             <div class="bxsz" style={{ width: `${W()}px`, height: `${H()}px` }}>
               <Show when={lay()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
                 <div class="bxw" classList={{ [`lv-${lv()}`]: true }} style={{ transform: `scale(${k()})`, left: `${PAD}px`, top: `${PAD}px`, '--inv': String(1 / k()) }}>
@@ -486,7 +507,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                       <Show when={p()}>
                         <div class="fbox" classList={{ cur: selNode() === f, fade: fileOn(f) === false, start: filesIn(f).includes(startFile()) }}
                           style={{ left: `${p()!.x}px`, top: `${p()!.y}px`, width: `${p()!.w}px`, height: `${p()!.h}px` }}
-                          onMouseEnter={() => setHoverFile(f)} onMouseLeave={() => setHoverFile(null)}
+                          onMouseEnter={(e) => { setHoverAt({ rect: e.currentTarget.getBoundingClientRect(), fns: fns().sort((a, b) => R()[a].n - R()[b].n) }); }} onMouseLeave={() => setHoverAt(null)}
                           onClick={(e) => { if (lv() !== 'functions') { const first = fns().sort((a, b) => R()[a].n - R()[b].n)[0]; if (first != null) { if (e.shiftKey) routeTo(first); else jumpRow(first); } } }}
                           onDblClick={() => { if (lv() !== 'functions') { const r = scroller.getBoundingClientRect(), b = (scroller.querySelector(`.fbox[data-f="${CSS.escape(f)}"]`) as HTMLElement).getBoundingClientRect(); zoomTo(Math.max(LEVEL_AT.functions, 0.8), { ax: b.left + b.width / 2 - r.left, ay: b.top + b.height / 2 - r.top, ms: 420 }); } }}
                           data-f={f}>
@@ -513,11 +534,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                               )
                               : <div class="lpl" classList={{ hot: loopHot(r.frame!), dim: rowOn(r.row) === false }} style={{ top: `${r.y}px` }}>↻ {S()!.run.frames[r.frame!].count != null ? `×${S()!.run.frames[r.frame!].count} · ` : ''}{S()!.run.frames[r.frame!].text}{loopHot(r.frame!) ? ` · pass ${cur()!.passes[r.frame!] ?? 1}` : ''}</div>}
                             </For>
-                          </Show>
-                          <Show when={lv() !== 'functions' && hoverFile() === f}>
-                            <div class="hpop" style={{ left: '-1px', top: `${p()!.h + 6}px` }}>
-                              <For each={fns().sort((a, b) => R()[a].n - R()[b].n)}>{(i) => <div><span class="n">{R()[i].n}</span><span>{short(R()[i].name)}</span><Show when={lv() === 'folders'}><span class="no">{basename(R()[i].file)}</span></Show></div>}</For>
-                            </div>
                           </Show>
                         </div>
                       </Show>

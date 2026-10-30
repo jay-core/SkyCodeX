@@ -24,6 +24,10 @@ export const [trail, setTrail] = createSignal<StepState[]>([]);
 export const [runStatus, setRunStatus] = createSignal('');
 /** The start key of the run shown (a function's uri#line), for links and what is kept per start. */
 export const entryStart = () => graph()?.lanes[0]?.start ?? '';
+/** Whether the flow page shows the list of every program (a project with several mains opens on it). */
+export const [programs, setPrograms] = createSignal(true);
+/** Whether entry e is the one picked last time in this folder. */
+export const isChosen = (i: number) => { const e = entries()[i]; return !!chosen && !!e && entryKey(e) === chosen; };
 
 let builtFor = '', firstBuild = 0, building: Promise<void> | null = null, again = false;
 /** The entry chosen in this folder (kept between sessions), by its key. */
@@ -40,7 +44,7 @@ export async function rebuild(): Promise<void> {
   if (building) { again = true; return building; }
   building = (async () => {
     if (builtFor !== root()) {
-      firstBuild = Date.now(); setLaneRaw(0); setSeq(null); setTrail([]); setEntries([]); setGraph(null);
+      firstBuild = Date.now(); setPrograms(true); setLaneRaw(0); setSeq(null); setTrail([]); setEntries([]); setGraph(null);
       try { chosen = localStorage.getItem(chosenKey()) ?? ''; } catch { chosen = ''; }
     }
     builtFor = root();

@@ -54,13 +54,18 @@ export const isSource = (p: string) => SOURCE_EXT.has(path.extname(p).toLowerCas
 
 /** All C/C++ files under root, skipping build output and hidden folders. Capped for huge trees. */
 export function listSources(root: string, cap = 20000): string[] {
+  return listFiles(root, cap, isSource);
+}
+
+/** Every file under root (or those keep accepts), skipping build output, vendored code and hidden folders. Capped. */
+export function listFiles(root: string, cap = 50000, keep: (p: string) => boolean = () => true): string[] {
   const out: string[] = [];
   const skip = /^(build|out|cmake-build-.*|\.git|node_modules|third_party|external|vendor)$/i;
   const walk = (d: string) => {
     if (out.length >= cap) return;
     for (const e of listDir(d)) {
       if (e.dir) { if (!skip.test(e.name) && !e.name.startsWith('.')) walk(e.path); }
-      else if (isSource(e.path)) out.push(e.path);
+      else if (keep(e.path) && out.length < cap) out.push(e.path);
     }
   };
   walk(root);

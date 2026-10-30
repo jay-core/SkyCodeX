@@ -25,6 +25,11 @@ const api = {
     set: (key: string, value: unknown) => invoke('settings:set', key, value),
     onChange: (cb: (s: unknown) => void) => on('settings:changed', cb),
   },
+  search: {
+    run: (root: string, q: string, id: number) => invoke('search:run', root, q, id),
+    cancel: () => invoke('search:cancel'),
+    onHits: (cb: (id: number, hits: { file: string; line: number; col: number; len: number; text: string }[]) => void) => on('search:hits', cb),
+  },
   shell: {
     terminal: (dir: string) => invoke('shell:terminal', dir),
   },
@@ -34,6 +39,7 @@ const api = {
     saveDialog: (defaultPath: string) => invoke('fs:saveDialog', defaultPath),
     list: (dir: string) => invoke('fs:list', dir),
     sources: (root: string) => invoke('fs:sources', root),
+    files: (root: string) => invoke('fs:files', root) as Promise<string[]>,
     targets: (root: string) => invoke('fs:targets', root),
     read: (file: string) => invoke('fs:read', file),
     exists: (file: string) => invoke('fs:exists', file),

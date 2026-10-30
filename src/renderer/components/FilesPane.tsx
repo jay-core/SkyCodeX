@@ -1,4 +1,6 @@
-import { For, Show, createSignal, createResource } from 'solid-js';
+import { For, Show, createSignal, createResource, createMemo } from 'solid-js';
+import { matchesIn } from '../../shared/search';
+import { openSearch } from '../lib/search';
 import { api, DirEntry, basename } from '../lib/api';
 import { root, files, openFile, openFolder, flash } from '../lib/store';
 import { setPalette } from '../lib/actions';
@@ -37,6 +39,55 @@ function Dir(props: { path: string; depth: number }) {
     }}</For>
   );
 }
+
+/** Text with each case-free match of q marked. */
+export function Marked(props: { text: string; q: string }) {
+  const parts = () => {
+    const out: { t: string; m: boolean }[] = [];
+    let at = 0;
+    for (const [a, b] of matchesIn(props.text, props.q)) { if (a > at) out.push({ t: props.text.slice(at, a), m: false }); out.push({ t: props.text.slice(a, b), m: true }); at = b; }
+    if (at < props.text.length) out.push({ t: props.text.slice(at), m: false });
+    return out;
+  };
+  return <span class="mk"><For each={parts()}>{(p) => (p.m ? <mark>{p.t}</mark> : p.t)}</For></span>;
+}
+
+/** The folder's files whose path matches the filter (any case), grouped by folder; ↑ ↓ choose, ↵ opens, Esc clears. */
+const [filter, setFilter] = createSignal('');
+function Found() {
+  const [all] = createResource(() => [root(), listVersion()] as const, async ([r]) => (r ? await api.fs.files(r) : []));
+  const [sel, setSel] = createSignal(0);
+  const hits = createMemo(() => {
+    const q = filter().trim();
+    return (all() ?? []).filter((f) => matchesIn(relTo(f), q, 1).length).slice(0, 500);
+  });
+  const groups = createMemo(() => {
+    const g = new Map<string, string[]>();
+    for (const f of hits()) { const d = relTo(dirOf(f)); g.set(d, [...(g.get(d) ?? []), f]); }
+    return [...g];
+  });
+  const flat = createMemo(() => groups().flatMap(([, fs]) => fs));
+  Found.key = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(flat().length - 1, sel() + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, sel() - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); const f = flat()[sel()]; if (f) { setHere(dirOf(f)); openFile(f); } }
+  };
+  return (
+    <div class="tree found">
+      <div class="fcount">{all.loading ? t('listing files…') : `${hits().length}${hits().length === 500 ? '+' : ''} of ${(all() ?? []).length} files`}</div>
+      <For each={groups()}>{([d, fs]) => (
+        <>
+          <div class="ti fdir"><Marked text={d ? `${d}/` : './'} q={filter().trim()} /></div>
+          <For each={fs}>{(f) => (
+            <div class="ti" classList={{ on: flat()[sel()] === f }} style={{ 'padding-left': '25px' }} onMouseEnter={() => setSel(flat().indexOf(f))}
+              onClick={() => { setHere(dirOf(f)); openFile(f); }}><Marked text={basename(f)} q={filter().trim()} /></div>
+          )}</For>
+        </>
+      )}</For>
+    </div>
+  );
+}
+Found.key = (_e: KeyboardEvent) => {};
 
 /** Asks for a name (a path inside the project, from the folder in view) and makes a file or a folder there. */
 function create(kind: 'file' | 'folder') {
@@ -79,7 +130,13 @@ export default function FilesPane() {
         </Show>
         <button class="chip" onClick={pick}>{t('open…')}</button></div>
       <Show when={root()} fallback={<div class="empty"><button style={{ color: 'var(--bright)', 'font-size': '15px' }} onClick={pick}>{t('open a folder')}</button></div>}>
-        <div class="tree"><Dir path={root()} depth={0} /></div>
+        <div class="ffind">
+          <input value={filter()} placeholder={t('find a file — any case')} aria-label={t('find a file by name or path')} spellcheck={false}
+            onInput={(e) => setFilter(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setFilter(''); e.currentTarget.blur(); } else Found.key(e); }} />
+          <button class="chip" title={t('search the text of every file in the folder (⌘/Ctrl ⇧ F)')} onClick={() => openSearch(filter().trim())}>{t('in contents')}</button>
+        </div>
+        <Show when={filter().trim()} fallback={<div class="tree"><Dir path={root()} depth={0} /></div>}><Found /></Show>
       </Show>
     </div>
   );

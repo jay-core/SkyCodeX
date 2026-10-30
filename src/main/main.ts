@@ -6,7 +6,8 @@ import path from 'node:path';
 import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
-import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
+import { atomicWrite, listDir, listSources, listFiles, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
+import { searchFolder, cancelSearch } from './search';
 import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
@@ -130,6 +131,9 @@ ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
 });
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
+ipcMain.handle('fs:files', (_e, root: string) => listFiles(root));
+ipcMain.handle('search:run', (_e, root: string, q: string, id: number) => searchFolder(root, q, id, (hits) => send('search:hits', id, hits)));
+ipcMain.handle('search:cancel', () => cancelSearch());
 ipcMain.handle('fs:targets', (_e, root: string) => buildTargets(root));
 ipcMain.handle('fs:read', (_e, file: string) => fs.readFileSync(file, 'utf8'));
 ipcMain.handle('fs:exists', (_e, file: string) => fs.existsSync(file));
@@ -371,7 +375,7 @@ function buildMenu() {
       { type: 'separator' }, cmd('save', 'Save', 'CmdOrCtrl+S'), cmd('saveAs', 'Save As…', 'CmdOrCtrl+Shift+S'), cmd('saveAll', 'Save All', 'CmdOrCtrl+Alt+S'),
       { type: 'separator' }, cmd('closeFile', 'Close File', 'CmdOrCtrl+W'),
     ] },
-    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F')] },
+    { label: 'Edit', submenu: [cmd('undo', 'Undo', 'CmdOrCtrl+Z'), cmd('redo', 'Redo', 'CmdOrCtrl+Shift+Z'), { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, cmd('selectAll', 'Select All', 'CmdOrCtrl+A'), { type: 'separator' }, cmd('find', 'Find', 'CmdOrCtrl+F'), cmd('searchFolder', 'Search in Folder', 'CmdOrCtrl+Shift+F')] },
     { label: 'Go', submenu: [cmd('quickOpen', 'Quick Open…', 'CmdOrCtrl+P'), cmd('goToSymbol', 'Go to Symbol…', 'CmdOrCtrl+T'), cmd('commandPalette', 'Command Palette…', 'CmdOrCtrl+Shift+P')] },
     { label: 'View', submenu: [cmd('showEditor', 'Editor'), cmd('showFlow', 'Flow'), cmd('togglePreview', 'Preview Panes', 'CmdOrCtrl+Shift+E')] },
     { role: 'windowMenu' },

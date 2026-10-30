@@ -1,10 +1,12 @@
 // Editor actions that span files: rename, quick fixes and refactorings, quick open, the command palette.
 import { createSignal } from 'solid-js';
 import { api, fileToUri, uriToFile, relPath, Range } from './api';
+import { openSearch } from './search';
 import { lspState, diagnosticsFor, ensureOpen } from './lsp';
 import { files, states, openFile, onDocChanged, getMainView, root, flash, save, saveAll, setPage, setSettingsOpen, openFolder, closeFile, forgetFile } from './store';
 import { undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
+import { EditorView } from '@codemirror/view';
 import { posToOffset, offsetToPos } from './cm';
 
 export interface PaletteItem { label: string; detail?: string; run: () => void }
@@ -165,12 +167,18 @@ export async function saveAs() {
 }
 export const closeActive = () => { if (files.active) closeFile(files.active); };
 const withView = (f: (v: any) => boolean) => () => { const v = getMainView(); if (v && files.active) { v.focus(); f(v); } };
+/** Find in the editor that has focus — a preview card or the flow's step preview — else in the open file. */
+const findHere = () => {
+  const el = (document.activeElement as HTMLElement | null)?.closest('.cm-editor');
+  const v = el && el !== getMainView()?.dom ? EditorView.findFromDOM(el as HTMLElement) : null;
+  if (v) openSearchPanel(v); else withView(openSearchPanel)();
+};
 
 /** Every command reachable from the menus, by id. */
 export const COMMANDS: Record<string, () => void> = {
   newFile, openFile: openFileDialog, openFolder: openFolderDialog, save: () => save(), saveAs, saveAll, closeFile: closeActive,
-  undo: withView(undo), redo: withView(redo), selectAll: withView(selectAll), find: withView(openSearchPanel),
-  quickOpen, goToSymbol: () => goToSymbol(), commandPalette: () => commandPalette(),
+  undo: withView(undo), redo: withView(redo), selectAll: withView(selectAll), find: findHere,
+  quickOpen, goToSymbol: () => goToSymbol(), searchFolder: () => openSearch(), commandPalette: () => commandPalette(),
   showEditor: () => setPage('editor'), showFlow: () => setPage('flow'), settings: () => setSettingsOpen(true),
   togglePreview: () => api.settings.get().then((x: any) => api.settings.set('preview.enabled', !x.settings['preview.enabled'])),
 };
@@ -185,6 +193,7 @@ export function commandPalette() {
     ['Close file', '⌘/Ctrl W', closeActive],
     ['Quick open file', '⌘/Ctrl P', quickOpen],
     ['Go to symbol in project', '⌘/Ctrl T', goToSymbol],
+    ['Search in the folder', '⌘/Ctrl ⇧ F', () => openSearch()],
     ['Save', '⌘/Ctrl S', () => save()],
     ['Save all', '⌘/Ctrl ⌥ S', saveAll],
     ['Rename symbol', 'F2', rename],

@@ -72,8 +72,8 @@ export function cardExtensions(firstLine: number): Extension[] {
     lineNumbers({ formatNumber: (n) => String(n + firstLine - 1) }),
     drawSelection(), highlightActiveLine(),
     syntaxHighlighting(highlight), cpp(), baseTheme, callMarks,
-    EditorState.readOnly.of(true), EditorView.editable.of(true),
-    keymap.of(defaultKeymap),
+    EditorState.readOnly.of(true), EditorView.editable.of(true), highlightSelectionMatches(),
+    keymap.of([...defaultKeymap, ...searchKeymap]),   // ⌘/Ctrl F finds inside this card, any case
   ];
 }
 
