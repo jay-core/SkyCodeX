@@ -1,17 +1,19 @@
 // Scripted run used to verify a build end to end (`npm run smoke`): drives the real UI and captures screenshots.
 import { api } from './lib/api';
-import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, cursorPos, info } from './lib/store';
+import { root, openFile, getMainView, setPage, setSettingsOpen, openFolder, settings, cursorPos, info, applySettings, problems } from './lib/store';
 import { relPath } from './lib/api';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
 import { lspState } from './lib/lsp';
 import { quickOpen, palette, setPalette, applyWorkspaceEdit, COMMANDS } from './lib/actions';
 import { setMenuOpen } from './components/AppMenu';
-import { cardViews } from './components/Card';
 import { files, states } from './lib/store';
 import { offsetToPos } from './lib/cm';
 import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
+import { buildFlow, buildRun } from './lib/flow';
+import { setFlowView } from './lib/flowstore';
+import { pal } from './lib/lines';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -43,6 +45,8 @@ export async function runSmoke() {
   if (info()?.scenario === 'boot') return bootCheck(report);
   if (info()?.scenario === 'large') return largeCheck(report);
   if (info()?.scenario === 'folder') return folderCheck(report);
+  if (info()?.scenario === 'colors') return colorsCheck(report);
+  if (info()?.scenario === 'hold') return;   // opens the folder and waits: a recorder drives the window (src/concepts/flow/ux)
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -64,18 +68,29 @@ export async function runSmoke() {
     v.dispatch({ selection: { anchor: callAt } });
     await sleep(900);
     report.litCard = document.querySelector('.card.lit .nm')?.textContent ?? null;
-    const ixs = [...document.querySelectorAll('.cindex .ix')] as HTMLElement[];
-    report.indexSquares = ixs.length;
-    report.indexLit = levels()[0]?.cards[ixs.findIndex((e) => e.classList.contains('lit'))]?.name ?? null;
     report.dimmedCards = document.querySelectorAll('.pcol.haslit .card:not(.lit)').length;
-    report.hotLinks = [...document.querySelectorAll('svg.links path')].filter((p) => p.getAttribute('stroke-width') === '2').length;
-    ixs[1]?.dispatchEvent(new MouseEvent('mouseenter'));
+    // every call in the editor is outlined in its card's colour; no connector is drawn until one is hovered
+    const boxes = () => [...document.querySelectorAll('.code .callbox')] as HTMLElement[];
+    const linkPaths = () => document.querySelectorAll('svg.links path').length;
+    report.callBoxes = { editor: boxes().length, sites: levels()[0]?.cards.reduce((n, c) => n + c.fromRanges.length, 0) ?? 0,
+      // every outline names its card, and wears that card's colour
+      mismatched: boxes().filter((e) => { const [li, k] = (e.dataset.call ?? '').split(':').map(Number); const c = levels()[li]?.cards[k]; const plain = !!c && /^[A-Za-z_]\w*$/.test(c.name.replace(/^.*::/, '')); return !c || e.style.getPropertyValue('--c').trim() !== pal(k) || (plain && !c.name.endsWith(e.textContent ?? '\u0000')); }).map((e) => e.textContent) };
+    report.connectorsAtRest = linkPaths();
+    const hoverBox = async (el: Element | undefined) => { el?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(250); };
+    const rec = boxes().find((e) => e.textContent === 'record');
+    await hoverBox(rec);
+    report.hoverConnector = { paths: linkPaths(), color: rec?.style.getPropertyValue('--c') ?? null };
+    await api.smoke.capture('1b-hover-call');
+    await hoverBox(document.querySelector('.shiftbar') ?? undefined);
+    report.connectorsAfterHover = linkPaths();
+    // parse_headers → trim → is_space: two levels below it (split calls only the standard library)
+    boxes().find((e) => e.textContent === 'parse_headers')?.click();
+    await until(() => /deep|leaf/.test(document.querySelector('.pcol [data-card^="0:"].lit .depth')?.textContent ?? ''), 10000);
+    report.depthParseHeaders = document.querySelector('.pcol [data-card^="0:"].lit .depth')?.textContent ?? null;
+    report.clickedConnector = linkPaths();
+    document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     await sleep(250);
-    report.indexTip = document.querySelector('.ixtip')?.textContent ?? null;
-    await api.smoke.capture('1c-index-tip');
-    ixs[1]?.dispatchEvent(new MouseEvent('mouseleave'));
-    report.connectors = document.querySelectorAll('svg.links path').length;
-    await api.smoke.capture('1b-cursor-on-call');
+    report.clickedConnectorCleared = linkPaths();
 
     const idx = levels()[0]?.cards.findIndex((c) => /parse_headers/.test(c.name)) ?? -1;
     if (idx >= 0) {
@@ -84,57 +99,67 @@ export async function runSmoke() {
       await sleep(700);
       report.level2 = levels()[1]?.cards.map((c) => c.name);
       await api.smoke.capture('2-level-two');
-      // a cursor on a call inside the pane-1 card lights its card in pane 2; scrolling keeps both highlights
-      const cv = cardViews.get(`0:${idx}`)!;
-      const callIn = cv.state.doc.toString().indexOf('split(') + 2;
-      cv.dispatch({ selection: { anchor: callIn } });
-      await sleep(600);
-      report.pane2Lit = document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null;
-      const c1 = document.querySelectorAll('.pcol')[1] as HTMLElement;
-      c1.scrollTop += 200; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop += 150;
+      // pane 1's focused card is pane 2's source: its calls are outlined too
+      const src = () => [...document.querySelectorAll(`.pcol [data-card="0:${idx}"] .callbox`)] as HTMLElement[];
+      await until(() => src().length > 0, 5000);
+      report.pane2Source = { boxes: src().length, sites: levels()[1]?.cards.reduce((n, c) => n + c.fromRanges.length, 0) ?? 0 };
+      // a click on an outline lights its card in pane 2, scrolls it into view and measures how deep it goes
+      const split = src().find((e) => e.textContent === 'split');
+      split?.click();
+      await until(() => !!document.querySelector('.pcol [data-card^="1:"] .depth:not(:empty)') && !/…/.test(document.querySelector('.pcol [data-card^="1:"] .depth')?.textContent ?? '…'), 10000);
       await sleep(400);
-      report.litAfterScroll = { pane1: document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null, pane2: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null, index: levels()[0]?.cards[[...document.querySelectorAll('.cindex .ix')].findIndex((e) => e.classList.contains('lit'))]?.name ?? null };
-      await api.smoke.capture('2b-pane2-lit');
-      // the thin column between the panes: one square per pane-2 card; a click holds that card lit
-      const idx2 = document.querySelectorAll('.cindex')[1];
-      report.thin2 = { squares: idx2?.querySelectorAll('.ix').length ?? 0, pane2Cards: levels()[1]?.cards.length ?? 0 };
-      const sq2 = idx2?.querySelectorAll('.ix')[2] as HTMLElement | undefined;
-      sq2?.click(); await sleep(700);
-      report.thin2Pin = { clicked: levels()[1]?.cards[2]?.name, lit: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null };
+      report.pane2Click = { lit: document.querySelector('.pcol [data-card^="1:"].lit .nm')?.textContent ?? null, depth: document.querySelector('.pcol [data-card^="1:"].lit .depth')?.textContent ?? null };
+      split?.scrollIntoView({ block: 'center' });
+      await sleep(200);
+      await hoverBox(split);
+      report.pane2Hover = linkPaths();
+      await api.smoke.capture('2b-pane2-click');
+      // clicked, it keeps its connector after the mouse leaves; a click elsewhere clears it
+      await hoverBox(document.querySelector('.shiftbar') ?? undefined);
+      report.stuckConnector = linkPaths();
+      const p1 = document.querySelectorAll('.pcol')[0] as HTMLElement;
+      p1.scrollTop = p1.scrollHeight;
+      await sleep(250);
+      await hoverBox(split);
+      report.hiddenSourceHover = { inView: (() => { const a = split!.getBoundingClientRect(), b = p1.getBoundingClientRect(); return a.top >= b.top && a.bottom <= b.bottom; })(), paths: linkPaths() };   // scrolled out of pane 1: nothing to connect from
+      p1.scrollTop = 0;
       document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      c1.scrollTop = 0; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop = 0;
+      await sleep(250);
+      report.connectorAfterClickElsewhere = linkPaths();
+      document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      (document.querySelectorAll('.pcol')[1] as HTMLElement).scrollTop = 0; (document.querySelectorAll('.pcol')[0] as HTMLElement).scrollTop = 0;
     }
     report.motion = {} as Record<string, unknown>;
     (report.motion as any).shift = await frames(() => (document.querySelector('.shiftbar button:last-child') as HTMLButtonElement)?.click(), 1300);
     report.afterShift = levels().length;
     await api.smoke.capture('3-shifted');
     (report.motion as any).shiftBack = await frames(() => (document.querySelector('.shiftbar button:first-child') as HTMLButtonElement)?.click(), 1100);
-    // clicking a square glides its card into view; a lit card scrolled away stays connected
+    // clicking an outline glides its card into view and holds it lit until a click elsewhere
     const pc0 = document.querySelector('.pcol') as HTMLElement;
     pc0.scrollTop = pc0.scrollHeight;
     await sleep(300);
-    const sq0 = document.querySelector('.cindex .ix') as HTMLElement;
-    (report.motion as any).squareScroll = await frames(() => sq0.click(), 900);
+    const first = boxes().find((e) => e.dataset.call === '0:0');
+    (report.motion as any).outlineScroll = await frames(() => first?.click(), 900);
     const sqh = pc0.querySelector('[data-card="0:0"] .card-h')!.getBoundingClientRect(), pcr = pc0.getBoundingClientRect();
-    report.squareClickReveals = sqh.top >= pcr.top - 1 && sqh.bottom <= pcr.bottom;
-    // the clicked square's card stays lit until a click elsewhere
+    report.outlineClickReveals = sqh.top >= pcr.top - 1 && sqh.bottom <= pcr.bottom;
     await sleep(400);
-    const pinnedLit = () => ({ card: document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null, square: [...document.querySelectorAll('.cindex .ix')].findIndex((e) => e.classList.contains('lit')) });
+    const pinnedLit = () => document.querySelector('.pcol [data-card^="0:"].lit .nm')?.textContent ?? null;
     const held = pinnedLit();
     pc0.scrollTop += 120; await sleep(300);
     const afterScroll = pinnedLit();
     document.querySelector('.pane.prev .shiftbar')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     await sleep(300);
-    report.squarePin = { held, afterScroll, afterClickElsewhere: pinnedLit(), cursorCard: levels()[0]?.cards.findIndex((c) => c.name === 'record') };
-    v.dispatch({ selection: { anchor: callAt } });   // "record" lit again
-    await sleep(500);
-    pc0.scrollTop = 0; await sleep(50); pc0.scrollTop = pc0.scrollHeight; await sleep(50);
-    const litEl = pc0.querySelector('.card.lit') as HTMLElement;
-    pc0.scrollTop = litEl.offsetTop > pc0.clientHeight ? 0 : pc0.scrollHeight;
-    await sleep(400);
+    report.outlinePin = { clicked: levels()[0]?.cards[0]?.name, held, afterScroll, afterClickElsewhere: pinnedLit() };
+    // hovering a call whose card is scrolled out of its pane: the connector goes to the pane's edge, with the card's name
+    pc0.scrollTop = 0; await sleep(50);
+    const lastK = (levels()[0]?.cards.length ?? 1) - 1;
+    pc0.scrollTop = (pc0.querySelector(`[data-card="0:${lastK}"]`) as HTMLElement).offsetTop > pc0.clientHeight ? 0 : pc0.scrollHeight;
+    await sleep(300);
+    await hoverBox(boxes().find((e) => e.dataset.call === `0:${lastK}`));
     const stub = [...document.querySelectorAll('svg.links text')].map((t) => t.textContent);
-    report.offLitConnected = { litOff: document.querySelector('.cindex .ix.lit.off') !== null, hotPaths: [...document.querySelectorAll('svg.links path')].filter((p) => p.getAttribute('stroke-width') === '2').length, stub: stub.find((t) => t === 'record') ?? null };
-    await api.smoke.capture('3c-lit-offscreen');
+    report.offscreenHover = { card: levels()[0]?.cards[lastK]?.name, stub: stub[0] ?? null };
+    await api.smoke.capture('3c-hover-offscreen');
+    await hoverBox(document.querySelector('.shiftbar') ?? undefined);
     pc0.scrollTop = 0;
 
     // quick open and rename (the rename is never saved)
@@ -198,6 +223,7 @@ export async function runSmoke() {
     (document.querySelector('.wctl') as HTMLElement).style.opacity = '';
     (document.querySelector('.wctl') as HTMLElement).style.transition = '';
 
+    setFlowView('boxes');
     setPage('flow');
     report.flowReady = await until(() => document.querySelectorAll('.fbox').length >= 4 && ![...document.querySelectorAll('.fbox:not(.dead) .t')].some((e) => /\.(h|hpp)$/.test(e.textContent ?? '')), 45000);
     await sleep(1200);
@@ -259,8 +285,12 @@ export async function runSmoke() {
     await api.settings.set('preview.include_std', true);
     // tabs close, the ··· menu, new file
     report.tabsBefore = document.querySelectorAll('.hdr .tab').length;
+    // the rename above left these tabs unsaved: closing asks first, and a smoke run answers "close anyway" (nothing is saved)
+    const ask = window.confirm;
+    window.confirm = () => true;
     (document.querySelector('.hdr .tab:last-child .tabx') as HTMLButtonElement | null)?.click();
     await sleep(300);
+    window.confirm = ask;
     report.tabsAfter = document.querySelectorAll('.hdr .tab').length;
     setMenuOpen(true); await sleep(400);
     report.menuItems = document.querySelectorAll('.appmenu button').length;
@@ -282,12 +312,12 @@ export async function runSmoke() {
     for (let i = 0; i < 20; i++) await refreshForCursor(file, offsetToPos(pv.state.doc, at0 - 20 - i));
     report.msPerCursorRefresh = +((performance.now() - t1) / 20).toFixed(2);
     // preview can be hidden and shown
-    const before = !!document.querySelector('.pane.prev .cindex');
+    const before = !!document.querySelector('.pane.prev .shiftbar');
     await api.settings.set('preview.enabled', false); await sleep(500);
-    report.previewHidden = before && !document.querySelector('.cindex') && document.querySelector('svg.links')?.innerHTML === '';
+    report.previewHidden = before && !document.querySelector('.pane.prev .shiftbar') && document.querySelector('svg.links')?.innerHTML === '';
     await api.smoke.capture('9c-preview-hidden');
     await api.settings.set('preview.enabled', true); await sleep(800);
-    report.previewShownAgain = !!document.querySelector('.cindex');
+    report.previewShownAgain = !!document.querySelector('.pane.prev .shiftbar');
     // call-like things after the functions: macros, static_assert, lambdas, calls through pointers
     const probe = `${root()}/probe/probe.cpp`;
     if (await api.fs.exists(probe)) {
@@ -297,7 +327,7 @@ export async function runSmoke() {
       await until(() => (levels()[0]?.cards ?? []).some((c) => c.kind !== 'call'), 20000, () => refreshForCursor(probe, offsetToPos(pvw.state.doc, tAt), true));
       await sleep(800);
       report.callLike = (levels()[0]?.cards ?? []).map((c) => `${c.kind}:${c.name}`);
-      report.dividers = { squares: document.querySelectorAll('.cindex .ixdiv').length, cards: document.querySelectorAll('.pcol .pdiv').length };
+      report.dividers = { cards: document.querySelectorAll('.pcol .pdiv').length };
       await api.smoke.capture('9d-call-like');
       await api.settings.set('preview.include_other', false);
       await until(() => !(levels()[0]?.cards ?? []).some((c) => c.kind !== 'call'), 8000);
@@ -505,14 +535,124 @@ async function bootCheck(report: Record<string, unknown>) {
       report.definition = !!(await definitionAt(src, { line: at, character: lines[at].indexOf('handle') + 1 }));
     }
     setPage('flow');
+    setFlowView('sequence');
+    await until(() => document.querySelectorAll('.seqv .srow').length > 3, 60000);
+    await sleep(800);
+    report.seqRows = document.querySelectorAll('.seqv .srow').length;
+    report.seqCollisions = [] as string[];
+    // walk with the keyboard, checking every state for text on text
+    const seqv = document.querySelector('.seqv') as HTMLElement;
+    const press = async (key: string, shiftKey = false) => { seqv.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true })); await sleep(650); };
+    for (const k of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'r', 'l', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowUp', 'End']) {
+      await press(k);
+      (report.seqCollisions as string[]).push(...auditSequence().map((x) => `${k}: ${x}`));
+    }
+    await press('Home');
+    for (let i = 0; i < 14; i++) await press('ArrowRight');
+    (report.seqCollisions as string[]).push(...auditSequence());
+    await api.smoke.capture('seq-handle');
+    report.seqCodeLines = document.querySelectorAll('.scode .cm-line').length;
+    report.seqUses = [...document.querySelectorAll('.seqv .srow .u')].map((e) => e.textContent);
+    report.seqHeader = document.querySelector('.ph .seqk')?.textContent;
+    const stepName = (document.querySelector('.ph .seqpath')?.textContent ?? '').split('›').pop()!.trim();
+    seqv.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
     await until(() => document.querySelectorAll('.fbox').length > 0, 60000);
+    await sleep(600);
     report.flowBoxes = document.querySelectorAll('.fbox').length;
+    // the boxes view: the same step selected; numbers on every line, never over each other or a box, at every zoom
+    report.boxKeptStep = !!stepName && document.querySelector('.fbox .fr.sel .nm')?.textContent === stepName;
+    report.boxCollisions = [] as string[];
+    const chipOf = (t: string) => [...document.querySelectorAll('.bxctl .chip')].find((c) => c.textContent === t) as HTMLElement;
+    for (const z of ['fit width', 'fit all', '100%', '150%', '−', '−', '−', '−', '−', '−']) {
+      chipOf(z).click();
+      await sleep(700);
+      (report.boxCollisions as string[]).push(...auditBoxes().map((x) => `${z} ${document.querySelector('.bxctl .ro')?.textContent}: ${x}`));
+    }
+    report.boxLevels = document.querySelector('.bxctl .lvl')?.textContent;
+    await api.smoke.capture('boxes-folders');
+    chipOf('100%').click();
+    await sleep(700);
+    await api.smoke.capture('boxes-100');
+    setFlowView('sequence');
+    await sleep(300);
+    report.seqKeptStep = document.querySelector('.ph .seqk')?.textContent === report.seqHeader;
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    await sleep(500);
+    // every route between main and split: two
+    const rowNamed = (n: string) => [...document.querySelectorAll('.fbox .fr')].find((e) => e.querySelector('.nm')?.textContent === n) as HTMLElement | undefined;
+    rowNamed('main')?.click();
+    await sleep(300);
+    rowNamed('split')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    await sleep(500);
+    report.boxRoutes = document.querySelectorAll('.bxr').length;
+    await api.smoke.capture('boxes-routes');
+    (document.querySelector('.flow.bxv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    setFlowView('sequence');
+    await sleep(300);
+    // the analyser end to end, through the app's own clangd: every step from main, in execution order
+    const g = await buildFlow(root());
+    const run = await buildRun(g.lanes[0].start);
+    report.runSteps = run.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, ''));
+    report.runIndirect = run.rows.filter((r) => r.kind === 'indirect').map((r) => `${r.via} ${r.text}`);
+    report.runMissing = run.missing.length;
+    // the refresh button: everything is read and built again, and every view comes back
+    const btn = document.querySelector('.appbar .refresh') as HTMLButtonElement | null;
+    const t0r = performance.now();
+    btn?.click();
+    await sleep(100);
+    const done = await until(() => !!btn && !btn.disabled, 120000);
+    setFlowView('sequence');
+    await until(() => document.querySelectorAll('.seqv .srow').length > 3, 30000);
+    report.refresh = { button: !!btn, finished: done, ms: Math.round(performance.now() - t0r), toast: document.querySelector('.toast')?.textContent ?? null, seqRows: document.querySelectorAll('.seqv .srow').length };
     setPage('editor');
     await sleep(500);
     await api.smoke.capture('boot');
-  } catch (e) { errors.push(`boot: ${e}`); }
+  } catch (e) { errors.push(`boot: ${e} ${String((e as Error)?.stack ?? '').split('\n').slice(1, 4).map((l) => l.trim()).join(' ← ')}`); }
   report.errors = errors;
   await api.smoke.done(report);
+}
+
+/** Numbers on the boxes view's lines that cover each other or a box, as drawn now (screen rectangles). */
+function auditBoxes(): string[] {
+  const out: string[] = [];
+  const labs = [...document.querySelectorAll('.flab')].map((e) => ({ r: e.getBoundingClientRect(), t: e.textContent ?? '' }));
+  const boxes = [...document.querySelectorAll('.fbox')].map((e) => ({ r: e.getBoundingClientRect(), t: e.querySelector('.t')?.textContent ?? '' }));
+  const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+  for (let i = 0; i < labs.length; i++) {
+    for (let j = i + 1; j < labs.length; j++) if (hit(labs[i].r, labs[j].r)) out.push(`"${labs[i].t}" over "${labs[j].t}"`);
+    for (const b of boxes) if (hit(labs[i].r, b.r)) out.push(`"${labs[i].t}" over box ${b.t}`);
+  }
+  return out;
+}
+
+/**
+ * Text on text in the sequence view: every piece of text is a box, and two boxes of different rows or labels that
+ * intersect are a collision (design rule 7). Rows fade at the canvas edge, so only their visible part counts.
+ */
+export function auditSequence(): string[] {
+  const view = document.querySelector('.seqv')?.getBoundingClientRect();
+  if (!view) return ['no sequence view'];
+  const boxes: { r: DOMRect; t: string; owner: Element }[] = [];
+  for (const owner of document.querySelectorAll('.seqv .srow, .seqv .sframe > span, .seqv .slane, .seqv .sband .sum, .seqv .sband .facts > span, .seqv .sband .ways > span')) {
+    const parts = owner.classList.contains('srow') ? [...owner.children] : [owner];
+    const clip = owner.classList.contains('srow') ? owner.getBoundingClientRect() : null;
+    for (const p of parts) {
+      let r = p.getBoundingClientRect();
+      if (clip) r = new DOMRect(r.x, r.y, Math.max(0, Math.min(r.right, clip.right - 32) - r.x), r.height);   // the faded end is not text
+      if (r.width < 1 || r.height < 1 || r.bottom < view.top || r.top > view.bottom || r.right < view.left || r.left > view.right) continue;
+      if (!(p.textContent ?? '').trim()) continue;
+      boxes.push({ r, t: (p.textContent ?? '').trim().slice(0, 28), owner });
+    }
+  }
+  const hits: string[] = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.owner === b.owner) continue;
+    const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left), h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+    if (w > 1 && h > 1) hits.push(`${a.t} × ${b.t}`);
+  }
+  return hits;
 }
 
 /** A large real project (e.g. thorvg): how long each stage takes, and what never arrives. */
@@ -545,6 +685,7 @@ async function largeCheck(report: Record<string, unknown>) {
       const d = await definitionAt(want, { line: call, character: lines[call].indexOf(name) + 1 });
       steps.definition = { of: name, to: d ? relPath(root(), (d as any).file ?? (d as any).uri ?? '') : null, ms: Math.round(performance.now() - t4) };
     }
+    setFlowView('boxes');
     setPage('flow');
     const t5 = performance.now();
     const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
@@ -568,6 +709,44 @@ async function largeCheck(report: Record<string, unknown>) {
     await api.smoke.capture('large-3-after');
   } catch (e) { errors.push(`large: ${e}`); }
   report.totalMs = at();
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario colors`: the colour sliders recolour the window while dragging; nothing is written unless let go. */
+async function colorsCheck(report: Record<string, unknown>) {
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    const src = (await api.fs.sources(root()) as string[]).find((f) => /server\.cpp$/.test(f));
+    if (src) { await openFile(src); const v = getMainView()!; const at = v.state.doc.toString().indexOf('auto handler = route(') + 6; v.dispatch({ selection: { anchor: at } }); }
+    await until(() => document.querySelectorAll('.code .callbox').length > 3, 60000);
+    await sleep(800);
+    await api.smoke.capture('colors-1-outlines');
+    setSettingsOpen(true);
+    await sleep(900);
+    const appearance = [...document.querySelectorAll('.set .pv button')].find((b) => b.textContent === 'appearance') as HTMLButtonElement | undefined;
+    appearance?.click();
+    await sleep(500);
+    const head = [...document.querySelectorAll('.set .sechead')].find((h) => /^code/.test(h.textContent ?? '')) as HTMLElement | undefined;
+    head?.scrollIntoView({ block: 'start' });
+    await sleep(400);
+    report.colorSections = [...document.querySelectorAll('.set .sechead > span:first-child')].map((e) => e.textContent);
+    report.colorControls = document.querySelectorAll('.set .colorctl').length;
+    await api.smoke.capture('colors-2-settings');
+    const kwCss = () => getComputedStyle(document.documentElement).getPropertyValue('--kw').trim();
+    const before = kwCss(), snapshot = { ...settings() };
+    const ctl = [...document.querySelectorAll('.set .ctl')].find((c) => c.querySelector('.lab')?.textContent?.startsWith('keyword'));
+    const hue = ctl?.querySelector('.cslide input[type=range]') as HTMLInputElement | undefined;
+    if (hue) { hue.value = String((Number(hue.value) + 150) % 360); hue.dispatchEvent(new Event('input', { bubbles: true })); }
+    await sleep(300);
+    const file = (await api.fs.read(info()!.settingsFile).catch(() => '')) as string;
+    report.livePreview = { before, during: kwCss(), written: /^\s*keyword\s*=/m.test(file) };
+    await api.smoke.capture('colors-3-dragging');
+    applySettings(snapshot, problems());   // as if the drag never happened: the theme comes back
+    await sleep(200);
+    report.restored = kwCss() === before;
+    setSettingsOpen(false);
+  } catch (e) { errors.push(`colors: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }

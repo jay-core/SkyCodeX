@@ -5,6 +5,10 @@ import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
 import { api, basename } from './api';
 import { setPowerPrefs } from './power';
+import { setPalette } from './lines';
+import { SETTINGS as ALL_SETTINGS } from '../../shared/settings-schema';
+
+const COLOR_DEFS = ALL_SETTINGS.filter((d) => d.type === 'color');
 import { noteText } from './langs';
 import { openDoc, changeDoc, savedDoc, startLsp, promote } from './lsp';
 
@@ -46,6 +50,12 @@ export function applySettings(s: Settings, p: Problem[]) {
   document.body.style.fontVariantLigatures = s['font.ligatures'] ? 'normal' : 'none';
   (api.win as any).zoom?.(Number(s['ui.scale']) || 1);
   document.documentElement.classList.toggle('hc', !!s['ui.high_contrast']);
+  // colours: only those changed from the theme are set, so the stylesheet (and high contrast) keeps the rest
+  for (const d of COLOR_DEFS) {
+    if (!d.css) continue;
+    if (s[d.key] && s[d.key] !== d.default) r.setProperty(d.css, String(s[d.key])); else r.removeProperty(d.css);
+  }
+  setPalette(COLOR_DEFS.filter((d) => d.key.startsWith('colors.cards.')).map((d) => String(s[d.key] ?? d.default)));
   setPowerPrefs(s['power.saver'] as string, !!s['motion.reduce']);
 }
 

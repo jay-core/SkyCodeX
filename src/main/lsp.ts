@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { commandFor, Compiler } from './compilers';
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string };
 
@@ -80,10 +81,11 @@ export function scanProject(root: string): { sources: string[]; headerDirs: stri
  * A folder with no compile_commands.json (a Meson or Make project not yet built, a plain folder of sources):
  * SkyCodeX writes one into its own state folder, never into the project, so clangd indexes the whole project
  * and the project's own #includes resolve. Flags come from compile_flags.txt when the root has one; otherwise
- * every folder that holds headers is an include path. With a toolchain pack's compiler (cxx), its standard headers
- * are used. Returns that folder, or null when the project has its own.
+ * every folder that holds headers is an include path. The commands name the compiler the code is read as
+ * (src/main/compilers.ts): a toolchain pack's clang++, g++, or cl.exe in its own flag style; none means clang.
+ * Returns that folder, or null when the project has its own.
  */
-export function ensureCompileCommands(root: string, stateDir: string, cxx?: string | null): string | null {
+export function ensureCompileCommands(root: string, stateDir: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null): string | null {
   if (!root || findCompileCommands(root)) return null;
   const { sources, headerDirs } = scanProject(root);
   if (!sources.length) return null;
@@ -91,10 +93,7 @@ export function ensureCompileCommands(root: string, stateDir: string, cxx?: stri
   const flags = fs.existsSync(own)
     ? fs.readFileSync(own, 'utf8').split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
     : [root, ...headerDirs.filter((d) => d !== root)].slice(0, 400).map((d) => `-I${d}`);
-  const db = sources.map((file) => ({
-    directory: root, file,
-    arguments: [cxx ? (/\.(c|m)$/i.test(file) ? cxx.replace(/clang\+\+(\.exe)?$/i, 'clang$1') : cxx) : /\.(c|m)$/i.test(file) ? 'clang' : 'clang++', ...flags, '-c', file],
-  }));
+  const db = sources.map((file) => ({ directory: root, file, arguments: commandFor(compiler ?? null, file, flags) }));
   const dir = path.join(stateDir, 'compile-db', createHash('sha1').update(root).digest('hex').slice(0, 12));
   const out = path.join(dir, 'compile_commands.json'), text = JSON.stringify(db, null, 1);
   fs.mkdirSync(dir, { recursive: true });
@@ -125,14 +124,19 @@ export class LspClient {
   /** The compile_commands.json folder in use: the project's own, or the one SkyCodeX wrote for it. */
   ccDir: string | null = null;
 
-  start(clangd: string, root: string, extraArgs: string[], stateDir?: string, cxx?: string | null): Promise<unknown> {
+  start(clangd: string, root: string, extraArgs: string[], stateDir?: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null, env?: Record<string, string>, drivers: (ccDir: string) => string[] = () => []): Promise<unknown> {
     const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
     let cc = findCompileCommands(root);
-    if (!cc && stateDir) { try { cc = ensureCompileCommands(root, stateDir, cxx); } catch (e) { this.onLog(`compile database: ${e}`); } }
+    const own = !!cc;
+    if (!cc && stateDir) { try { cc = ensureCompileCommands(root, stateDir, compiler); } catch (e) { this.onLog(`compile database: ${e}`); } }
     this.ccDir = cc;
     if (cc) args.push(`--compile-commands-dir=${cc}`);
+    // the compilers clangd may ask for their headers and macros: the one the code is read as, and those the project's
+    // own compile_commands.json names (when they are installed compilers)
+    const q = [...(compiler && compiler.kind !== 'msvc' ? [compiler.cxx, compiler.cc] : []), ...(own && cc ? drivers(cc) : [])];
+    if (q.length) args.push(`--query-driver=${[...new Set(q)].join(',')}`);
     args.push(...extraArgs);
-    return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true } });
+    return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true }, env });
   }
 
   startServer(cmd: string, args: string[], root: string, opts: { env?: Record<string, string>; name?: string; initializationOptions?: unknown; settings?: Record<string, unknown> } = {}): Promise<unknown> {

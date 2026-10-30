@@ -13,6 +13,15 @@ const problems = [
   !(r.previewCards > 0) && 'no preview cards',
   !r.definition && 'go to definition failed',
   !(r.flowBoxes > 0) && 'the flow view is empty',
+  !(r.runSteps?.length >= 10) && `the run from main has ${r.runSteps?.length ?? 0} steps`,
+  !(r.seqRows > 3) && 'the sequence view shows no rows',
+  r.seqCollisions?.length && `text on text in the sequence view: ${r.seqCollisions.slice(0, 5).join('; ')}`,
+  r.seqKeptStep === false && 'switching views lost the selected step',
+  r.boxKeptStep === false && 'the boxes view does not show the selected step',
+  r.boxCollisions?.length && `numbers over numbers or boxes in the boxes view: ${r.boxCollisions.slice(0, 5).join('; ')}`,
+  r.boxRoutes != null && r.boxRoutes !== 2 && `main to split should have 2 routes, the boxes view shows ${r.boxRoutes}`,
+  !(r.seqCodeLines > 1) && `the step's code shows ${r.seqCodeLines ?? 0} lines`,
+  !(r.refresh?.finished && r.refresh?.seqRows > 3 && !/failed/.test(r.refresh?.toast ?? '')) && `refresh did not bring the views back: ${JSON.stringify(r.refresh)}`,
 ].filter(Boolean);
 if (problems.length) { console.error(`\nboot check failed:\n- ${problems.join('\n- ')}`); process.exit(1); }
 console.log('\nboot check passed');

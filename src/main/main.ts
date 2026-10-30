@@ -12,6 +12,7 @@ import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync } from 'node:child_process';
+import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, Compiler, ReadAs } from './compilers';
 
 // ---------- portable data dir: decided before anything else touches the disk ----------
 const appRoot = path.resolve(__dirname, '..', '..');
@@ -164,9 +165,12 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
   try {
-    // a toolchain pack's compiler goes into the compile database SkyCodeX writes, so its standard headers are indexed too
-    const tc = activeToolchain(), cxx = tc ? packExe(PACKS.dir, tc, 'clang++') : null;
-    await lsp.start(clangd, root, [...(settings['clangd.args'] as string[]), ...(cxx ? [`--query-driver=${cxx}`] : [])], STATE, cxx);
+    // the compiler the code is read as goes into the compile database SkyCodeX writes (and clangd may ask it for its
+    // headers and macros); compilers the project's own database names are asked too, when they are installed ones
+    const c = readingAs();
+    await lsp.start(clangd, root, settings['clangd.args'] as string[], STATE, c.compiler,
+      c.compiler?.kind === 'msvc' && c.compiler.include?.length ? { INCLUDE: c.compiler.include.join(';') } : undefined,
+      (cc) => projectDrivers(cc, root));
     return { ok: true, clangd, capabilities: lsp.capabilities };
   } catch (e) { return { ok: false, message: String(e) }; }
 });
@@ -219,6 +223,23 @@ function activeToolchain(): PackManifest | null {
   const tcs = listPacks(PACKS.dir).filter((m) => m.kind === 'toolchain' && packExe(PACKS.dir, m, 'clang'));
   return (want === 'auto' ? tcs[0] : tcs.find((m) => m.id === want)) ?? null;
 }
+/** compiler.read_as: clang (a toolchain pack's clang++, else the system's), gcc or msvc, found once per setting. */
+const found = new Map<string, Compiler | null>();
+function detect(kind: 'gcc' | 'msvc', given: string): Compiler | null {
+  const k = `${kind}|${given}`;
+  if (!found.has(k)) found.set(k, kind === 'gcc' ? findGcc(given) : findMsvc(given));
+  return found.get(k)!;
+}
+function readingAs(): { want: ReadAs; compiler: Compiler | null; note: string } {
+  const want = (String(settings['compiler.read_as'] ?? 'clang') as ReadAs), given = String(settings['compiler.path'] ?? '');
+  if (want === 'gcc' || want === 'msvc') {
+    const c = detect(want, given);
+    if (c) return { want, compiler: c, note: '' };
+    return { want, compiler: null, note: want === 'gcc' ? 'no GCC found (on macOS, g++ is Apple clang) · reading as clang' : process.platform === 'win32' ? 'no Visual Studio C++ tools found · reading as clang' : 'MSVC is on Windows only · reading as clang' };
+  }
+  const tc = activeToolchain(), cxx = tc ? packExe(PACKS.dir, tc, 'clang++') : null;
+  return { want: 'clang', compiler: cxx ? { kind: 'clang', cxx, cc: cxx.replace(/clang\+\+(\.exe)?$/i, 'clang$1'), version: tc!.version } : null, note: '' };
+}
 let sdk: string | null | undefined;
 function sdkPath(): string | null {
   if (sdk !== undefined) return sdk;
@@ -250,6 +271,7 @@ const clangdVersion = (p: string | null): Promise<string | null> => {
   return versions.get(p)!;
 };
 ipcMain.handle('compiler:info', async () => {
+  found.clear();   // a compiler installed since is found when the window opens
   const setting = String(settings['clangd.path'] ?? 'auto');
   const active = findClangd(setting, TOOLS, PACKS.dir), inb = inbuiltClangd(TOOLS), sys = systemClangd();
   const packs = listPacks(PACKS.dir).map((m) => ({ ...m, clangd: packExe(PACKS.dir, m, 'clangd'), clang: packExe(PACKS.dir, m, 'clang') }));
@@ -260,6 +282,11 @@ ipcMain.handle('compiler:info', async () => {
     packs, packsDir: PACKS.dir, packsNote: PACKS.note ?? null,
     toolchainSetting: String(settings['compiler.toolchain'] ?? 'auto'), toolchain: activeToolchain()?.id ?? null,
     headers: headersStatus(), installing: installing?.rel.id ?? null, kinds: KIND_INFO,
+    readAs: (() => {
+      const r = readingAs(), given = String(settings['compiler.path'] ?? '');
+      const gcc = detect('gcc', r.want === 'gcc' ? given : ''), msvc = detect('msvc', r.want === 'msvc' ? given : '');
+      return { want: r.want, now: describeCompiler(r.compiler), note: r.note, gcc: gcc && { path: gcc.cxx, version: gcc.version }, msvc: msvc && { path: msvc.cxx, version: msvc.version } };
+    })(),
   };
 });
 let installing: { ctrl: AbortController; rel: Release } | null = null;
@@ -317,6 +344,8 @@ ipcMain.handle('smoke:capture', async (_e, name: string) => {
   return out;
 });
 ipcMain.handle('smoke:done', (_e, report: unknown) => {
+  // the file the smoke run creates to test new files is removed, so the sample project is left as it was
+  if (smoke) fs.rmSync(path.join(smoke, 'smoke_new.cpp'), { force: true });
   fs.writeFileSync(path.join(data.dir, 'logs', 'smoke-report.json'), JSON.stringify(report, null, 1));
   setTimeout(() => app.quit(), 100);
 });

@@ -13,16 +13,18 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 **Version 1.0** for macOS (Apple silicon), Windows (x64) and Linux (x64): portable apps, downloadable from the repository's [Releases](https://github.com/jay-core/lithograph-editor/releases) page. Each build is checked by opening the packaged app on its own system before it is published. Since 1.0 the editor extras have been removed so the project can focus on the flow view, and the interface and the flow view are being reworked next. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
 
 Working now:
-- **Flow view:** a box-and-arrow overview of how the program runs.
-  - from every `main`; a library without one starts from its public API (`inc/`, `include/`)
-  - execution-order numbers, loops, threads, unreached files
+- **Flow view:** how the program runs, from every `main` (a library without one starts from its public API, `inc/`, `include/`), as two views of the same run (Tab switches, keeping the step):
+  - **sequence:** one row per call in execution order, stepping with the keyboard through calls, returns and loop passes
+  - **boxes:** files as boxes, the functions that run as rows in step order, a line from each caller's row to each callee's row with the calls' step numbers — readable at every zoom (fit width, fit all, 100%, 150%, any scale, with scrolling and a minimap; zoomed out it is drawn as files, then folders)
+  - every route between two functions (shift-click), a marker that plays the run along the lines (Space), focus, how often each function runs, SVG export
   - the call graph comes from clangd's index, many requests at a time, so large projects build in seconds (thorvg: about 1,000 calls in under a second)
-  - labels kept off boxes, grouping by folder, boxes you drag stay pinned
 - **Any project, built or not:** a folder without `compile_commands.json` (Meson or Make projects not yet built, plain source folders) gets one written into SkyCodeX's own data folder, never into the project, so clangd indexes everything and the project's own `#include`s resolve.
 - **Preview panes:**
   - calls of the function under the cursor as cards, two levels, shiftable
-  - thin colour-square columns with tooltips, pinned highlights, and connectors that follow cards off screen
+  - every call in the source (the editor for pane 1, pane 1's card for pane 2, and so on) outlined in its card's colour; hover shows its connector, a click brings its card into view, lit, keeps the connector until something else is selected, and shows how many levels deep the call goes
   - standard-library cards; macros, `static_assert`, lambdas and indirect calls listed after a divider
+- **Colours:** Settings → appearance has a hue, saturation and lightness slider for every colour — the whole editor, code, diagnostics, preview cards, the flow views — previewed live, written to `settings.toml`.
+- **Refresh** (bottom right): reads every file again and rebuilds the previews, the flow and its views.
 - **Reading and editing with the inbuilt clangd:**
   - ⌘/Ctrl-click to the definition, into any header, standard ones included
   - errors, completion, hover, rename (F2), fixes and refactorings (⌘/Ctrl .), references (⇧F12)
@@ -95,6 +97,7 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 - every download is checked against the checksum its source publishes (SHA-256, or npm's SHA-512) and unpacked by SkyCodeX itself (`.zip`, `.tar.zst`, `.tar.gz`, `.gz`). No installer or script runs, and entries that would land outside the folder are refused. The Go pack then builds gopls with its own `go`; modules are verified by Go's checksum database;
 - the language engines keep Cargo's registry, Go's module cache and pip's cache inside their packs;
 - the standard C/C++ headers come from the system (Xcode Command Line Tools on macOS, the distribution's development packages on Linux); an installed toolchain pack's headers are used instead, and on Windows the llvm-mingw pack brings its own.
+- **read the code as** clang, **gcc** or **MSVC**: the same analysis and views, with that compiler's headers, macros and language rules. gcc is the real g++ found on the PATH (or `compiler.path`), asked for its headers and macros; MSVC is Visual Studio's or the Build Tools' `cl.exe` (Windows), which puts clangd into its MSVC-compatible mode. A project's own `compile_commands.json` keeps the compilers it names.
 
 `npm test` runs the unit and integration tests in `src/tests/`. `npm run smoke` drives the real app against `samples/tinyhttp` (build it first with `samples/tinyhttp/build.sh`) and writes screenshots to `data/logs/`. Add `-- --scenario compiler|fonts|defs|boot|large` after the folder for one part only (`large` times each stage on a big project, such as thorvg).
 

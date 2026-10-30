@@ -1,20 +1,19 @@
 import { onMount, onCleanup, createEffect, on } from 'solid-js';
 import { EditorView, Decoration, DecorationSet, keymap, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { EditorState, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { editorExtensions, posToOffset, offsetToPos } from '../lib/cm';
+import { editorExtensions, offsetToPos } from '../lib/cm';
 import { completionFor, hoverFor, lintSupport, attachView, definitionAt, indexEpoch } from '../lib/lsp';
 import { langOf, syntaxFor, serverLang } from '../lib/langs';
 import { sender, flush as flushOther } from '../lib/langlsp';
 import { saver } from '../lib/power';
 import { files, states, settings, setStateFactory, setMainView, onDocChanged, openFile, save, setCrumb, setCursorPos } from '../lib/store';
 import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
-import { PAL } from '../lib/lines';
 
-// ---- decorations: coloured call sites, focus dimming, ⌘/Ctrl-hover link ----
-interface Marks { calls: { from: number; to: number; color: string }[]; dim: [number, number] | null; link: [number, number] | null }
+// ---- decorations: focus dimming, ⌘/Ctrl-hover link (call outlines come from the preview: lib/callmarks.ts) ----
+interface Marks { dim: [number, number] | null; link: [number, number] | null }
 export const setMarks = StateEffect.define<Partial<Marks>>();
 const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
-  create: () => ({ m: { calls: [], dim: null, link: null }, deco: Decoration.none }),
+  create: () => ({ m: { dim: null, link: null }, deco: Decoration.none }),
   update(v, tr) {
     let m = v.m;
     for (const e of tr.effects) if (e.is(setMarks)) m = { ...m, ...e.value };
@@ -22,7 +21,6 @@ const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
     if (m === v.m) return { m, deco: v.deco.map(tr.changes) };
     const doc = tr.state.doc;
     const ranges: { from: number; to: number; d: Decoration }[] = [];
-    for (const c of m.calls) if (c.to <= doc.length && c.to > c.from) ranges.push({ from: c.from, to: c.to, d: Decoration.mark({ attributes: { style: `text-decoration: underline ${c.color} 1.5px; text-underline-offset: 4px` } }) });
     if (m.link && m.link[1] <= doc.length) ranges.push({ from: m.link[0], to: m.link[1], d: Decoration.mark({ class: 'cmd-link' }) });
     ranges.sort((x, y) => x.from - y.from);
     const b = new RangeSetBuilder<Decoration>();
@@ -144,23 +142,14 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
     refreshForCursor(current, offsetToPos(view.state.doc, view.state.selection.main.head), true);
   }, { defer: true }));
 
-  // crumb, focus dimming and coloured call sites follow the preview state
+  // crumb and focus dimming follow the preview state
   createEffect(() => {
-    const fn = mainFn(), ls = levels(), w = win(), s = settings();
+    const fn = mainFn(), s = settings();
+    levels(); win();
     if (!view) return;
     setCrumb(fn && fn.file === current ? fn.name : '');
-    const doc = view.state.doc;
     const dim: [number, number] | null = fn && fn.file === current && s['theme.focus_dimming'] ? [fn.range.start.line + 1, fn.range.end.line + 1] : null;
-    const calls: Marks['calls'] = [];
-    const l1 = ls[0];
-    if (l1 && w === 0 && l1.callerFile === current) {
-      l1.cards.forEach((c, i) => {
-        for (const r of c.fromRanges) {
-          calls.push({ from: posToOffset(doc, r.start.line, r.start.character), to: posToOffset(doc, r.end.line, r.end.character), color: PAL[i % PAL.length] });
-        }
-      });
-    }
-    view.dispatch({ effects: setMarks.of({ dim, calls }) });
+    view.dispatch({ effects: setMarks.of({ dim }) });
     props.onScroll();
   });
 

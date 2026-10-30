@@ -42,6 +42,7 @@ async function fileLines(file: string): Promise<string[]> {
   return textCache.get(file)!;
 }
 export const invalidateText = (file: string) => textCache.delete(file);
+export const clearTextCache = () => { textCache.clear(); trees.clear(); };
 
 const before = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character < b.character);
 
@@ -262,3 +263,68 @@ export function shiftHome() { setWin(0); }
 
 export const describeLevel = (lv: Level) => basename(lv.callerFile) && lv.caller.name;
 export const cardLoc = (c: Card) => `${relPath(projectRoot(), c.file)}:${c.startLine + 1}`;
+
+// ---------- how deep a call goes ----------
+
+/** depth: levels of calls below the function (0: it calls nothing in the project); fns: the functions below it. */
+export interface Depth { depth: number; fns: number; capped: boolean }
+export const [depths, setDepths] = createSignal<Record<string, Depth | 'busy'>>({});
+const DEPTH_CAP = 4000;
+const depthCache = new Map<string, Depth>();
+
+/**
+ * How deep a card's function goes: the deepest chain of project calls below it, each function opened once, in call
+ * order — the depth the flow view shows. The graph comes from clangd's index, many requests in flight at once.
+ */
+export async function measureDepth(card: Card): Promise<void> {
+  if (card.std || card.kind !== 'call') return;
+  const k = card.key, have = depths()[k];
+  if (have && have !== 'busy') return;
+  const hit = depthCache.get(k);
+  if (hit) { setDepths({ ...depths(), [k]: hit }); return; }
+  setDepths({ ...depths(), [k]: 'busy' });
+  const keyOf = (it: CallItem) => `${it.uri}#${it.selectionRange.start.line}`;
+  const edges = new Map<string, string[]>();
+  let capped = false;
+  let frontier: CallItem[] = [card.item];
+  const seen = new Set<string>([keyOf(card.item)]);
+  while (frontier.length) {
+    const next: CallItem[] = [];
+    await pool(frontier, 16, async (it) => {
+      const out = (await outgoing(it)).filter((c) => c.fromRanges?.length && inProject(uriToFile(c.to.uri)));
+      const first = (c: typeof out[number]) => c.fromRanges.reduce((m, r) => (before(r.start, m) ? r.start : m), c.fromRanges[0].start);
+      out.sort((a, b) => (before(first(a), first(b)) ? -1 : 1));
+      edges.set(keyOf(it), out.map((c) => keyOf(c.to)));
+      for (const c of out) {
+        const ck = keyOf(c.to);
+        if (seen.has(ck)) continue;
+        if (seen.size >= DEPTH_CAP) { capped = true; continue; }
+        seen.add(ck);
+        next.push(c.to);
+      }
+    });
+    frontier = next;
+  }
+  // depth first, in call order, each function opened once (an explicit stack: chains can be thousands long)
+  const opened = new Set<string>([keyOf(card.item)]);
+  const stack: [string, number, number][] = [[keyOf(card.item), 0, 0]];
+  let depth = 0;
+  while (stack.length) {
+    const top = stack[stack.length - 1], kids = edges.get(top[0]) ?? [];
+    if (top[2] >= kids.length) { stack.pop(); continue; }
+    const c = kids[top[2]++];
+    if (opened.has(c)) continue;
+    opened.add(c);
+    depth = Math.max(depth, top[1] + 1);
+    stack.push([c, top[1] + 1, 0]);
+  }
+  const d: Depth = { depth, fns: opened.size - 1, capped };
+  depthCache.set(k, d);
+  setDepths({ ...depths(), [k]: d });
+}
+export const clearDepths = () => { depthCache.clear(); setDepths({}); };
+
+async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<unknown>) {
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
+}

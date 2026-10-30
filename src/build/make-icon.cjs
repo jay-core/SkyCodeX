@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
   // macOS: the tile on Apple's icon grid (824 px with a margin and a shadow)
   await render(w, svg, path.join(root, 'assets/icon/skycodex-1024.png'));
   // Windows and Linux: the same tile filling the square, without the shadow, so it isn't small in a taskbar
-  const flat = svg.replace(/translate\(100 100\) scale\([\d.]+\)/, 'translate(16 16) scale(2.0666667)').replace(/ filter="url\(#shadow\)"/, '');
+  const flat = svg.replace(/translate\(100 100\) scale\(([\d.]+)\)/, (_, k) => `translate(16 16) scale(${(Number(k) * 992 / 824).toFixed(7)})`).replace(/ filter="url\(#shadow\)"/, '');
   await render(w, flat, path.join(root, 'assets/icon/skycodex-square-1024.png'));
   writeIco(path.join(root, 'assets/icon/skycodex-square-1024.png'), path.join(root, 'assets/icon/skycodex.ico'));
   app.quit();

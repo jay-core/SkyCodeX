@@ -1,0 +1,12 @@
+{"title": "tinyhttp", "levels": ["files", "functions"], "hover": "src/server.cpp",
+ "extraFns": {"src/router.cpp": [["not_found"]], "legacy/cgi.cpp": [["cgi_main"]]},
+ "whyNot": {"not_found": "used through a pointer", "cgi_main": "nothing calls it"},
+ "race": {"a": 18, "b": 7, "v": "counters_"},
+ "moves": ["zoom", "next", "next", "next", "next", "next", "next", "next", "next", "next", "next", "next", "next", "next", "next", "again", "leave", "next", "next", "next", "next", "next"],
+ "facts": {
+  "record": [["writes", "<code>counters_[path] += 1</code>", "proved"], ["runs", "once per request · inside <code>while (running_ &amp;&amp; …)</code>", "proved"], ["race", "<code>counters_</code> is also read by <b>8</b> flush, on the flusher thread · no lock in common", "risk"]],
+  "flush": [["runs", "every second, on its own thread · <code>while (running)</code>", "proved"], ["reads", "<code>counters_</code>", "proved"]],
+  "handle": [["returns", "<code>Response{400}</code> early when the headers are empty", "proved"], ["lost", "<b>5</b> start ignores what handle returns · that 400 is never sent", "risk"]],
+  "is_space": [["runs", "once per leading space, for every header line", "proved"]],
+  "accept": [["blocks", "until a client connects", "possible"]]
+ }}

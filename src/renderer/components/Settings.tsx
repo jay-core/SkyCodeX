@@ -1,5 +1,6 @@
 import { For, Show, createSignal, createEffect, createResource, on, onMount, onCleanup } from 'solid-js';
-import { SETTINGS, SettingDef } from '../../shared/settings-schema';
+import { SETTINGS, SECTIONS, SettingDef } from '../../shared/settings-schema';
+import { hexToHsla, hslaToHex, isColor } from '../../shared/color';
 import { api } from '../lib/api';
 import { settings, problems, setSettingsOpen, openFile, info, flash, applySettings } from '../lib/store';
 import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
@@ -7,7 +8,7 @@ import { afterPaint } from '../lib/motion';
 import { t } from '../lib/i18n';
 
 const PAGES: { name: string; sections: string[] }[] = [
-  { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion'] },
+  { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion', 'colors.editor', 'colors.code', 'colors.diagnostics', 'colors.cards', 'colors.flow'] },
   { name: 'interface', sections: ['ui', 'power'] },
   { name: 'editor', sections: ['editor', 'window'] },
   { name: 'preview', sections: ['preview'] },
@@ -19,6 +20,8 @@ const NAMES: Record<string, string> = {
 };
 const label = (d: SettingDef) => {
   if (NAMES[d.key]) return NAMES[d.key];
+  if (d.label) return d.label;
+  if (d.type === 'color') return d.key.slice(d.key.lastIndexOf('.') + 1).replace(/_/g, ' ');
   const sec = sectionOf(d.key).replace(/^font\.?/, (m) => (m ? 'font ' : '')).replace('.', ' ');
   const name = d.key.slice(d.key.lastIndexOf('.') + 1).replace(/_/g, ' ');
   return sectionOf(d.key) === 'font' ? `code ${name}` : `${sec} ${name}`.trim().replace(/^ui family$/, 'interface font');
@@ -148,6 +151,42 @@ function WeightCtl(props: { d: SettingDef; family: () => string }) {
   );
 }
 
+/** A colour: swatch and hex, and hue / saturation / lightness (and transparency) sliders whose tracks show what they do. */
+function ColorCtl(props: { d: SettingDef }) {
+  const d = props.d;
+  const [live, setLive] = createSignal<string | null>(null);
+  createEffect(on(() => settings()[d.key], () => setLive(null), { defer: true }));
+  const cur = () => live() ?? String(settings()[d.key] ?? d.default);
+  const hsla = () => hexToHsla(cur());
+  const alpha = () => cur().length === 9;
+  // dragging recolours the window at once (nothing is written); letting go saves
+  const preview = (hex: string) => { setLive(hex); applySettings({ ...settings(), [d.key]: hex }, problems()); };
+  const commit = (hex: string) => { setLive(hex); set(d.key, hex); };
+  const withPart = (k: 'h' | 's' | 'l' | 'a', v: number) => hslaToHex({ ...hsla(), [k]: v }, alpha());
+  const track = (k: 'h' | 's' | 'l' | 'a') => {
+    const c = hsla(), at = (v: number) => hslaToHex({ ...c, [k]: v, a: k === 'a' ? v : 1 }, k === 'a');
+    const stops = k === 'h' ? [0, 60, 120, 180, 240, 300, 360] : k === 'a' ? [0, 1] : [0, 50, 100];
+    return `linear-gradient(90deg, ${stops.map(at).join(', ')})`;
+  };
+  const slider = (k: 'h' | 's' | 'l' | 'a', name: string, max: number, step: number) => (
+    <div class="cslide">
+      <span>{name}</span>
+      <input type="range" min={0} max={max} step={step} value={k === 'a' ? hsla().a : Math.round(hsla()[k])} style={{ background: track(k) }}
+        onInput={(e) => preview(withPart(k, Number(e.currentTarget.value)))} onChange={(e) => commit(withPart(k, Number(e.currentTarget.value)))} />
+    </div>
+  );
+  return (
+    <div class="colorctl">
+      <div class="crow">
+        <span class="swatch" style={{ background: cur() }} />
+        <input class="hex" type="text" spellcheck={false} value={cur()} onChange={(e) => { const v = e.currentTarget.value.trim().toLowerCase(); if (isColor(v)) commit(v); else { flash(`${label(d)}: a colour like #ad9b6f`); e.currentTarget.value = cur(); } }} />
+      </div>
+      {slider('h', 'hue', 359, 1)}{slider('s', 'saturation', 100, 1)}{slider('l', 'lightness', 100, 1)}
+      <Show when={alpha()}>{slider('a', 'opacity', 1, 0.01)}</Show>
+    </div>
+  );
+}
+
 function Control(props: { d: SettingDef }) {
   const v = () => settings()[props.d.key];
   const d = props.d;
@@ -157,6 +196,7 @@ function Control(props: { d: SettingDef }) {
   const idle = () => d.key === 'editor.autosave_delay_ms' && settings()['editor.autosave'] !== 'delay';
   const Lab = () => <div class="lab">{t(label(d))}{reset()}</div>;
   const wrap = (body: any) => <div class="ctl" classList={{ idle: idle() }}>{body}</div>;
+  if (d.type === 'color') return wrap(<><Lab /><ColorCtl d={d} /><div class="doc">{t(d.doc)}</div></>);
   if (d.type === 'boolean') return (
     <div class="ctl" style={{ display: 'flex', 'align-items': 'center' }}>
       <div><Lab /><Show when={d.doc !== 'true | false'}><div class="doc">{t(d.doc)}</div></Show></div>
@@ -222,7 +262,21 @@ export default function Settings() {
       <Show when={problems().length}>
         <div class="problem si"><For each={problems()}>{(p) => <div>{p.line ? `line ${p.line}: ` : ''}{p.message}</div>}</For></div>
       </Show>
-      <div class="grid si"><For each={defs()}>{(d) => <Control d={d} />}</For></div>
+      <div class="grid si"><For each={defs()}>{(d, i) => (
+        <>
+          {/* each group of colours says what it colours */}
+          <Show when={d.type === 'color' && sectionOf(d.key) !== sectionOf(defs()[i() - 1]?.key ?? '')}>
+            <div class="sechead">
+              <span>{sectionOf(d.key).replace('colors.', '').replace('cards', 'preview cards').replace('editor', 'whole editor')}</span>
+              <span class="doc">{SECTIONS.find((x) => x.name === sectionOf(d.key))?.doc}</span>
+              <Show when={sectionOf(d.key) === 'colors.editor' && SETTINGS.some((x) => x.type === 'color' && settings()[x.key] !== x.default)}>
+                <button class="rst" onClick={async () => { for (const x of SETTINGS) if (x.type === 'color' && settings()[x.key] !== x.default) await set(x.key, x.default); }}>{t('reset all colours')}</button>
+              </Show>
+            </div>
+          </Show>
+          <Control d={d} />
+        </>
+      )}</For></div>
       <div class="sub si" style={{ 'margin-top': '20px' }}>Every change here is written to {info()?.settingsFile} — the page and the file are the same settings.</div>
     </div>
   );

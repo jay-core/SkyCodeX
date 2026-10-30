@@ -1,5 +1,16 @@
 // Connector lines between call sites and the cards they lead to.
-export const PAL = ['#ad9b6f', '#7f9e82', '#a8929e', '#739696', '#ab9070', '#b8766b', '#8f9aa8', '#9aa86f'];
+import { createSignal } from 'solid-js';
+
+/**
+ * The card colours, in order (cards take them in turn); each call is outlined in its card's colour. Cool, clear hues
+ * that stand apart from the syntax colours and from each other — no reds, which read as errors. Settings → appearance
+ * can change each one.
+ */
+export const PAL = ['#86a8e7', '#79c9ae', '#bc9fe6', '#d4c26a', '#6fc0dc', '#a6cf82', '#e2dccb', '#9c96f0'];
+const [palette, setPaletteSig] = createSignal<string[]>(PAL);
+/** The colour of card k, following the settings. */
+export const pal = (k: number) => { const p = palette(); return p[k % p.length]; };
+export const setPalette = (p: string[]) => setPaletteSig(p.length ? p : PAL);
 
 export interface LinePoint { x: number; y: number }
 export interface Link {

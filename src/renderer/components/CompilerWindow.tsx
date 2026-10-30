@@ -13,6 +13,7 @@ interface Info {
   inbuilt: { path: string; version: string | null } | null; system: { path: string; version: string | null } | null;
   packs: Pack[]; packsDir: string; packsNote: string | null; toolchainSetting: string; toolchain: string | null;
   headers: { ok: boolean; detail: string }; installing: string | null;
+  readAs: { want: 'clang' | 'gcc' | 'msvc'; now: string; note: string; gcc: { path: string; version: string } | null; msvc: { path: string; version: string } | null };
   kinds: Record<Kind, { title: string; language: string; what: string }>;
 }
 // the other languages: each row installs one kind of pack
@@ -69,6 +70,11 @@ export default function CompilerWindow() {
     await api.settings.set('clangd.path', value);
     await refetch();
     if (root()) startLsp(root());   // the new engine takes over at once
+  };
+  const readAs = async (value: string) => {
+    await api.settings.set('compiler.read_as', value);
+    await refetch();
+    if (root()) startLsp(root());   // clangd reads the project again as that compiler
   };
   const install = async (r: Release, replaces?: string) => {
     setConfirm(null); setPicking(false); setPickKind(null);
@@ -127,6 +133,16 @@ export default function CompilerWindow() {
                 }}</Show>
                 <Show when={typeof rel().clangd === 'string'}><span class="dim">{rel().clangd as string}</span></Show>
               </div>
+
+              {/* ---- the compiler the code is read as ---- */}
+              <div class="csec">read the code as <span class="dim">· its headers, macros and language rules; clangd analyses it either way</span></div>
+              <div class="copts">
+                <Opt on={i().readAs.want === 'clang'} label="clang" note="the toolchain below, else the system's" onPick={() => readAs('clang')} />
+                <Opt on={i().readAs.want === 'gcc'} disabled={!i().readAs.gcc && i().readAs.want !== 'gcc'} label="gcc · g++" note={i().readAs.gcc ? `g++ ${i().readAs.gcc!.version} · ${i().readAs.gcc!.path}` : 'no GCC found on this machine (set compiler.path to a g++)'} onPick={() => readAs('gcc')} />
+                <Opt on={i().readAs.want === 'msvc'} disabled={!i().readAs.msvc && i().readAs.want !== 'msvc'} label="MSVC" note={i().readAs.msvc ? `cl ${i().readAs.msvc!.version} · ${i().readAs.msvc!.path}` : 'Windows, with Visual Studio or its Build Tools (C++)'} onPick={() => readAs('msvc')} />
+              </div>
+              <Show when={i().readAs.note}><div class="csub bad">{i().readAs.note}</div></Show>
+              <div class="csub">reading as {i().readAs.now} · a project's own compile_commands.json keeps the compilers it names</div>
 
               {/* ---- toolchain ---- */}
               <div class="csec">compiler toolchain <span class="dim">· its standard headers are indexed with the project</span></div>

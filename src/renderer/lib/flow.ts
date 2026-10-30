@@ -6,10 +6,11 @@
 //  2. a call to a virtual method also reaches every override (classes and their bases come from a quick text pass,
 //     the overriding methods from the index), so a chain doesn't stop at an interface;
 //  3. execution order is numbered afterwards, in memory, once per entry point.
-import { api, CallItem, DocSymbol, Pos, uriToFile, fileToUri, basename } from './api';
-import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols } from './lsp';
+import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename } from './api';
+import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols, ensureOpen } from './lsp';
 import { states } from './store';
 import { parseCpp, loopsAt, functionDefs, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
+import { analyseFunction, walkRun, fnExtent, AstNode, FnInfo, Run, Target } from '../../shared/flowrun';
 import type { Tree } from '@lezer/common';
 
 export interface FlowFn { key: string; item: CallItem; file: string; nums: string[]; line: number }
@@ -17,7 +18,7 @@ export interface FlowEdge { from: string; to: string; nums: string[]; thread: bo
 export interface BoxFn { name: string; num: string; line: number; endLine: number }
 export interface FlowBox { file: string; fns: BoxFn[]; loops: string[]; entries: string[]; thread: boolean; dead: boolean }
 /** One entry point and everything it reaches: a program (one main), or a library's public API. */
-export interface FlowLane { id: string; label: string; file: string; fns: number; files: string[] }
+export interface FlowLane { id: string; label: string; file: string; fns: number; files: string[]; start: string }
 /** Between programs: one starts another, or they share code. */
 export interface LaneLink { from: string; to: string; kind: 'starts' | 'shares'; text: string }
 export interface FlowGraph {
@@ -112,7 +113,7 @@ async function findApi(root: string): Promise<CallItem[]> {
 // ---------- the crawl ----------
 
 interface Call { to: string; at: Pos; virtual: boolean }
-interface Node { item: CallItem; calls: Call[] }
+interface Node { item: CallItem; calls: Call[]; raw: OutgoingCall[] }
 
 const firstRange = (rs: { start: Pos }[]) => rs.reduce((m, r) => (r.start.line < m.line || (r.start.line === m.line && r.start.character < m.character) ? r.start : m), rs[0].start);
 
@@ -181,10 +182,11 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   let frontier = starts;
   while (frontier.length && !truncated) {
     const next: CallItem[] = [];
-    const fresh = frontier.filter((it) => { const k = keyOf(it); if (nodes.has(k)) return false; if (nodes.size >= LIMIT) { truncated = true; return false; } nodes.set(k, { item: it, calls: [] }); return true; });
+    const fresh = frontier.filter((it) => { const k = keyOf(it); if (nodes.has(k)) return false; if (nodes.size >= LIMIT) { truncated = true; return false; } nodes.set(k, { item: it, calls: [], raw: [] }); return true; });
     await pool(fresh, CONCURRENCY, async (it) => {
       const node = nodes.get(keyOf(it))!;
       const [raw, subs] = await Promise.all([outgoing(it), overridesOf(it)]);
+      node.raw = raw;   // every call with every call site, library ones too: the analyser places each one
       for (const c of raw) {
         if (!c.fromRanges?.length || !inProject(uriToFile(c.to.uri))) continue;
         node.calls.push({ to: keyOf(c.to), at: firstRange(c.fromRanges), virtual: false });
@@ -223,6 +225,7 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void):
   const laneStarts: CallItem[][] = mains.length ? mains.map((m) => [m]) : apiItems.length ? [apiItems] : [];
   const starts = await Promise.all(laneStarts.flat().map((s) => withBody(s)));
   const { nodes, truncated } = await crawl(root, starts, onProgress);
+  lastCrawl = { root, nodes };
 
   // every file a function was reached in, read (in parallel) before the numbering walks them
   await pool([...new Set([...nodes.values()].map((n) => uriToFile(n.item.uri)))], 16, (f) => readText(f));
@@ -319,7 +322,8 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void):
   const lanes: FlowLane[] = laneStarts.map((_, e) => {
     const P = multi ? laneId(e) : '';
     const mine = [...fns.values()].filter((f) => f.nums.some((x) => (P ? x.startsWith(P) && !/[A-Z]/.test(x[P.length] ?? '') : true)));
-    return { id: P, label: mains.length ? names[e] : 'public API', file: mains.length ? uriToFile(mains[e].uri) : '', fns: mine.length, files: [...new Set(mine.map((f) => f.file))] };
+    const first = laneStarts.slice(0, e).reduce((a, l) => a + l.length, 0);
+    return { id: P, label: mains.length ? names[e] : 'public API', file: mains.length ? uriToFile(mains[e].uri) : '', fns: mine.length, files: [...new Set(mine.map((f) => f.file))], start: keyOf(starts[first]) };
   });
   const count = new Map<string, number>();
   for (const l of lanes) for (const f of l.files) count.set(f, (count.get(f) ?? 0) + 1);
@@ -364,6 +368,51 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void):
     boxes, edges: [...edgeMap.values()], fns: [...fns.values()], entries: entryLabels, lanes, links, shared,
     note, truncated, limit: LIMIT, unresolved, library: apiItems.length, ms: Math.round(performance.now() - t0),
   };
+}
+
+// ---------- the run: one entry point's steps in execution order (src/shared/flowrun.ts) ----------
+
+let lastCrawl: { root: string; nodes: Map<string, Node> } | null = null;
+const flowCache = new Map<string, { text: string; info: FnInfo }>();
+/** Forgets every file text, parse tree and analysed function, so the next build reads everything again. */
+export function clearFlowCaches() { texts.clear(); flowCache.clear(); }
+
+/**
+ * Every step from one entry point (a lane's start key), numbered in execution order, with loops, conditions,
+ * early exits, threads and indirect calls placed exactly. Uses the graph of the last buildFlow and asks clangd for
+ * the syntax tree of each function it reaches (cached by the file's text).
+ */
+export async function buildRun(start: string, onProgress?: (done: number, total: number) => void): Promise<Run> {
+  if (!lastCrawl) throw new Error('build the flow first');
+  const { nodes } = lastCrawl;
+  const target = (it: CallItem): Target => ({ key: keyOf(it), name: it.name, project: nodes.has(keyOf(it)), ctor: it.kind === 9, container: `${it.detail ?? ''} ${it.uri}` });
+  // what the start reaches, overrides included
+  const reach = new Set<string>([start]);
+  for (const k of reach) for (const c of nodes.get(k)?.calls ?? []) reach.add(c.to);
+  const byFile = new Map<string, string[]>();
+  for (const k of reach) { const n = nodes.get(k); if (n) { const f = uriToFile(n.item.uri); byFile.set(f, [...(byFile.get(f) ?? []), k]); } }
+  const flows = new Map<string, FnInfo>();
+  let done = 0;
+  // file by file, so each file is opened once and stays open while its functions are read
+  await pool([...byFile.keys()], 12, async (file) => {
+    const { text } = await readText(file);
+    await ensureOpen(file);
+    await Promise.all(byFile.get(file)!.map(async (k) => {
+      const node = nodes.get(k)!, it = node.item;
+      const ck = `${k}@${it.range.start.line}-${it.range.end.line}`;
+      const hit = flowCache.get(ck);
+      if (hit && hit.text === text) { flows.set(k, hit.info); return; }
+      const ast = (await api.lsp.request('textDocument/ast', { textDocument: { uri: it.uri }, range: it.range }).catch(() => null)) as AstNode | null;
+      const flow = ast ? analyseFunction(ast, text, node.raw.filter((c) => c.fromRanges?.length).map((c) => ({ to: target(c.to), fromRanges: c.fromRanges }))) : { body: [], dropped: [] };
+      const overrides = node.calls.filter((c) => c.virtual).map((c) => nodes.get(c.to)).filter((x): x is Node => !!x).map((x) => target(x.item));
+      const info: FnInfo = { name: it.name, file, line: it.selectionRange.start.line, ...fnExtent(ast, it.range), flow, overrides };
+      if (ast) flowCache.set(ck, { text, info });
+      flows.set(k, info);
+    }));
+    done += byFile.get(file)!.length;
+    onProgress?.(done, reach.size);
+  });
+  return walkRun(start, (k) => flows.get(k));
 }
 
 export const shortName = (root: string, file: string) => (file.startsWith(root) ? file.slice(root.length + 1) : basename(file));

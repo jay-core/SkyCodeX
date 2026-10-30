@@ -7,6 +7,7 @@ import { EditorState, Extension } from '@codemirror/state';
 import { history, defaultKeymap, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { callMarks } from './callmarks';
 
 export const cppLanguage = LRLanguage.define({
   name: 'cpp',
@@ -58,7 +59,7 @@ export function editorExtensions(opts: { tabSize: number; wrap: boolean; languag
     lineNumbers(), highlightActiveLineGutter(), foldGutter({ markerDOM: (open) => { const s = document.createElement('span'); s.textContent = open ? '⌄' : '›'; return s; } }),
     history(), drawSelection(), dropCursor(), EditorState.allowMultipleSelections.of(true), indentOnInput(),
     bracketMatching(), closeBrackets(), rectangularSelection(), crosshairCursor(), highlightActiveLine(), highlightSelectionMatches(),
-    syntaxHighlighting(highlight), opts.language ?? cpp(), baseTheme,
+    syntaxHighlighting(highlight), opts.language ?? cpp(), baseTheme, callMarks,
     EditorState.tabSize.of(opts.tabSize),
     opts.wrap ? EditorView.lineWrapping : [],
     keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
@@ -70,7 +71,7 @@ export function cardExtensions(firstLine: number): Extension[] {
   return [
     lineNumbers({ formatNumber: (n) => String(n + firstLine - 1) }),
     drawSelection(), highlightActiveLine(),
-    syntaxHighlighting(highlight), cpp(), baseTheme,
+    syntaxHighlighting(highlight), cpp(), baseTheme, callMarks,
     EditorState.readOnly.of(true), EditorView.editable.of(true),
     keymap.of(defaultKeymap),
   ];

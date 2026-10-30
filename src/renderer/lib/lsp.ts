@@ -288,4 +288,4 @@ export async function withBody(item: CallItem): Promise<CallItem> {
   }
   return item;
 }
-export const clearDefinitionCache = () => defCache.clear();
+export const clearDefinitionCache = () => { defCache.clear(); parsedLib.clear(); };

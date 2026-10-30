@@ -104,7 +104,7 @@ export default function App() {
       <Show when={palette()}><Palette /></Show>
       <AppMenu />
       <Show when={compilerOpen()}><CompilerWindow /></Show>
-      <Show when={toast()}><div role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '18px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
+      <Show when={toast()}><div class="toast" role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '52px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>
   );

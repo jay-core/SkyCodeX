@@ -1,8 +1,10 @@
 import { For, Index, Show, createEffect, createMemo, on, onMount, onCleanup, createSignal } from 'solid-js';
-import { levels, setLevels, win, setWin, setMainFn, focusCard, prepareShiftRight, shiftHome, canShift, busy, mainFn, Level, cardLoc, rebuildLevels } from '../lib/preview';
+import { levels, setLevels, win, setWin, setMainFn, focusCard, prepareShiftRight, shiftHome, canShift, busy, mainFn, Level, rebuildLevels, measureDepth, clearDepths } from '../lib/preview';
 import { afterPaint, onScreen } from '../lib/motion';
 import Card, { cardViews, cardCursor } from './Card';
-import { PAL, Link, linkSvg, curveSvg, edgeStub } from '../lib/lines';
+import { pal, Link, linkSvg } from '../lib/lines';
+import { showCallMarks, CallMark } from '../lib/callmarks';
+import { EditorView } from '@codemirror/view';
 import { getMainView, settings, cursorPos, root, files } from '../lib/store';
 import { api } from '../lib/api';
 import { posToOffset } from '../lib/cm';
@@ -13,8 +15,6 @@ const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)', IN = 'cubic-bezier(0.55, 0, 1, 0.4
 const stored = (k: string, d: number) => { try { const v = Number(localStorage.getItem(k)); return v > 0 ? v : d; } catch { return d; } };
 const store = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* not kept */ } };
 const MIN_COL = 170;
-const IDX_W = 34;   // the call index: a thin column of colour squares
-const KIND_LABEL: Record<string, string> = { macro: 'macro', assert: 'compile-time check', lambda: 'lambda', indirect: t('called through a pointer') };
 /** Where the call-like things start in a level, or -1 when it has only functions. */
 const firstOther = (lv: Level | undefined) => lv?.cards.findIndex((c) => c.kind !== 'call') ?? -1;
 
@@ -35,17 +35,13 @@ function Handle(props: { left: number; onDrag: (dx: number) => void; onEnd: () =
 export default function Preview(props: { overlay: () => SVGSVGElement | undefined; bodyEl: () => HTMLElement | undefined; codeEl: () => HTMLElement | undefined; registerRedraw: (f: () => void) => void }) {
   let area!: HTMLDivElement;
   const cols: HTMLDivElement[] = [];
-  const ixs: HTMLDivElement[][] = [[], []];   // the squares of the two thin columns
-  const [tip, setTip] = createSignal<{ c: number; k: number; y: number } | null>(null);
-  // widths: thin column, pane 1, thin column, pane 2; the panes split by a draggable ratio
+  // widths: pane 1 and pane 2, split by a draggable ratio
   const [areaW, setAreaW] = createSignal(800);
   const [frac, setFrac] = createSignal(stored('litho.preview.split', 0.5));
-  const IDX = () => IDX_W;
-  const cardsW = () => Math.max(2 * MIN_COL, areaW() - 2 * IDX());
+  const cardsW = () => Math.max(2 * MIN_COL, areaW());
   const w1 = () => Math.round(Math.min(cardsW() - MIN_COL, Math.max(MIN_COL, cardsW() * frac())));
   const w2 = () => cardsW() - w1();
-  const slotX = (s: number) => (s <= 0 ? s * w1() : w1() + IDX() + (s - 1) * (w2() + IDX()));
-  const idx2 = () => IDX() + w1();   // left edge of the thin column between the panes
+  const slotX = (s: number) => (s <= 0 ? s * w1() : w1() + (s - 1) * w2());
   const slotW = (s: number) => (s <= 0 ? w1() : w2());
   const ro = new ResizeObserver(() => { setAreaW(area.clientWidth); redraw(); });
   onMount(() => { ro.observe(area); props.registerRedraw(redraw); });
@@ -57,68 +53,103 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     raf = requestAnimationFrame(draw);
   }
 
+  // ---- call outlines: every call in a source view gets a box in its card's colour ----
+  // the source of level li: the editor for level 0, else the focused card of level li - 1
+  function sourceOf(li: number): { view: EditorView; base: number } | null {
+    const ls = levels(), lv = ls[li];
+    if (!lv) return null;
+    if (li === 0) { const v = getMainView(); return v && lv.callerFile === files.active ? { view: v, base: 0 } : null; }
+    const prev = ls[li - 1];
+    if (!prev || prev.focus < 0) return null;
+    const v = cardViews.get(`${li - 1}:${prev.focus}`);
+    return v ? { view: v, base: prev.cards[prev.focus].startLine } : null;
+  }
+  let marked = new Set<EditorView>();
+  function markCalls() {
+    const now = new Set<EditorView>();
+    levels().forEach((lv, li) => {
+      const src = sourceOf(li);
+      if (!src) return;
+      const doc = src.view.state.doc, marks: CallMark[] = [];
+      lv.cards.forEach((card, k) => {
+        for (const r of card.fromRanges) {
+          const a0 = r.start.line - src.base, b0 = r.end.line - src.base;
+          if (a0 < 0 || b0 >= doc.lines) continue;
+          marks.push({ from: posToOffset(doc, a0, r.start.character), to: posToOffset(doc, b0, r.end.character), color: pal(k), id: `${li}:${k}` });
+        }
+      });
+      showCallMarks(src.view, marks);
+      now.add(src.view);
+    });
+    for (const v of marked) if (!now.has(v) && v.dom.isConnected) showCallMarks(v, []);
+    marked = now;
+    redraw();
+  }
+  createEffect(on([levels, win, () => files.active, () => pal(0) + pal(1) + pal(2) + pal(3) + pal(4) + pal(5) + pal(6) + pal(7)], () => afterPaint().then(markCalls)));
+
+  // ---- hover shows a call's connector; a click brings its card into view, lit, and measures how deep it goes ----
+  type Hit = { li: number; k: number; el: HTMLElement };
+  const [hover, setHover] = createSignal<Hit | null>(null);
+  // a clicked call keeps its connector (and its card lit) until anything else is selected
+  const [stuck, setStuck] = createSignal<Hit | null>(null);
+  const callAt = (t: EventTarget | null) => {
+    const el = (t as Element | null)?.closest?.('.callbox') as HTMLElement | null;
+    const id = el?.dataset.call?.split(':').map(Number);
+    return el && id && id.length === 2 ? { li: id[0], k: id[1], el } : null;
+  };
+  const onOver = (e: MouseEvent) => { const c = callAt(e.target); const h = hover(); if (c?.el !== h?.el) { setHover(c); redraw(); } };
+  const onClick = async (e: MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) return;   // go to definition
+    const c = callAt(e.target);
+    if (!c) return;
+    // a call in pane 2's card leads one level further: shift first
+    if (c.li === win() + 2) { await doShift(1); await afterPaint(); }
+    const col = c.li - win();
+    if (col !== 0 && col !== 1) return;
+    pin(col, c.k);
+    setStuck(c);
+    reveal(col, c.k);
+    const card = levels()[c.li]?.cards[c.k];
+    if (card) measureDepth(card);
+  };
+  onMount(() => { window.addEventListener('mouseover', onOver); window.addEventListener('click', onClick); });
+  onCleanup(() => { window.removeEventListener('mouseover', onOver); window.removeEventListener('click', onClick); });
+  createEffect(on(root, () => clearDepths(), { defer: true }));
+
+  /** The connector of one call: from its outline to its card's dot (or to its pane's edge when the card is scrolled away). */
+  function connector(h: Hit, br: DOMRect, ar: DOMRect): string {
+    if (!h.el.isConnected || !levels()[h.li]) return '';
+    const col = cols[h.li], cr = col?.getBoundingClientRect();
+    const view = EditorView.findFromDOM(h.el.closest('.cm-editor') as HTMLElement);
+    const r = h.el.getBoundingClientRect();
+    // the call itself must be in view: inside its editor's scroller and, for a card, inside its pane
+    const pane = view?.scrollDOM.getBoundingClientRect(), holder = h.el.closest('.pcol')?.getBoundingClientRect();
+    const seen = !!pane && r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1 && r.right > pane.left && r.left < pane.right
+      && (!holder || (r.top >= holder.top - 1 && r.bottom <= holder.bottom + 1));
+    if (!cr || !view || !pane || !seen || cr.right <= ar.left + 2 || cr.left >= ar.right - 2) return '';
+    const pos = view.posAtDOM(h.el), end = view.coordsAtPos(view.state.doc.lineAt(pos).to);
+    const head = col.querySelector(`[data-card="${h.li}:${h.k}"] .card-h`) as HTMLElement | null, hr = head?.getBoundingClientRect();
+    const edge: 0 | -1 | 1 = !hr ? 1 : hr.bottom < cr.top + 4 ? -1 : hr.top > cr.bottom - 44 ? 1 : 0;
+    const sw = head?.querySelector('.sw')?.getBoundingClientRect();
+    const to = edge || !sw ? { x: cr.left - br.left + 22, y: edge < 0 ? cr.top - br.top + 10 : cr.bottom - br.top - 50 } : { x: sw.left - br.left - 1, y: (sw.top + sw.bottom) / 2 - br.top };
+    const vis = Math.min(pane.right, ar.right) - br.left;
+    const link: Link = {
+      from: { x: Math.min(r.right - br.left, vis), y: (r.top + r.bottom) / 2 - br.top }, textEnd: Math.min((end?.right ?? r.right) - br.left, vis),
+      lead: Math.max(Math.min(pane.right, cr.left) - br.left - 6, r.right - br.left + 4), to, color: pal(h.k), edge, name: levels()[h.li].cards[h.k]?.name ?? '', hot: true, onDot: !edge,
+    };
+    return linkSvg([link]);
+  }
+
   function draw() {
     const svg = props.overlay(), body = props.bodyEl();
     if (!svg || !body || !area.isConnected) return;   // hidden preview: the editor may still ask for a redraw
-    const br = body.getBoundingClientRect();
-    const links: Link[] = [];
-    let curves = '';
-    const ls = levels(), w = win();
-    const ar = area.getBoundingClientRect();
-    const colRect = (i: number) => cols[i]?.getBoundingClientRect();
-    // each pane: call site (main editor, or pane 1's focused card) → its square in the thin column → the card's dot
-    for (let c = 0; c < 2; c++) {
-      const li = w + c, lv = ls[li];
-      if (!lv) continue;
-      const cr = colRect(li);
-      if (!cr || cr.left >= ar.right - 2 || cr.right <= ar.left + 2) continue;
-      let src: any = null, base = 0, lead = 0, clipR = Infinity;
-      if (c === 0) {
-        const code = props.codeEl();
-        if (li === 0 && lv.callerFile === files.active && code) { src = getMainView(); lead = code.getBoundingClientRect().right - br.left - 6; }
-      } else {
-        const prev = ls[li - 1], pr = colRect(li - 1);
-        if (prev && prev.focus >= 0 && pr) { src = cardViews.get(`${li - 1}:${prev.focus}`); base = prev.cards[prev.focus].startLine; lead = pr.right - br.left - 8; clipR = pr.right; }
-      }
-      const sr = src?.scrollDOM.getBoundingClientRect();
-      const litK = lit()[c];
-      lv.cards.forEach((card, k) => {
-        const entry = ixs[c][k];
-        if (!entry) return;
-        const color = PAL[k % PAL.length], hot = litK === k, dim = litK >= 0 && !hot;
-        const sq = entry.querySelector('.sq')!.getBoundingClientRect();
-        const ey = (sq.top + sq.bottom) / 2 - br.top;
-        const head = cols[li]?.querySelector(`[data-card="${li}:${k}"] .card-h`) as HTMLElement | null;
-        const hr = head?.getBoundingClientRect();
-        const off: 0 | -1 | 1 = !hr ? 1 : hr.bottom < cr.top + 4 ? -1 : hr.top > cr.bottom - 44 ? 1 : 0;
-        entry.classList.toggle('off', off !== 0);
-        if (!off && head) {
-          const sw = head.querySelector('.sw')!.getBoundingClientRect();
-          curves += curveSvg(sq.right - br.left + 3, ey, sw.left - br.left - 1, (sw.top + sw.bottom) / 2 - br.top, color, hot, dim);
-        } else if (off && hot) {
-          // the lit card is scrolled out of its pane: stay connected, to the edge it went past
-          const ex = cr.left - br.left + 22, eyy = off < 0 ? cr.top - br.top + 10 : cr.bottom - br.top - 50;
-          curves += curveSvg(sq.right - br.left + 3, ey, ex, eyy, color, true) + edgeStub(ex, eyy, off, color, card.name);
-        }
-        if (!src || !sr) return;
-        const doc = src.state.doc;
-        for (const r of card.fromRanges) {
-          const line = r.end.line - base;
-          if (line < 0 || line >= doc.lines) continue;
-          const p = src.coordsAtPos(posToOffset(doc, line, r.end.character));
-          if (!p || p.top < sr.top || p.bottom > sr.bottom || p.right < sr.left + 30) continue;   // scrolled (or panned) out of view
-          const endP = src.coordsAtPos(doc.line(line + 1).to);
-          const vis = Math.min(sr.right, clipR) - br.left;
-          links.push({
-            from: { x: Math.min(p.right - br.left, vis), y: (p.top + p.bottom) / 2 - br.top }, textEnd: Math.min((endP?.right ?? p.right) - br.left, vis),
-            lead, to: { x: sq.left - br.left - 4, y: ey }, color, edge: 0, name: card.name, hot, dim,
-          });
-        }
-      });
-    }
+    const br = body.getBoundingClientRect(), ar = area.getBoundingClientRect();
     svg.setAttribute('width', String(br.width)); svg.setAttribute('height', String(br.height));
+    const st = stuck(), h = hover();
+    let out = st ? connector(st, br, ar) : '';
+    if (h && h.el !== st?.el) out += connector(h, br, ar);
     const clipW = ar.right - br.left, clipH = ar.bottom - br.top - 40;
-    svg.innerHTML = `<defs><clipPath id="pclip"><rect x="0" y="0" width="${clipW}" height="${clipH}"/></clipPath></defs><g clip-path="url(#pclip)">${linkSvg(links) + curves}</g>`;
+    svg.innerHTML = `<defs><clipPath id="pclip"><rect x="0" y="0" width="${clipW}" height="${clipH}"/></clipPath></defs><g clip-path="url(#pclip)">${out}</g>`;
   }
 
   // the preview settings change what a level holds: rebuild in place
@@ -155,7 +186,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
         // the outgoing column stays in place while its cards turn away
         if (cols[w]) anims.push(cols[w].animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(0,0,0)' }], { duration: 240 + out.length * 30 }));
         setWin(w + 1);
-        if (mid) anims.push(mid.animate([{ transform: `translate3d(${(frozen()?.get(w) ?? w1()) + IDX()}px,0,0)` }, { transform: 'translate3d(0,0,0)' }], { duration: 600, delay: 160, easing: EXPO, fill: 'backwards' }));
+        if (mid) anims.push(mid.animate([{ transform: `translate3d(${frozen()?.get(w) ?? w1()}px,0,0)` }, { transform: 'translate3d(0,0,0)' }], { duration: 600, delay: 160, easing: EXPO, fill: 'backwards' }));
         anims.push(...turnstile(inc, [{ transform: 'translate3d(170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], (i) => ({ duration: 600, delay: 260 + i * 50, easing: EXPO, fill: 'backwards' })));
       } else {
         shiftHome();
@@ -213,14 +244,14 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   // a clicked square holds its card lit until the next click anywhere else
   const [pinned, setPinned] = createSignal<[number, number]>([-1, -1]);
   const pin = (c: number, k: number) => setPinned(c === 0 ? [k, -1] : [pinned()[0], k]);
-  const unpin = (e: MouseEvent) => { if (!(e.target as Element)?.closest?.('.cindex .ix')) setPinned([-1, -1]); };
+  const unpin = (e: MouseEvent) => { if (!(e.target as Element)?.closest?.('.callbox')) { setPinned([-1, -1]); if (stuck()) { setStuck(null); redraw(); } } };
   onMount(() => window.addEventListener('mousedown', unpin, true));
   onCleanup(() => window.removeEventListener('mousedown', unpin, true));
-  createEffect(on([win, () => levels()[win()]?.caller], () => setPinned([-1, -1]), { defer: true }));
+  createEffect(on([win, () => levels()[win()]?.caller], () => { setPinned([-1, -1]); setStuck(null); }, { defer: true }));
   createEffect(on(() => levels()[win() + 1]?.caller, () => setPinned([pinned()[0], -1]), { defer: true }));
   const lit = createMemo(() => [pinned()[0] >= 0 ? pinned()[0] : hitIn(win()), pinned()[1] >= 0 ? pinned()[1] : hitIn(win() + 1)] as const, undefined, { equals: (a, b) => a[0] === b[0] && a[1] === b[1] });
   const isLit = (li: number, k: number) => (li === win() ? lit()[0] === k : li === win() + 1 ? lit()[1] === k : false);
-  createEffect(on([levels, win, w1, IDX, lit], () => queueMicrotask(redraw)));
+  createEffect(on([levels, win, w1, lit], () => queueMicrotask(redraw)));
   // a newly lit card glides into view when it is outside its column
   createEffect(on(lit, (now, before) => [0, 1].forEach((c) => {
     const k = now[c];
@@ -245,7 +276,6 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 2, padding: 0 }}>
         <For each={[0, 1]}>{(c) => (
           <>
-            <span title={t('calls in this function')} style={{ width: `${IDX()}px`, 'text-align': 'center', 'font-size': '12px', color: '#4f564f', flex: 'none' }}>{levels()[win() + c]?.cards.length || ''}</span>
             <span style={{ width: `${c === 0 ? w1() : w2()}px`, flex: 'none', 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>
               {title(levels()[win() + c], win() + c) || (c === 0 ? 'preview' : '')}
             </span>
@@ -254,12 +284,12 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       </div>
       <Index each={levels()}>{(lv, li) => (
         <div class="pcol" classList={{ haslit: (li === win() && lit()[0] >= 0) || (li === win() + 1 && lit()[1] >= 0) }} ref={(el) => (cols[li] = el)} onScroll={redraw}
-          style={{ left: `${IDX()}px`, width: `${colWidth(li)}px`, transform: `translateX(${slotX(li - win())}px)`, visibility: Math.abs(li - win() - 0.5) < 2 ? 'visible' : 'hidden' }}>
+          style={{ left: '0px', width: `${colWidth(li)}px`, transform: `translateX(${slotX(li - win())}px)`, visibility: Math.abs(li - win() - 0.5) < 2 ? 'visible' : 'hidden' }}>
           <div class="pcol-in">
             <For each={lv().cards}>{(card, k) => (
               <>
                 <Show when={k() === firstOther(lv())}><div class="pdiv"><span>{t('not functions · macros, static_assert, lambdas, calls through pointers')}</span></div></Show>
-                <Card card={card} id={`${li}:${k()}`} color={PAL[k() % PAL.length]} focus={lv().focus === k()} lit={isLit(li, k())} onFocus={() => focusCard(li, k())} onScroll={redraw} />
+                <Card card={card} id={`${li}:${k()}`} color={pal(k())} focus={lv().focus === k()} lit={isLit(li, k())} onFocus={() => focusCard(li, k())} onScroll={redraw} />
               </>
             )}</For>
             <Show when={lv().more.length}><div class="more">+{lv().more.length} more · {lv().more.slice(0, 4).join(', ')}{lv().more.length > 4 ? '…' : ''}</div></Show>
@@ -269,7 +299,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
         </div>
       )}</Index>
       <Show when={levelCount() === 1 || (levelCount() > 0 && !levels()[win() + 1])}>
-        <div class="empty" style={{ position: 'absolute', left: `${idx2() + IDX()}px`, right: 0, top: '36px', bottom: '40px' }}>{t('click into a card')}<br />{t('to go one level deeper')}</div>
+        <div class="empty" style={{ position: 'absolute', left: `${w1()}px`, right: 0, top: '36px', bottom: '40px' }}>{t('click into a card')}<br />{t('to go one level deeper')}</div>
       </Show>
       <Show when={!levelCount()}>
         <div class="empty" style={{ position: 'absolute', inset: '36px 0 40px 0' }}>
@@ -277,31 +307,8 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
           <Show when={indexing()}><div class="sub" style={{ 'margin-top': '10px' }}>{indexing()}</div></Show>
         </div>
       </Show>
-      <For each={[0, 1]}>{(c) => (
-        <div class="cindex" style={{ left: `${c === 0 ? 0 : idx2()}px`, width: `${IDX()}px` }} classList={{ haslit: lit()[c] >= 0 }}>
-          <For each={levels()[win() + c]?.cards ?? []}>{(card, k) => (
-            <>
-              <Show when={k() === firstOther(levels()[win() + c])}><div class="ixdiv" /></Show>
-              <div class="ix" classList={{ lit: lit()[c] === k(), other: card.kind !== 'call' }} style={{ '--c': PAL[k() % PAL.length] }} ref={(el) => (ixs[c][k()] = el)}
-                role="button" tabindex="0" aria-label={card.name}
-                onClick={() => { pin(c, k()); reveal(c, k()); }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pin(c, k()); reveal(c, k()); } }}
-                onFocus={(e) => setTip({ c, k: k(), y: e.currentTarget.getBoundingClientRect().top - area.getBoundingClientRect().top + 11 })} onBlur={() => setTip(null)}
-                onMouseEnter={(e) => setTip({ c, k: k(), y: e.currentTarget.getBoundingClientRect().top - area.getBoundingClientRect().top + 11 })} onMouseLeave={() => setTip(null)}>
-                <i class="sq" />
-              </div>
-            </>
-          )}</For>
-        </div>
-      )}</For>
-      <Show when={tip() && levels()[win() + tip()!.c]?.cards[tip()!.k]}>{(card) => (
-        <div class="ixtip" classList={{ other: card().kind !== 'call' }} style={{ left: `${(tip()!.c === 0 ? 0 : idx2()) + IDX() + 6}px`, top: `${tip()!.y}px`, '--c': PAL[tip()!.k % PAL.length] }}>
-          <i class="sq" /><span class="nm">{card().name}</span>
-          <span class="loc">{KIND_LABEL[card().kind] ? `${KIND_LABEL[card().kind]} · ` : ''}{card().std ? (card().kind === 'call' ? t('standard library') : 'library') : cardLoc(card())}</span>
-        </div>
-      )}</Show>
       <Show when={levelCount()}>
-        <Handle left={IDX() + w1()} onDrag={(dx) => setFrac(Math.max(0.15, Math.min(0.85, (w1() + dx) / cardsW())))} onEnd={() => store('litho.preview.split', frac())} />
+        <Handle left={w1()} onDrag={(dx) => setFrac(Math.max(0.15, Math.min(0.85, (w1() + dx) / cardsW())))} onEnd={() => store('litho.preview.split', frac())} />
       </Show>
       <div class="shiftbar">
         <button disabled={win() === 0} onClick={() => doShift(0)}>{t('‹ source')}</button>
