@@ -85,6 +85,18 @@ export function definedNames(text: string): Set<string> {
   return out;
 }
 
+/**
+ * Functions whose address the text takes — named as a value after = , ( { & or return, and followed by , ; ) or }
+ * (a callback passed on, a table of handlers, a pointer stored): what a call through a pointer may reach. names: the
+ * project's functions, to look for.
+ */
+export function addressTaken(text: string, names: Set<string>): Set<string> {
+  const out = new Set<string>();
+  const clean = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ' ').replace(/"(?:\\.|[^"\\])*"/g, '""');
+  for (const m of clean.matchAll(/(?:[=,({]|\breturn)\s*&?\s*(?:\w+::)*([A-Za-z_]\w*)\s*(?=[,;)}])/g)) if (names.has(m[1])) out.add(m[1]);
+  return out;
+}
+
 function findDeep(n: SyntaxNode, name: string): SyntaxNode | null {
   for (let c = n.firstChild; c; c = c.nextSibling) {
     if (c.name === name) return c;

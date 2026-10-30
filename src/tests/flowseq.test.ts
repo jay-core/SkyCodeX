@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';
-import { buildSeq, startState, move, Move, StepState, layoutSeq, stepFacts, loopsAt, embers, leadingComment, Seq, hiddenBy, foldable, chapters, encodeWalk, decodeWalk, walkthrough, whatIf } from '../shared/flowseq';
+import { buildSeq, startState, move, Move, StepState, layoutSeq, stepFacts, loopsAt, embers, leadingComment, Seq, hiddenBy, foldable, chapters, encodeWalk, decodeWalk, walkthrough, whatIf, codeBlocks, findings } from '../shared/flowseq';
 
 const FIX = path.join(__dirname, 'fixtures'), TINY = path.resolve(__dirname, '../../samples/tinyhttp');
 const run = loadFixture(path.join(FIX, 'tinyhttp-flow.json'), TINY).run('src/main.cpp#3');
@@ -254,5 +254,49 @@ describe('what if', () => {
   });
   it('a loop is not a condition', () => {
     expect(whatIf(s, frameOf('loop', 'for (int i = 0; i < 4; ++i)'))).toBeNull();
+  });
+});
+
+describe('detail levels: the code between calls', () => {
+  const text = (f: string) => fs.readFileSync(path.join(TINY, f), 'utf8').split('\n');
+  const R = s.run.rows, handle = R.findIndex((r) => r.kind === 'step' && r.name.endsWith('handle'));
+  const at = (lvl: 'decisions' | 'all') => codeBlocks(s, (row) => (row === handle ? lvl : 'calls'), text);
+  it('all code: the function’s own lines between its calls, never a call line, inside the function', () => {
+    const b = at('all'), lines = [...b.values()].flat().flatMap((x) => x.lines);
+    expect(lines.length).toBeGreaterThan(0);
+    const callLines = new Set(R.filter((r) => r.caller === handle && r.at).map((r) => r.at!.line));
+    for (const l of lines) { expect(callLines.has(l.n)).toBe(false); expect(l.n).toBeGreaterThanOrEqual(R[handle].start); expect(l.n).toBeLessThan(R[handle].start + R[handle].lines); }
+    for (const blocks of b.values()) for (const x of blocks) expect(x.owner).toBe(s.itemOf[handle]);
+  });
+  it('decisions are a subset of all code; calls only adds nothing', () => {
+    const all = new Set([...at('all').values()].flat().flatMap((x) => x.lines.map((l) => l.n)));
+    const dec = [...at('decisions').values()].flat().flatMap((x) => x.lines);
+    expect(dec.length).toBeGreaterThan(0);
+    for (const l of dec) { expect(all.has(l.n)).toBe(true); expect(l.text).toMatch(/^(\}\s*)?(if|else|return|for|while|switch|case|break|continue|throw)/); }
+    expect(codeBlocks(s, () => 'calls', text).size).toBe(0);
+  });
+  it('the rows make room for the code and still never overlap', () => {
+    const b = at('all'), extra = new Map([...b].map(([it, xs]) => [it, xs.reduce((n, x) => n + x.lines.length, 0) * 18]));
+    const o = { width: 1200, rowH: 30, slotH: 18, top: 10, boxH: 0 };
+    const g0 = layoutSeq(s, 0, o), g1 = layoutSeq(s, 0, { ...o, extra });
+    expect(g1.height - g0.height).toBe([...extra.values()].reduce((a, v) => a + v, 0));
+    for (let i = 1; i < g1.y.length; i++) expect(g1.y[i]).toBeGreaterThanOrEqual(g1.y[i - 1] + g1.h[i - 1]);
+  });
+});
+
+describe('findings from the facts (both found in tinyhttp without running it)', () => {
+  const f = findings(s.run);
+  it('Metrics::counters_ is changed on the request path and read by the flusher thread, with no lock', () => {
+    const race = f.find((x) => x.kind === 'race' && /counters_/.test(x.text));
+    expect(race?.grade).toBe('possible');
+    expect(race?.text).toMatch(/changed by \d+ record \(the main thread\), used by \d+ flush \(the thread \d+ run starts\)/);
+  });
+  it('start drops the Response that handle returns', () => {
+    const d = f.find((x) => x.kind === 'dropped' && /handle/.test(x.text));
+    expect(d?.grade).toBe('proved');
+    expect(d?.text).toMatch(/^start drops what \d+ handle returns \(line 17\)$/);
+  });
+  it('nothing else: an argument inside a statement is not a dropped result, state one thread alone uses is no race', () => {
+    expect(f.map((x) => x.kind).sort()).toEqual(['dropped', 'race']);
   });
 });

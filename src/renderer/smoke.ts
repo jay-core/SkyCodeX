@@ -46,6 +46,8 @@ export async function runSmoke() {
   if (info()?.scenario === 'anyheader') return anyHeaderDemo(report);
   if (info()?.scenario === 'boot') return bootCheck(report);
   if (info()?.scenario === 'large') return largeCheck(report);
+  if (info()?.scenario === 'engine') return engineCheck(report);
+  if (info()?.scenario === 'programs') return programsCheck(report);
   if (info()?.scenario === 'folder') return folderCheck(report);
   if (info()?.scenario === 'colors') return colorsCheck(report);
   if (info()?.scenario === 'hold') return;   // opens the folder and waits: a recorder drives the window (src/concepts/flow/ux)
@@ -355,7 +357,8 @@ export async function runSmoke() {
     await api.smoke.capture('10b-content-search');
     (document.querySelector('.cres .hit') as HTMLElement)?.click(); await sleep(600);
     report.contentSearchOpened = { closed: !document.querySelector('.csearch'), file: basename(files.active), line: getMainView()?.state.doc.lineAt(getMainView()!.state.selection.main.head).number };
-    await openFile(file); await sleep(300);
+    await openFile(file);
+    await until(() => !!document.querySelector('.pcol .card .cm-content'), 15000);
     const cv = document.querySelector('.pcol .card .cm-content') as HTMLElement | null;
     if (cv) { cv.focus(); COMMANDS.find(); await sleep(300); }
     report.cardSearch = !!document.querySelector('.pcol .card .cm-search') && !document.querySelector('.cm-editor .cm-search:not(.pcol *)');
@@ -369,6 +372,16 @@ export async function runSmoke() {
     pc(1).click(); await sleep(1200); const playingOn = pc(1).getAttribute('aria-pressed'); pc(1).click(); await sleep(200);
     pc(0).click(); await sleep(300); const restarted = pc(1).getAttribute('aria-pressed'); pc(1).click();
     setFlowView('boxes'); await until(() => !!document.querySelector('.bxv') && !!document.querySelector('.playc'), 10000);
+    // the diagram as a PNG: a real image of the whole diagram, at twice its size
+    const ex = [...document.querySelectorAll('.bxv ~ * .chip, .ph .chip')].find((c) => c.textContent === 'export') as HTMLElement | undefined;
+    ex?.click(); await sleep(200);
+    const png = palette()?.items?.find((i) => i.label === 'PNG image');
+    setPalette(null);
+    if (png) { await png.run(); await sleep(800); }
+    let pngFile = '';
+    for (const lv of ['functions', 'files', 'folders']) { const f = `${info()!.dataDir}/logs/smoke-${basename(root())}-${lv}.png`; if (await api.fs.exists(f)) pngFile = f; }
+    const bytes = pngFile ? ((await api.fs.read(pngFile)) as string).length : 0;
+    report.pngExport = { offered: !!png, file: basename(pngFile), bytes, png: pngFile ? ((await api.fs.read(pngFile)) as string).slice(1, 4) === 'PNG' : false };
     report.playControls = { stepMoved: a0 !== a1, playing: playingOn, restartPlays: restarted, boxes: document.querySelectorAll('.playc button').length };
     await api.smoke.capture('10d-play-controls');
     setPage('editor');
@@ -576,6 +589,20 @@ async function bootCheck(report: Record<string, unknown>) {
     await until(() => document.querySelectorAll('.seqv .srow').length > 3, 60000);
     await sleep(800);
     report.seqRows = document.querySelectorAll('.seqv .srow').length;
+    // all code everywhere: the code rows make room and nothing lands on anything else
+    const allRows = document.querySelectorAll('.seqv .srow:not(.sfold)').length;
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    await sleep(700);
+    report.seqAround = { before: allRows, after: document.querySelectorAll('.seqv .srow:not(.sfold)').length, folds: document.querySelectorAll('.seqv .sfold').length, collisions: auditSequence().slice(0, 3) };
+    await api.smoke.capture('boot-seq-around');
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
+    await sleep(900);
+    report.seqCode = { rows: document.querySelectorAll('.seqv .sline').length, collisions: auditSequence().slice(0, 3) };
+    await api.smoke.capture('boot-seq-all-code');
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
+    await sleep(300);
     report.seqCollisions = [] as string[];
     // walk with the keyboard, checking every state for text on text
     const seqv = document.querySelector('.seqv') as HTMLElement;
@@ -688,7 +715,7 @@ export function auditSequence(): string[] {
   const view = document.querySelector('.seqv')?.getBoundingClientRect();
   if (!view) return ['no sequence view'];
   const boxes: { r: DOMRect; t: string; owner: Element }[] = [];
-  for (const owner of document.querySelectorAll('.seqv .srow, .seqv .sframe > span, .seqv .slane, .seqv .sband .sum, .seqv .sband .facts > span, .seqv .sband .ways > span')) {
+  for (const owner of document.querySelectorAll('.seqv .srow, .seqv .sline, .seqv .sframe > span, .seqv .slane, .seqv .sband .sum, .seqv .sband .facts > span, .seqv .sband .ways > span')) {
     const parts = owner.classList.contains('srow') ? [...owner.children] : [owner];
     const clip = owner.classList.contains('srow') ? owner.getBoundingClientRect() : null;
     for (const p of parts) {
@@ -880,6 +907,52 @@ async function folderCheck(report: Record<string, unknown>) {
     report.tabOn = tab?.classList.contains('on') ?? false;
     await api.smoke.capture('folder-tab');
   } catch (e) { errors.push(`folder: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario engine` on samples/engine: overrides, calls through pointers, a thread, interrupt handlers as entries. */
+async function engineCheck(report: Record<string, unknown>) {
+  try {
+    report.lsp = await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await until(() => document.querySelectorAll('.progs .pr').length > 0, 30000);
+    report.entries = entries().map((e) => `${e.kind}:${e.label}`);
+    (document.querySelector('.progs .pr.top') as HTMLElement).click();
+    // clangd's index makes overrides findable: wait until the run reaches them
+    await until(() => (seq()?.run.rows ?? []).some((r) => /Square::area|^area$/.test(r.name) && r.file.endsWith('engine.cpp') && r.kind === 'step') && (seq()?.run.rows.length ?? 0) > 6, 90000, () => {});
+    await until(() => !runStatus(), 30000);
+    const run = seq()!.run;
+    report.rows = run.rows.map((r) => `${'  '.repeat(r.depth)}${r.kind === 'step' ? r.n : r.kind}${r.thread ? '(t)' : ''} ${r.kind === 'indirect' ? `${r.text} ⇢ ${(r.could ?? []).join(',')}` : r.name}`);
+    report.virtualFrames = run.frames.filter((f) => f.kind === 'virtual').map((f) => f.text);
+    await api.smoke.capture('engine-1-main');
+    (document.querySelector('.backp') as HTMLElement).click(); await sleep(400);
+    const isr = [...document.querySelectorAll('.progs .pr')].find((b) => /USART1_IRQHandler/.test(b.textContent ?? '')) as HTMLElement | undefined;
+    isr?.click();
+    await until(() => (seq()?.run.rows[0]?.name ?? '').includes('USART1') && !runStatus(), 30000);
+    report.isrRows = seq()?.run.rows.map((r) => `${r.kind === 'step' ? r.n : r.kind} ${r.kind === 'indirect' ? `${r.text} ⇢ ${(r.could ?? []).join(',')}` : r.name}`);
+    await api.smoke.capture('engine-2-isr');
+  } catch (e) { errors.push(`engine: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario programs` on samples/programs: the list of programs, which starts which, and the code they share. */
+async function programsCheck(report: Record<string, unknown>) {
+  try {
+    report.lsp = await until(() => lspState() === 'ready', 60000);
+    setPage('flow');
+    await until(() => document.querySelectorAll('.progs .pr').length > 1, 30000);
+    report.entries = entries().map((e) => `${e.kind}:${e.label}`);
+    const btn = [...document.querySelectorAll('.progs ~ * .chip, .ph .chip')].find((c) => c.textContent === 'how they connect') as HTMLElement | undefined;
+    btn?.click();
+    report.connected = await until(() => !!document.querySelector('.plinks') && !/tracing/.test(document.querySelector('.plinks')?.textContent ?? ''), 60000);
+    report.links = [...document.querySelectorAll('.plinks .pl')].map((e) => e.textContent);
+    await api.smoke.capture('programs-connect');
+    (document.querySelector('.progs .pr.top') as HTMLElement).click();
+    report.flowAfter = await until(() => (seq()?.run.rows.length ?? 0) > 1, 30000);
+  } catch (e) { errors.push(`programs: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }

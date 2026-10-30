@@ -40,6 +40,7 @@ const api = {
     list: (dir: string) => invoke('fs:list', dir),
     sources: (root: string) => invoke('fs:sources', root),
     files: (root: string) => invoke('fs:files', root) as Promise<string[]>,
+    writeBase64: (file: string, b64: string) => invoke('fs:writeBase64', file, b64),
     targets: (root: string) => invoke('fs:targets', root),
     read: (file: string) => invoke('fs:read', file),
     exists: (file: string) => invoke('fs:exists', file),

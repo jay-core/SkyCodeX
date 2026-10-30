@@ -10,8 +10,7 @@ import { seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, 
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
   move, Move, layoutSeq, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
-  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf,
-} from '../../shared/flowseq';
+  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings } from '../../shared/flowseq';
 import { routesBetween, RouteInfo } from '../../shared/flowboxes';
 import type { RunFrame } from '../../shared/flowrun';
 import { settings, root, flash } from '../lib/store';
@@ -24,6 +23,8 @@ import PlayControls from './PlayControls';
 
 const ROW = 23, SLOT = 15, TOP = 30, SPINE = 16, SKY = 50;
 const HINT = 'asdfjklghqwertyuiop';
+/** Runs longer than this open around the step (A shows the whole run). */
+const AROUND_AT = 400;
 const load = <T,>(key: string, d: T): T => { try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
 const keep = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* kept for this run */ } };
 
@@ -32,7 +33,7 @@ const KEYS: [string, string][] = [
   ['→ / ←', 'next step / back along the path walked'], ['⇧ →', 'step over: skip what runs inside'], ['↑', 'step out: finish this function'],
   ['R', 'another pass of the loop'], ['L', 'leave the loop'], ['⇧ ←', 'previous pass'], [']  [', 'next / previous call in the same function'],
   ['Home / End', 'start / end of the run'], ['G', 'go to a step number, or paste a shared walk'], ['/', 'find a function and its paths from the start'],
-  ['⇧ F', 'fold or unfold this call'], ['T', 'tour: plays and waits at each loop and decision'], ['J', 'jump: two letters on every row in view'],
+  ['A', 'around the step: its callers and two levels of calls, the rest folded'], ['D / ⇧ D', 'more code in this function / everywhere: calls, decisions, all code'], ['⇧ F', 'fold or unfold this call'], ['T', 'tour: plays and waits at each loop and decision'], ['J', 'jump: two letters on every row in view'],
   ['N', 'a note on this step'], ['K', 'the depth skyline on or off'], ['M', 'the magnifier on or off'], ['Enter', 'open the code at this step'],
   ['Space', 'play; again to pause'], ['+ / −', 'play faster / slower'], ['Tab', 'switch to the boxes view'], ['?', 'this list'],
 ];
@@ -47,7 +48,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const [help, setHelp] = createSignal(false);
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
-  const [folded, setFolded] = createSignal<Set<number>>(new Set());
+  const [folded, setFolded] = createSignal<Set<number>>(new Set());   // folded by hand (⇧F)
   const reduce = () => !!settings()['motion.reduce'];
 
   const S = () => seq();
@@ -109,11 +110,53 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     canvas.focus();
   }
 
-  const hidden = createMemo(() => { const h = S() ? hiddenBy(S()!, folded()) : new Set<number>(); const w = what(); if (w) for (let i = w.skip[0]; i <= w.skip[1]; i++) h.add(i); return h; });
+  // detail levels: calls only (the default), with decisions, or all code — everywhere (⇧D) or per function (D)
+  const LEVELS: Detail[] = ['calls', 'decisions', 'all'];
+  const [detailAll, setDetailAll] = createSignal<Detail>(load('flow.detail', 'calls'));
+  const [detailFn, setDetailFn] = createSignal<Map<string, Detail>>(new Map());
+  const detailOf = (row: number) => detailFn().get(R()[row].key) ?? detailAll();
+  const nextLevel = (d: Detail) => LEVELS[(LEVELS.indexOf(d) + 1) % LEVELS.length];
+  const levelWord = (d: Detail) => (d === 'calls' ? 'calls only' : d === 'decisions' ? 'calls and decisions' : 'all code');
+  function cycleDetail(everywhere: boolean) {
+    if (everywhere) { const d = nextLevel(detailAll()); setDetailAll(d); setDetailFn(new Map()); keep('flow.detail', d); say({ key: '⇧ D', what: `everywhere: ${levelWord(d)}`, why: d === 'calls' ? '' : 'code rows are for reading; → still steps call to call' }); return; }
+    const c = cur(), s = S();
+    if (!c || !s || atEnd()) return;
+    let row = s.items[c.at];
+    if (R()[row].kind !== 'step') row = R()[row].caller ?? row;
+    const d = nextLevel(detailOf(row)), m = new Map(detailFn());
+    m.set(R()[row].key, d); setDetailFn(m);
+    say({ key: 'D', what: `${short(R()[row].name)}: ${levelWord(d)}`, why: 'D again for more · ⇧D everywhere' });
+  }
+  // what the run shows without running it (src/shared/flowseq.ts findings)
+  const found = createMemo(() => (S() ? findings(S()!.run) : []));
+  const [foundOpen, setFoundOpen] = createSignal(false);
+  const CODE_H = 18;
+  const code = createMemo(() => { const s = S(); return s ? codeBlocks(s, detailOf, (f) => lines(f)) : new Map(); });
+  const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n: number, b: { lines: unknown[] }) => n + b.lines.length, 0) * CODE_H + 4])));
+  // around the step (A, on by itself for very long runs): its callers and two levels of callees in full, every other
+  // call folded to its own row; a call opened by hand stays open
+  const [around, setAround] = createSignal<boolean | null>(null);
+  const [opened, setOpened] = createSignal<Set<number>>(new Set());
+  const aroundOn = () => around() ?? (S()?.items.length ?? 0) > AROUND_AT;
+  const aroundSet = createMemo(() => {
+    const s = S(), c = cur(), out = new Set<number>();
+    if (!s || !c || !aroundOn()) return out;
+    const at = Math.min(c.at, s.items.length - 1), anc = new Set<number>();
+    for (let r: number | null = s.items[at]; r != null; r = s.run.rows[r].caller) anc.add(s.itemOf[r]);
+    const d0 = s.run.rows[s.items[at]].depth;
+    for (let it = 0; it < s.items.length; it++) {
+      if (anc.has(it) || !foldable(s, it) || opened().has(it)) continue;
+      const inside = it > at && it <= s.lastItem[at];
+      if (!inside || s.run.rows[s.items[it]].depth - d0 >= 2) out.add(it);
+    }
+    return out;
+  });
+  const foldedAll = createMemo(() => (aroundOn() ? new Set([...aroundSet(), ...folded()]) : folded()));
+  const hidden = createMemo(() => { const h = S() ? hiddenBy(S()!, foldedAll()) : new Set<number>(); const w = what(); if (w) for (let i = w.skip[0]; i <= w.skip[1]; i++) h.add(i); return h; });
   const geom = createMemo(() => {
     const s = S(), c = cur();
     if (!s || !c) return null;
-    return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: folded(), skip: what()?.skip });
+    return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: foldedAll(), skip: what()?.skip, extra: codeExtra() });
   });
   const [skyOn, setSkyOn] = createSignal(load('flow.skyline', true));
   const viewH = () => height() - (skyOn() ? SKY : 0);
@@ -186,7 +229,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const s = S();
     if (!s || !trail().length) return;
     // a folded call: next goes past what runs inside it
-    if (m === 'next' && folded().has(cur()!.at)) m = 'over';
+    if (m === 'next' && foldedAll().has(cur()!.at)) m = 'over';
     // following a path: next is the path's next place
     const p = path();
     if (m === 'next' && p) {
@@ -245,9 +288,15 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
 
   // ---- folding ----
+  function toggleAround() {
+    const on = !aroundOn();
+    setAround(on); setOpened(new Set<number>());
+    say({ key: 'A', what: on ? 'around the step' : 'the whole run', why: on ? 'its callers and two levels of calls in full, the rest folded · A again for all' : '' });
+  }
   function toggleFold(it: number) {
     const s = S();
     if (!s) return;
+    if (aroundSet().has(it)) { setOpened(new Set<number>([...opened(), it])); say({ key: '⇧ F', what: `unfolded ${short(R()[s.items[it]].name)}`, why: 'it stays open while you walk around it' }); return; }
     const f = new Set(folded());
     if (f.has(it)) { f.delete(it); say({ key: '⇧ F', what: `unfolded ${short(R()[s.items[it]].name)}`, why: '' }); }
     else if (foldable(s, it)) { f.add(it); say({ key: '⇧ F', what: `folded ${short(R()[s.items[it]].name)}`, why: `${foldSteps(it)} steps inside · ⇧F or a click opens it` }); }
@@ -400,6 +449,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       g: () => setGotoOpen(true), G: () => setGotoOpen(true), Enter: () => openStep(), '?': () => setHelp(!help()),
       '/': () => setFind({ q: '', sel: 0, fn: null, routes: [] }), t: () => startTour(), T: () => startTour(),
       F: () => { if (cur()) toggleFold(cur()!.at); },
+      d: () => cycleDetail(false), D: () => cycleDetail(true),
+      a: () => toggleAround(), A: () => toggleAround(),
       j: () => setJump({ typed: '' }), J: () => setJump({ typed: '' }),
       n: () => { if (cur() && !atEnd()) setNoteOpen(true); }, N: () => { if (cur() && !atEnd()) setNoteOpen(true); },
       k: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); }, K: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); },
@@ -554,7 +605,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!g || !s || g.mode !== 'files') return [] as number[];
     return visible().filter((it) => { const r = rowOf(it); return r.caller != null && laneOf(s.itemOf[r.caller]) !== laneOf(it); });
   });
-  const foldRows = createMemo(() => visible().filter((it) => folded().has(it)));
+  const foldRows = createMemo(() => visible().filter((it) => foldedAll().has(it)));
 
   return (
     <div class="body" style={{ height: '100%' }}>
@@ -563,7 +614,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={header()} fallback={<span>{runStatus() || status()}</span>}>
             <span class="seqk">{header()!.k}</span>
             <Show when={header()!.loop}><span class="seqloop">{header()!.loop}</span></Show>
-            <span class="seqpath" ref={(el) => { const fit = () => el.classList.toggle('tight', el.scrollWidth > el.clientWidth + 1); const ro = new ResizeObserver(fit); ro.observe(el); onCleanup(() => ro.disconnect()); createEffect(on(crumbs, () => requestAnimationFrame(fit))); }}>
+            <span class="seqpath">
               <For each={crumbs()}>{(c, i) => (
                 <><Show when={i() > 0}><span class="csep">›</span></Show>
                   <button class="crumb" classList={{ last: i() === crumbs().length - 1 }} title={c.it < 0 ? 'show the whole chain' : `go to ${c.name}`}
@@ -575,6 +626,22 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           </Show>
           <span class="grow" />
           <Show when={header() && runStatus()}><span class="sub">{runStatus()}</span></Show>
+          <Show when={found().length}>
+            <span class="sfnd">
+              <button class="chip" classList={{ on: foundOpen() }} title="what the code shows without running it: results thrown away, state two threads touch without a lock" onClick={() => setFoundOpen(!foundOpen())}>{found().length} finding{found().length > 1 ? 's' : ''}</button>
+              <Show when={foundOpen()}>
+                <div class="sfndl" onKeyDown={(e) => { if (e.key === 'Escape') { setFoundOpen(false); canvas.focus(); } }}>
+                  <For each={found()}>{(f) => (
+                    <button classList={{ race: f.kind === 'race' }} onClick={() => { setFoundOpen(false); const it = S()!.itemOf[f.rows[0]]; if (it >= 0) go({ jump: it }); canvas.focus(); }}>
+                      <span class="g">{f.grade === 'proved' ? 'proved' : 'possible'}</span><span>{f.text}</span>
+                    </button>
+                  )}</For>
+                </div>
+              </Show>
+            </span>
+          </Show>
+          <Show when={aroundOn() || N() > 150}><button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button></Show>
+          <button class="chip" classList={{ on: detailAll() !== 'calls' || detailFn().size > 0 }} title="how much code to show between calls: calls only, with decisions, or all code (⇧D everywhere, D for the current function)" onClick={() => { cycleDetail(true); canvas.focus(); }}>{detailAll() === 'calls' ? 'calls' : detailAll() === 'decisions' ? 'decisions' : 'all code'}</button>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
             restart={() => { stopTour(); setPlaying(false); go('home'); setPlaying(true); canvas.focus(); }} step={() => { stopTour(); setPlaying(false); go('next'); canvas.focus(); }} />
           <Show when={tour()}><span class="sub">tour · Esc stops</span></Show>
@@ -625,6 +692,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   (el.querySelector('.hd') as SVGPathElement).animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: Math.max(400, len * 8) });
                 })}><path class="arc" d={r.d} /><path class="hd" d={r.head} /></svg>
               )}</Show>
+              <For each={[...code()].filter(([it]) => !hidden().has(it) && visible().includes(it))}>{([it, blocks]) => {
+                const top = () => geom()!.y[it] + geom()!.h[it] - codeExtra().get(it)! + 2;
+                const flat = () => (blocks as { owner: number; lines: { n: number; text: string; depth: number }[] }[]).flatMap((b) => b.lines.map((l) => ({ ...l, x: geom()!.x[b.owner] + 22 + l.depth * 12 })));
+                return <For each={flat()}>{(l, i) => <div class="sline" style={{ top: `${top() + i() * CODE_H}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>;
+              }}</For>
               <For each={visible()}>{(it) => {
                 const r = () => rowOf(it);
                 const e = () => ember().indexOf(it);
@@ -640,7 +712,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <span class="nm">{r().kind === 'indirect' ? r().text : short(r().name)}</span>
                     <Show when={!sel() && geom()!.mode === 'depth' && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}</span></Show>
                     <Show when={sel() && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}:{r().line + 1}</span></Show>
-                    <Show when={r().kind === 'indirect'}><span class="nt">{r().via}</span></Show>
+                    <Show when={r().kind === 'indirect'}><span class="nt" title={r().could?.length ? `could be: ${r().could!.join(', ')} — functions whose address the code takes` : undefined}>{r().via}{r().could?.length ? ` · could be ${r().could!.slice(0, 3).join(', ')}${r().could!.length > 3 ? ` +${r().could!.length - 3}` : ''}` : ''}</span></Show>
                     <Show when={r().kind === 'value'}><span class="nt">named, not called</span></Show>
                     <Show when={notes(it)}><span class="nt" classList={{ ask: whatOptions(it).length > 0 }} title={whatOptions(it).length ? 'what if this went the other way?' : undefined}
                       onClick={(e) => { const o = whatOptions(it); if (!o.length) return; e.stopPropagation(); setWhatMenu(whatMenu()?.it === it ? null : { it, options: o }); }}>{notes(it)}</span></Show>
@@ -653,7 +725,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               <For each={visible()}>{(it) => <Show when={read().has(R()[S()!.items[it]].key) && cur()?.at !== it}><span class="stick" style={{ top: `${geom()!.y[it]}px` }} title="you have been here">✓</span></Show>}</For>
               <For each={hints()}>{(h) => <span class="shint" classList={{ dim: !!jump()?.typed && !h.k.startsWith(jump()!.typed) }} style={{ left: `${geom()!.x[h.it] - 4}px`, top: `${geom()!.y[h.it] + 3}px` }}>{h.k}</span>}</For>
               <For each={foldRows()}>{(it) => (
-                <div class="srow sfold" style={{ left: `${geom()!.x[it] + 14}px`, top: `${geom()!.y[it] + geom()!.h[it] - ROW}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 24)}px` }}
+                <div class="srow sfold" style={{ left: `${geom()!.x[it] + 14}px`, top: `${geom()!.y[it] + geom()!.h[it] - ROW - (codeExtra().get(it) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 24)}px` }}
                   onClick={() => toggleFold(it)} title="unfold (⇧F)">
                   <span class="pl">+</span><span class="nm">{foldSteps(it)} steps</span><span class="nt">{foldNames(it).join(' · ')}</span>
                   <span class="mini">{Array.from({ length: Math.min(40, S()!.lastItem[it] - it) }, (_, k) => <i style={{ height: `${Math.min(14, 2 + (rowOf(it + 1 + k).depth - rowOf(it).depth) * 3)}px` }} />)}</span>
@@ -662,7 +734,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               <Show when={what()}>{(w) => {
                 const a = () => w().skip[0] - 1;
                 return (
-                  <div class="srow swhat" style={{ left: `${geom()!.x[w().skip[0]]}px`, top: `${geom()!.y[a()] + geom()!.h[a()] - ROW}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[w().skip[0]] - 10)}px` }}>
+                  <div class="srow swhat" style={{ left: `${geom()!.x[w().skip[0]]}px`, top: `${geom()!.y[a()] + geom()!.h[a()] - ROW - (codeExtra().get(a()) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[w().skip[0]] - 10)}px` }}>
                     <span class="pl">?</span><span class="nm">{w().ask.replace(/^what if /, 'if ').replace(/\?$/, '')}: {w().says}</span>
                     <span class="nt">{w().rows} row{w().rows > 1 ? 's' : ''} would not run</span>
                     <button class="chip" onClick={(e) => { e.stopPropagation(); setCompare(!compare()); }}>{compare() ? 'hide compare' : 'compare ⇄'}</button>
@@ -679,7 +751,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const ran = () => { const out: { n: string; name: string }[] = []; for (let i = w.skip[0]; i <= w.skip[1] && out.length < 8; i++) out.push({ n: num(i), name: rowOf(i).kind === 'indirect' ? rowOf(i).text ?? '' : short(rowOf(i).name) }); return out; };
 
                 return (
-                  <div class="scmp" style={{ top: `${geom()!.y[w.skip[0] - 1] + geom()!.h[w.skip[0] - 1] - ROW - 4}px`, right: `${SPINE + 14}px` }}>
+                  <div class="scmp" style={{ top: `${geom()!.y[w.skip[0] - 1] + geom()!.h[w.skip[0] - 1] - ROW - 4 - (codeExtra().get(w.skip[0] - 1) ?? 0)}px`, right: `${SPINE + 14}px` }}>
                     <div class="col"><div class="h">as it runs</div><For each={ran()}>{(r) => <div><span class="n">{r.n}</span>{r.name}</div>}</For><Show when={w.rows > 8}><div class="no">+{w.rows - 8} more</div></Show></div>
                     <div class="col"><div class="h">{w.ask.replace(/\?$/, '')}</div><div class="rt">{w.says}</div><div class="no">{w.rows} row{w.rows > 1 ? 's' : ''} skipped</div><div class="no">then: {w.then}</div></div>
                   </div>
@@ -713,7 +785,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                         </>
                       )}</For>
                     </div>
-                    <div class="ways"><For each={ways()}>{([k, w]) => <span><b>{k}</b> {w}</span>}</For><Show when={foldable(S()!, cur()!.at)}><span><b>⇧ F</b> {folded().has(cur()!.at) ? 'unfold' : 'fold'}</span></Show></div>
+                    <div class="ways"><For each={ways()}>{([k, w]) => <span><b>{k}</b> {w}</span>}</For><Show when={foldable(S()!, cur()!.at)}><span><b>⇧ F</b> {foldedAll().has(cur()!.at) ? 'unfold' : 'fold'}</span></Show></div>
                   </div>
                 </div>
               </Show>

@@ -10,13 +10,14 @@ import { seq, trail, graph, status, runStatus, stepMove, changed } from '../lib/
 import { root, settings, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import {
-  boxModel, layoutBoxes, boxGeom, placeLabels, labelScale, levelFor, LEVEL_AT, PAD, rowAt, routesBetween, frameWords,
+  boxModel, layoutBoxes, boxGeom, placeLabels, labelScale, levelFor, LEVEL_AT, PAD, viewRect, meets, rowAt, routesBetween, frameWords,
   routePoints, walkPoints, neighbourhood, howOftenLevel, stepOf, nodeOf, MIN_K, Level, Lay, Line, RouteInfo, Pt,
 } from '../../shared/flowboxes';
 import { move, loopsAt, Move } from '../../shared/flowseq';
 import StepPreview, { openStep } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
+import { setPalette } from '../lib/actions';
 
 const elk = new ELK() as unknown as { layout: (g: unknown) => Promise<any> };
 type Zoom = 'all' | 'width' | '100' | '150' | '';
@@ -371,6 +372,21 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const fileOn = (node: string) => { const a = active(), m = model(); return !a || !m ? null : [...a.files].some((f) => nodeOf(m, level(), f) === node); };
   /** The boxes drawn: files, or (folders level) folders, keyed as the layout keys them. */
   const nodes = createMemo(() => { const m = model(); return !m ? [] : level() === 'folders' ? m.dirs.map((d) => `dir:${d}`) : m.files; });
+  // a very large diagram draws only the boxes and numbers in view (and a screen around it); small ones draw everything
+  const CULL_AT = 120;
+  const inView = () => viewRect(view(), size(), k());
+  const shownNodes = createMemo(() => {
+    const all = nodes(), l = lay();
+    if (all.length <= CULL_AT || !l) return all;
+    const r = inView();
+    return all.filter((f) => !l.pos[f] || meets(r, l.pos[f]));
+  });
+  const shownLabels = createMemo(() => {
+    const all = labels();
+    if (nodes().length <= CULL_AT) return all;
+    const r = inView();
+    return all.filter((b) => meets(r, { x: b.x - b.w, y: b.y - b.h / 2, w: b.w, h: b.h }));
+  });
   /** A box's files: itself, or a folder's. */
   const filesIn = (node: string) => { const m = model()!; return node.startsWith('dir:') ? m.files.filter((f) => `dir:${m.dirOf(f)}` === node) : [node]; };
   const selNode = () => { const m = model(), r = R()[selRow()]; return m && r ? nodeOf(m, level(), r.file) : ''; };
@@ -421,9 +437,10 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   };
 
   // ---- export: the diagram as it is drawn, as an SVG picture ----
-  async function exportSvg() {
+  /** The diagram as drawn, as an SVG picture (null before it is laid out). */
+  function svgText(): { out: string; W: number; H: number; level: string } | null {
     const m = model(), l = lay();
-    if (!m || !l) return;
+    if (!m || !l) return null;
     const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const W = l.w + 2 * PAD, H = l.h + 2 * PAD + (unreached() ? 30 : 0);
     let out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Selawik, Segoe UI, sans-serif"><rect width="100%" height="100%" fill="#171817"/><g transform="translate(${PAD} ${PAD})">`;
@@ -441,11 +458,32 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     }
     for (const b of placeLabels(l, 1, LABEL_CH)) out += `<rect x="${b.x - b.w}" y="${b.y - b.h / 2}" width="${b.w}" height="${b.h}" fill="#171817"/><text x="${b.x - 5}" y="${b.y + 4}" font-size="12" text-anchor="end" fill="#c9b98f" font-family="monospace">${esc(b.text)}</text>`;
     out += '</g></svg>';
-    const name = `${basename(root()) || 'flow'}-${l.level}.svg`;
-    const file = (await api.fs.saveDialog(`${root()}/${name}`)) as string | null;
+    return { out, W, H, level: l.level };
+  }
+  async function exportSvg() {
+    const x = svgText();
+    if (!x) return;
+    const file = (await api.fs.saveDialog(`${root()}/${basename(root()) || 'flow'}-${x.level}.svg`)) as string | null;
     if (!file) return;
-    await api.fs.write(file, out);
+    await api.fs.write(file, x.out);
     flash(`saved ${basename(file)}`, 3000);
+  }
+  /** The same picture as a PNG, drawn at twice its size (less when that would pass 16,000 pixels a side). */
+  async function exportPng() {
+    const x = svgText();
+    if (!x) return;
+    const file = (await api.fs.saveDialog(`${root()}/${basename(root()) || 'flow'}-${x.level}.png`)) as string | null;
+    if (!file) return;
+    const scale = Math.min(2, 16000 / x.W, 16000 / x.H);
+    const img = new Image();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(x.out)}`;
+    try { await img.decode(); } catch { flash('could not draw the picture', 4000); return; }
+    const c = document.createElement('canvas');
+    c.width = Math.round(x.W * scale); c.height = Math.round(x.H * scale);
+    const g = c.getContext('2d')!;
+    g.scale(scale, scale); g.drawImage(img, 0, 0);
+    await api.fs.writeBase64(file, c.toDataURL('image/png').split(',')[1]);
+    flash(`saved ${basename(file)} · ${c.width} × ${c.height}`, 3000);
   }
 
   // ---- the header: where the walk is ----
@@ -478,7 +516,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
             restart={() => { stop(); report(stepMove('home')); play(); }} step={() => { stop(); report(stepMove('next')); }} />
           {props.switcher}
           <button class="chip" classList={{ on: heat() }} aria-pressed={heat()} title="shade each row by how often it runs, from the loops around it (H)" onClick={() => setHeat(!heat())}>how often</button>
-          <button class="chip" title="save the diagram as drawn, as an SVG picture" onClick={exportSvg}>export</button>
+          <button class="chip" title="save the diagram as drawn: an SVG picture or a PNG image" onClick={() => setPalette({ placeholder: 'export the diagram as…', items: [{ label: 'PNG image', detail: 'twice the size on screen', run: exportPng }, { label: 'SVG picture', detail: 'scales without blur', run: exportSvg }] })}>export</button>
         </div>
         <div class="flow bxv" ref={canvasEl} data-ms={graph()?.ms} tabindex="0" role="application" aria-label="the run as files and the functions in them" onKeyDown={onKey}>
           <div class="bxs" ref={scroller} onScroll={() => { syncView(); setHoverAt(null); }} onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
@@ -490,17 +528,19 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                     <For each={lay()!.lines}>{(l) => {
                       const d = `M${l.pts.map((p) => `${p.x} ${p.y}`).join(' L')}`, q = l.pts[l.pts.length - 1];
                       const cls = () => ({ thread: l.thread, now: `${l.a}>${l.b}` === nowKey() && lv() === 'functions', chain: lv() === 'functions' && chain().has(l.a) && chain().has(l.b), on: lineOn(l) === true, dim: lineOn(l) === false });
+                      // into a much-called box: drawn only on the step's chain or a chosen route
+                      const shown = () => !l.hub || cls().now || cls().chain || lineOn(l) === true;
                       return (
-                        <g classList={cls()}>
+                        <Show when={shown()}><g classList={cls()}>
                           <path class="ln" d={d} />
                           <path class="ah" d={`M${q.x - 6} ${q.y - 3.5} L${q.x} ${q.y} L${q.x - 6} ${q.y + 3.5} Z`} />
                           <path class="hit" d={d} onClick={() => { stop(); jumpRow(selRow() === l.b ? l.a : l.rows[0]); canvasEl.focus(); }}><title>{l.text}</title></path>
-                        </g>
+                        </g></Show>
                       );
                     }}</For>
                     <Show when={marker()}><path class="walk" d={`M${marker()!.path.map((p) => `${p.x} ${p.y}`).join(' L')}`} /></Show>
                   </svg>
-                  <For each={nodes()}>{(f) => {
+                  <For each={shownNodes()}>{(f) => {
                     const p = () => lay()!.pos[f];
                     const fns = () => filesIn(f).flatMap((x) => model()!.rowsOf.get(x) ?? []);
                     return (
@@ -511,6 +551,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                           onClick={(e) => { if (lv() !== 'functions') { const first = fns().sort((a, b) => R()[a].n - R()[b].n)[0]; if (first != null) { if (e.shiftKey) routeTo(first); else jumpRow(first); } } }}
                           onDblClick={() => { if (lv() !== 'functions') { const r = scroller.getBoundingClientRect(), b = (scroller.querySelector(`.fbox[data-f="${CSS.escape(f)}"]`) as HTMLElement).getBoundingClientRect(); zoomTo(Math.max(LEVEL_AT.functions, 0.8), { ax: b.left + b.width / 2 - r.left, ay: b.top + b.height / 2 - r.top, ms: 420 }); } }}
                           data-f={f}>
+                          <Show when={lay()!.hubs[f]}><div class="hubt" title="called from this many other boxes: its lines are drawn on the step's chain or a chosen route">← from {lay()!.hubs[f]}</div></Show>
                           <div class="t" title={f.startsWith('dir:') ? f.slice(4) || 'the top folder' : rel(f)}>{f.startsWith('dir:') ? f.slice(4) || 'top folder' : basename(f)}<Show when={lv() === 'functions' || lv() === 'files' ? model()!.dirOf(f) : ''}><i>{model()!.dirOf(f)}</i></Show></div>
                           <Show when={filesIn(f).includes(startFile())}><span class="start">start ▸</span></Show>
                           <Show when={fns().reduce((a, i) => a + S()!.run.frames.filter((x) => x.kind === 'loop' && x.owner === i).length, 0)}>{(n) => <div class="lc">↻ {n()}</div>}</Show>
@@ -539,7 +580,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                       </Show>
                     );
                   }}</For>
-                  <For each={labels()}>{(b) => (
+                  <For each={shownLabels()}>{(b) => (
                     <div class="flab" classList={{ t: b.thread, lit: b.keys.includes(nowKey()) && lv() === 'functions', on: labelOn(b.keys) === true, dim: labelOn(b.keys) === false }}
                       style={{ left: `${b.x - b.w}px`, top: `${b.y - b.h / 2}px`, width: `${b.w}px`, height: `${b.h}px`, 'font-size': `${LABEL_PX * (b.h / 15)}px`, 'line-height': `${b.h}px` }} title={b.full}>{b.text}</div>
                   )}</For>

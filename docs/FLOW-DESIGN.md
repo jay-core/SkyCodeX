@@ -312,12 +312,22 @@ All deterministic, from the same syntax trees, call graph, thread starts and lib
 - No single method gives exact flow for every language; the per-language engines are what make it exact.
 - **C/C++ as gcc or MSVC reads it** (`compiler.read_as`): clangd analyses the code in every case, so the run, the sequence and the boxes are built the same way; what changes is the compiler clangd is told the code is built with. For **gcc**, the generated compile database names the real g++ (Apple's `g++` is clang and is skipped) and clangd asks it for its system headers, predefined macros and target (`--query-driver`). For **MSVC**, the commands are `cl.exe` commands in cl's own flag style (`/I`, `/D`, `/std:`, `/imsvc` for the VC and Windows SDK headers, found with vswhere or a developer prompt), which puts clang into its MSVC-compatible mode (`_MSC_VER`, Microsoft extensions). A project's own `compile_commands.json` keeps the compilers it names; installed gcc-style ones among them are queried the same way (never a program inside the project). Code that only gcc or MSVC accepts shows as unresolved, never guessed. Code: `src/main/compilers.ts`; tests: `src/tests/compilers.test.ts` (on this Mac with fake toolchains, plus a real clangd check that a cl.exe command defines `_MSC_VER` and not `__GNUC__`).
 
+## 10b. Built since (engine and analyses)
+
+- **Overrides:** a call to a virtual method runs as `one of N` (the method and each override in derived classes), from a class map read from the text and `workspace/symbol`; clangd's item detail is the class.
+- **Threads and tasks:** `THREAD_START` covers the standard library, POSIX, Win32, FreeRTOS, Zephyr, RT-Thread, CMSIS-RTOS, uC/OS, ThreadX (also its `_txe_` wrappers); the function passed runs as a thread.
+- **Calls through pointers:** the row lists what it could reach — functions whose address the code takes (`table[] = { on_get, on_post }`, `register(&cb)`) — graded *possible*.
+- **Interrupt handlers** are entry points (CMSIS vector names, `*_ISR`, AVR `ISR(vector)`, interrupt attributes), listed after the programs; `extern "C"` functions are read through their wrapper.
+- **Facts per function** (`src/shared/flowfacts.ts`, cached with each function's analysis): members it changes or uses, globals, locks, allocations, throws, whether it returns a value. **Findings** (`findings()` in flowseq.ts): a result a statement throws away (proved); state changed on one thread and used on another with no lock in either function (possible). On tinyhttp it finds exactly the two cases of §8b. Not yet: the other §8b analyses (watch a variable, a value's journey, pairs, configurations, values per call, errors only, what a change does), and caching facts on disk.
+- **Detail levels** (§5): code rows are read-only; stepping stays call to call. **Around the step** folds everything but the step's callers and two levels of calls (A; on by itself past 400 rows).
+- **Stable picks:** a C function defined once per port is followed to the definition sharing the most folders with its caller, then the first by path, so a run is the same every session.
+- **Boxes:** Tab glides the current step between the views; PNG export; past 120 boxes only what is in view is drawn; lines into a box called from 6+ others (in diagrams of 15+ boxes) are drawn only on the step's chain or a route.
+- **Programs:** "how they connect" traces the listed programs (up to 20) for which starts which and the files they share; samples in `samples/engine` and `samples/programs` with smoke scenarios `engine` and `programs`.
+
 ## 11. Open items
 
-- Rightmost column crowding when code rows are shown everywhere: horizontal scroll for that column, or wrapped code rows.
-- Boxes view, still to do: the Tab transition (rows gliding into their boxes), PNG export, the shared-utility rule for very large projects (a file called from many others drawn without lines).
-- Virtual-call overrides in the flow engine (`src/renderer/lib/flow.ts`): written, not yet reaching overrides (class-base map + `workspace/symbol`).
-- Programs view (several `main`s) not yet built in the app. The flow now traces only the program shown, so what connects programs (which starts which, shared files) is to be computed when that view is built.
+- The other analyses of §8b, and facts cached on disk.
+- Rust, then Ada.
 
 ## 12. Prototypes (src/concepts/flow)
 

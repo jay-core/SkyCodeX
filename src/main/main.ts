@@ -41,7 +41,11 @@ const scenarioIdx = process.argv.indexOf('--scenario');
 const scenario = scenarioIdx > 0 ? process.argv[scenarioIdx + 1] ?? null : null;   // one part of the smoke run only
 // a smoke run keeps its session and unsaved buffers apart, so it never replaces the user's own
 const STATE = smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
-if (smoke) { fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true }); }
+if (smoke) {
+  fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true });
+  // files a smoke run saves (exports) start fresh, so a check never sees an earlier run's file
+  try { for (const f of fs.readdirSync(path.join(data.dir, 'logs'))) if (/^smoke-.*-(functions|files|folders)\.(svg|png)$/.test(f)) fs.rmSync(path.join(data.dir, 'logs', f), { force: true }); } catch { /* no logs yet */ }
+}
 
 const SETTINGS_FILE = path.join(data.dir, 'settings.toml');
 const BUFFERS = path.join(STATE, 'buffers');
@@ -126,12 +130,15 @@ ipcMain.handle('fs:pickFile', async (_e, dir: string) => {
   return r.canceled ? null : slashPath(r.filePaths[0]);
 });
 ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
+  // smoke runs never wait on a dialog: the file goes beside their screenshots
+  if (smoke) return slashPath(path.join(data.dir, 'logs', `smoke-${path.basename(defaultPath || 'untitled')}`));
   const r = await dialog.showSaveDialog(win!, { defaultPath: defaultPath || undefined });
   return r.canceled ? null : slashPath(r.filePath);
 });
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
 ipcMain.handle('fs:files', (_e, root: string) => listFiles(root));
+ipcMain.handle('fs:writeBase64', (_e, file: string, b64: string) => fs.writeFileSync(file, Buffer.from(b64, 'base64')));
 ipcMain.handle('search:run', (_e, root: string, q: string, id: number) => searchFolder(root, q, id, (hits) => send('search:hits', id, hits)));
 ipcMain.handle('search:cancel', () => cancelSearch());
 ipcMain.handle('fs:targets', (_e, root: string) => buildTargets(root));

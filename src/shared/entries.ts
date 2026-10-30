@@ -22,7 +22,7 @@ export function entryScore(rel: string): number {
   return s - dirs.length * 0.5;
 }
 
-/** Entry points best first; equal scores keep path order. */
-export function rankEntries<T extends { rel: string }>(list: T[]): T[] {
-  return list.map((e, i) => ({ e, i, s: entryScore(e.rel) })).sort((a, b) => b.s - a.s || a.e.rel.localeCompare(b.e.rel) || a.i - b.i).map((x) => x.e);
+/** Entry points best first — programs before interrupt handlers; equal scores keep path order. */
+export function rankEntries<T extends { rel: string; kind?: string }>(list: T[]): T[] {
+  return list.map((e, i) => ({ e, i, s: entryScore(e.rel) - (e.kind === 'interrupt' ? 10 : 0) })).sort((a, b) => b.s - a.s || a.e.rel.localeCompare(b.e.rel) || a.i - b.i).map((x) => x.e);
 }

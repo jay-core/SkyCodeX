@@ -11,6 +11,8 @@
 //  2. walkRun: every step from an entry point, numbered in execution order. A function is opened the first time it
 //     runs; later calls are references to that step.
 
+import type { Effects } from './flowfacts';
+
 export interface Pos { line: number; character: number }
 export interface Range { start: Pos; end: Pos }
 /** A node of clangd's syntax tree, as textDocument/ast returns it. */
@@ -56,7 +58,8 @@ const UNEVALUATED = new Set(['UnaryExprOrTypeTrait', 'CXXNoexcept', 'CXXTypeid',
 const SKIP_ROLES = new Set(['type', 'specifier', 'template name', 'template argument']);
 const EXITS: StmtKind[] = ['return', 'break', 'continue', 'throw', 'goto', 'co_return'];
 /** Calls that start a thread with the callable they are given. */
-export const THREAD_START = /^(?:std::)?(?:thread|jthread|async|pthread_create|_beginthread(?:ex)?|CreateThread|xTaskCreate\w*|k_thread_create|taskSpawn|rt_thread_create|osThreadNew|tx_thread_create|QtConcurrent::run)$/;
+/** Calls that start a thread or an RTOS task with the function they are given (RTOS APIs often behind a wrapper: ThreadX's tx_thread_create is _txe_thread_create). */
+export const THREAD_START = /^(?:std::)?(?:thread|jthread|async|pthread_create|_beginthread(?:ex)?|CreateThread|xTaskCreate\w*|k_thread_create|taskSpawn|task_create|rt_thread_(?:create|init)|osThreadNew|osThreadCreate|_*txe?_thread_create|OSTaskCreate\w*|OS_(?:TASK_)?Create\w*|QtConcurrent::run)$/;
 const ASSIGN = /^(?:=|\*=|\/=|%=|\+=|-=|<<=|>>=|&=|\^=|\|=)$/;
 const LEFT_FIRST = /^(?:<<|>>|\[\]|->\*|,)$/;
 
@@ -542,6 +545,15 @@ export function forCount(head: string, body: string): number | null {
  * A function's extent, from the compiler: the syntax tree's root when it is the function. Call items from outgoing
  * calls can carry the declaration's first line only, which would cut its code short and fold long helpers.
  */
+const FN_KIND = /^(Function|CXXMethod|CXXConstructor|CXXDestructor|CXXConversion|FunctionTemplate)$/;
+/** The function in a syntax tree asked for by its range: itself, or the one inside a wrapper (extern "C" { … }, a template). */
+export function functionNode(ast: AstNode | null | undefined): AstNode | null {
+  if (!ast) return null;
+  const queue = [ast];
+  for (let i = 0; i < queue.length && i < 64; i++) { if (FN_KIND.test(queue[i].kind)) return queue[i]; queue.push(...kids(queue[i])); }
+  return ast;
+}
+
 export function fnExtent(ast: AstNode | null | undefined, fallback: Range): { start: number; lines: number } {
   const r = ast?.range && /^(Function|CXXMethod|CXXConstructor|CXXDestructor|CXXConversion|FunctionTemplate)$/.test(ast.kind) ? ast.range : fallback;
   return { start: r.start.line, lines: r.end.line - r.start.line + 1 };
@@ -550,7 +562,7 @@ export function fnExtent(ast: AstNode | null | undefined, fallback: Range): { st
 // ---------- the run ----------
 
 /** What the run needs to know about a function. */
-export interface FnInfo { name: string; file: string; line: number; start?: number; lines: number; flow: FnFlow; overrides?: Target[] }
+export interface FnInfo { name: string; file: string; line: number; start?: number; lines: number; flow: FnFlow; overrides?: Target[]; effects?: Effects }
 
 /**
  * One row of the run, in execution order. A step is numbered; a ref is a later call of a function already opened
@@ -575,6 +587,7 @@ export interface RunRow {
   unsequenced?: boolean;
   approx?: boolean;          // placed at its statement, not its exact position (a macro)
   via?: string;              // indirect: how (pointer, std::function, …); value: the callee
+  could?: string[];          // indirect: functions it may reach — those whose address the code takes (probable, not proved)
   text?: string;
   lines: number;             // the function's length in lines (0 when unknown)
 }
@@ -589,7 +602,8 @@ export interface RunFrame {
   from: number; to: number;  // the rows inside it
   parent: number | null;
 }
-export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[] }
+/** effects: what each function of the run does besides calling (src/shared/flowfacts.ts), by its key. */
+export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects> }
 
 /** Every step from the entry point, numbered in execution order. flows: the facts of each function, by key. */
 export function walkRun(start: string, flows: (key: string) => FnInfo | undefined): Run {
@@ -667,5 +681,7 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
 
   open(start, null, null, [], false);
   // frames with no rows inside say nothing about the run; their ids are kept stable by leaving them in place
-  return { rows, frames, missing: [...missing] };
+  const fx: Record<string, Effects> = {};
+  for (const k of opened.keys()) { const e = flows(k)?.effects; if (e) fx[k] = e; }
+  return { rows, frames, missing: [...missing], effects: fx };
 }

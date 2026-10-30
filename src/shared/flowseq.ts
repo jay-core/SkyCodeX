@@ -200,7 +200,7 @@ export interface SeqGeom {
   barX: number[];                    // per item: where the bar of a running function is drawn
   height: number;
 }
-export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number] }
+export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number]; extra?: Map<number, number> }
 
 /** Columns, rows and label slots. Every row and every label has its own y band; no two overlap (checked in tests). */
 export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
@@ -246,7 +246,7 @@ export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
   for (let it = 0; it <= N; it++) {
     for (const f of startsAt.get(it) ?? []) { slotY.set(f, yy); yy += o.slotH; }
     y.push(yy);
-    const hh = hidden.has(it) ? 0 : (it === at ? o.rowH + o.boxH : o.rowH) + (o.folded?.has(it) && !hidden.has(it) ? o.rowH : 0) + (o.skip && it === o.skip[0] - 1 ? o.rowH : 0);
+    const hh = hidden.has(it) ? 0 : (it === at ? o.rowH + o.boxH : o.rowH) + (o.folded?.has(it) && !hidden.has(it) ? o.rowH : 0) + (o.skip && it === o.skip[0] - 1 ? o.rowH : 0) + (o.extra?.get(it) ?? 0);
     h.push(hh);
     yy += hh;
   }
@@ -445,7 +445,17 @@ export function stepFacts(s: Seq, at: number, passes: Record<number, number>): F
   else out.push({ head: 'called from', text: 'the start of the run', grade: 'proved' });
   if (r.kind === 'ref') out.push({ head: 'again', text: r.recursive ? `a call back into step ${R[r.ref!].n}, which is still running` : `the same function as step ${R[r.ref!].n}, running again here`, grade: 'proved', steps: [r.ref!] });
   if (r.kind === 'indirect') out.push({ head: 'target', text: VIA[r.via ?? ''] ?? 'not known here', grade: 'unknown' });
+  if (r.kind === 'indirect' && r.could?.length) out.push({ head: 'could be', text: `${r.could.slice(0, 6).join(' · ')}${r.could.length > 6 ? ` +${r.could.length - 6}` : ''} — functions whose address the code takes`, grade: 'possible' });
   if (r.kind === 'value') out.push({ head: 'named', text: `${r.name} is passed on here, not called (a callback or a pointer)`, grade: 'proved' });
+  const e = r.kind === 'step' ? s.run.effects?.[r.key] : undefined;
+  if (e) {
+    const ch = [...e.writes, ...e.globalWrites.map((g) => `global ${g}`)];
+    if (ch.length) out.push({ head: 'changes', text: ch.join(' · '), grade: 'proved' });
+    if (e.locks.length) out.push({ head: 'locks', text: e.locks.join(' · '), grade: 'proved' });
+    if (e.allocates.length) out.push({ head: 'allocates', text: e.allocates.join(' · '), grade: 'proved' });
+    if (e.throws.length) out.push({ head: 'throws', text: e.throws.join(' · '), grade: 'proved' });
+  }
+  for (const f of findings(s.run)) if (f.rows.includes(row)) out.push({ head: f.kind === 'race' ? 'two threads' : 'result unused', text: f.text, grade: f.grade, steps: f.rows });
   if (r.kind === 'step') {
     const kids = R.map((x, i) => ({ x, i })).filter(({ x }) => x.caller === row);
     if (kids.length) out.push({ head: 'calls', text: kids.map(({ x, i }) => (x.kind === 'step' ? `${x.n} ${x.name}` : x.kind === 'ref' ? `→ ${num(i)} ${x.name}` : x.kind === 'indirect' ? `⇢ ${x.text}` : `${x.name} (named)`)).join(' · '), grade: 'proved', steps: kids.map(({ i }) => i) });
@@ -478,4 +488,127 @@ export function leadingComment(lines: string[], start: number): string {
   }
   while (k >= 0 && /^\s*\/\//.test(lines[k])) { out.unshift(lines[k].replace(/^\s*\/\/+\s?/, '').trim()); k--; }
   return out.filter(Boolean).join(' ');
+}
+
+// ---------- detail levels: the code between calls ----------
+export type Detail = 'calls' | 'decisions' | 'all';
+export interface CodeLine { n: number; text: string; depth: number }
+/** Code lines of one function (the item it runs as), shown after another item. */
+export interface CodeBlock { owner: number; lines: CodeLine[] }
+const DECISION = /^(?:\}\s*)?(?:if|else|switch|case|default|return|break|continue|throw|goto|for|while|do|co_return|co_yield|try|catch)\b/;
+const MAX_BLOCK = 40;
+
+/**
+ * The code a function runs between its calls, for the functions shown at more than calls: each block of lines goes
+ * after the row where the function is running again (its own row, or the last row inside the call before them).
+ * decisions: conditions, loops, returns and jumps; all: every line but blank ones and lone braces. Read-only rows —
+ * stepping stays on calls. text(file) gives a file's lines (null while it is read).
+ */
+export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file: string) => string[] | null): Map<number, CodeBlock[]> {
+  const R = s.run.rows, out = new Map<number, CodeBlock[]>();
+  const kids = new Map<number, number[]>();
+  R.forEach((r, i) => { if (r.caller != null && r.at) kids.set(r.caller, [...(kids.get(r.caller) ?? []), i]); });
+  s.items.forEach((row, it) => {
+    const r = R[row];
+    if (r.kind !== 'step' || !r.lines || detail(row) === 'calls') return;
+    const L = text(r.file);
+    if (!L) return;
+    const lvl = detail(row), first = r.start, last = r.start + r.lines - 1;
+    // the body starts after the line holding the opening brace
+    let from = first;
+    while (from < last && !(L[from] ?? '').includes('{')) from++;
+    from++;
+    const calls = (kids.get(row) ?? []).filter((c) => s.itemOf[c] >= 0).sort((a, b) => R[a].at!.line - R[b].at!.line);
+    const callLines = new Set(calls.map((c) => R[c].at!.line));
+    const base = (L[from] ?? '').search(/\S/);
+    const take = (a: number, b: number, after: number) => {
+      const rows: CodeLine[] = [];
+      for (let n = a; n <= b && n < last; n++) {
+        const raw = L[n] ?? '', t = raw.trim();
+        if (!t || /^[{}]+;?$/.test(t) || callLines.has(n)) continue;
+        if (lvl === 'decisions' && !DECISION.test(t)) continue;
+        rows.push({ n, text: t, depth: Math.max(0, Math.round((raw.search(/\S/) - Math.max(0, base)) / 4)) });
+      }
+      if (!rows.length) return;
+      const shown = rows.length > MAX_BLOCK ? [...rows.slice(0, MAX_BLOCK - 1), { n: -1, text: `… ${rows.length - MAX_BLOCK + 1} more lines`, depth: 0 }] : rows;
+      out.set(after, [...(out.get(after) ?? []), { owner: it, lines: shown }]);
+    };
+    let at = from, after = it;
+    for (const c of calls) {
+      const cl = R[c].at!.line;
+      if (cl < at) { after = s.lastItem[s.itemOf[c]] ?? after; continue; }
+      take(at, cl - 1, after);
+      at = cl + 1;
+      after = s.lastItem[s.itemOf[c]] ?? s.itemOf[c];
+    }
+    take(at, last, after);
+  });
+  // where blocks share a place, the innermost function's code comes first: it finishes before its caller goes on
+  for (const bs of out.values()) bs.sort((a, b) => b.owner - a.owner);
+  return out;
+}
+
+// ---------- findings: what the run shows without running it (src/shared/flowfacts.ts gives the facts) ----------
+export interface Finding { kind: 'race' | 'dropped'; text: string; grade: 'proved' | 'possible'; rows: number[] }
+
+/** The thread a row runs on: the step that started it (its first row on that thread), or -1 for the entry's own. */
+export function threadOf(run: Run, row: number): number {
+  let r = row;
+  while (run.rows[r].thread) { const c = run.rows[r].caller; if (c == null || !run.rows[c].thread) return r; r = c; }
+  return -1;
+}
+
+/**
+ * Two kinds, both exact restatements of the code: a call whose result the statement throws away when the function
+ * returns a value (proved), and state one thread changes while another uses it with no lock on either side
+ * (possible: whether they meet in time depends on the run).
+ */
+const findingsOf = new WeakMap<Run, Finding[]>();
+export function findings(run: Run): Finding[] {
+  const hit = findingsOf.get(run);
+  if (hit) return hit;
+  const out = findingsIn(run);
+  findingsOf.set(run, out);
+  return out;
+}
+function findingsIn(run: Run): Finding[] {
+  const R = run.rows, fx = run.effects ?? {}, out: Finding[] = [];
+  const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  const within = (p: { line: number; character: number }, r: { start: { line: number; character: number }; end: { line: number; character: number } }) =>
+    (p.line > r.start.line || (p.line === r.start.line && p.character >= r.start.character)) && (p.line < r.end.line || (p.line === r.end.line && p.character <= r.end.character));
+  // results thrown away
+  const seen = new Set<string>();
+  R.forEach((r, i) => {
+    if ((r.kind !== 'step' && r.kind !== 'ref') || r.caller == null || !r.at) return;
+    const callee = fx[r.key], caller = fx[R[r.caller].key];
+    if (!callee?.returnsValue || !caller?.dropped.some((d) => within(r.at!, d))) return;
+    const k = `${R[r.caller].key}@${r.at.line}:${r.at.character}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    const n = r.kind === 'step' ? r.n : R[r.ref!].n;
+    out.push({ kind: 'dropped', grade: 'proved', rows: [i, r.caller], text: `${short(R[r.caller].name)} drops what ${n} ${short(r.name)} returns (line ${r.at.line + 1})` });
+  });
+  // state used on two threads, written on at least one, with no lock in either function
+  const uses = new Map<string, { row: number; thread: number; write: boolean; locked: boolean }[]>();
+  R.forEach((r, i) => {
+    if (r.kind !== 'step') return;
+    const e = fx[r.key];
+    if (!e) return;
+    const t = threadOf(run, i), locked = e.locks.length > 0;
+    const put = (k: string, write: boolean) => uses.set(k, [...(uses.get(k) ?? []), { row: i, thread: t, write, locked }]);
+    for (const m of e.writes) put(`${e.owner ?? r.file}::${m}`, true);
+    for (const m of e.reads) put(`${e.owner ?? r.file}::${m}`, false);
+    for (const g of e.globalWrites) put(`::${g}`, true);
+    for (const g of e.globalReads) put(`::${g}`, false);
+  });
+  for (const [k, us] of uses) {
+    const w = us.find((u) => u.write && !u.locked);
+    if (!w) continue;
+    const o = us.find((u) => u.thread !== w.thread && !u.locked);
+    if (!o) continue;
+    const name = k.startsWith('::') ? k.slice(2) : k;
+    const where = (u: typeof w) => `${R[u.row].n} ${short(R[u.row].name)} (${u.thread < 0 ? 'the main thread' : `the thread ${R[u.thread].n} ${short(R[u.thread].name)} starts`})`;
+    out.push({ kind: 'race', grade: 'possible', rows: [w.row, o.row], text: `${name}: changed by ${where(w)}, ${o.write ? 'changed' : 'used'} by ${where(o)} — no lock on either side` });
+  }
+  return out;
 }

@@ -39,8 +39,18 @@ const chosenKey = () => `flow.entry:${root()}`;
  * folder, else the best ranked — so a project with hundreds of mains shows its first picture in seconds. Calls made
  * while one is running wait for it, then run once more.
  */
+/** Work that traces other programs (how they connect) runs on its own: a rebuild waits for it, and it for a rebuild. */
+let side: Promise<unknown> | null = null;
+export async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+  while (building) await building.catch(() => {});
+  const p = fn();
+  side = p;
+  try { return await p; } finally { if (side === p) side = null; }
+}
+
 export async function rebuild(): Promise<void> {
   if (!root() || lspState() !== 'ready') return;
+  while (side) await side.catch(() => {});
   if (building) { again = true; return building; }
   building = (async () => {
     if (builtFor !== root()) {

@@ -101,8 +101,14 @@ export function callNums(run: Run, rows: number[]): string {
 
 // ---------- layout (ELK, as the app's other diagrams) ----------
 export interface Pt { x: number; y: number }
-export interface Line { id: string; a: number; b: number; fa: string; fb: string; rows: number[]; thread: boolean; pts: Pt[]; text: string }
-export interface Lay { level: Level; pos: Record<string, { x: number; y: number; w: number; h: number }>; lines: Line[]; groups: { dir: string; x: number; y: number; w: number; h: number }[]; w: number; h: number }
+export interface Line { id: string; a: number; b: number; fa: string; fb: string; rows: number[]; thread: boolean; pts: Pt[]; text: string; hub?: boolean }
+export interface Lay { level: Level; pos: Record<string, { x: number; y: number; w: number; h: number }>; lines: Line[]; groups: { dir: string; x: number; y: number; w: number; h: number }[]; w: number; h: number; hubs: Record<string, number> }
+/**
+ * A box many others call (a string or logging utility) would draw a fan of lines across the whole diagram: in a
+ * diagram of at least `boxes` boxes, the lines into a box called from `from` or more others are drawn only when they
+ * matter (the step's chain, a route); the box says how many call it, and its rows keep their step numbers.
+ */
+export const HUB = { boxes: 15, from: 6 };
 type Elk = { layout: (g: unknown) => Promise<any> };
 
 /**
@@ -111,7 +117,7 @@ type Elk = { layout: (g: unknown) => Promise<any> };
  * the numbers already say the order. Files level: one line per pair of files, with all their numbers; folders level:
  * one box per folder and one line per pair of folders.
  */
-export async function layoutBoxes(m: BoxModel, level: Level, elk: Elk): Promise<Lay> {
+export async function layoutBoxes(m: BoxModel, level: Level, elk: Elk, hub = HUB): Promise<Lay> {
   const R = m.run.rows;
   const nodes = (level === 'folders' ? m.dirs.map((d) => `dir:${d}`) : m.files).map((f) => {
     const g = boxGeom(m, f, level), node: any = { id: f, width: g.w, height: g.h, layoutOptions: {} };
@@ -178,7 +184,14 @@ export async function layoutBoxes(m: BoxModel, level: Level, elk: Elk): Promise<
     const pts = [sc.startPoint, ...(sc.bendPoints ?? []), sc.endPoint].map((q: Pt) => (off ? { x: q.x + off.x, y: q.y + off.y } : { x: q.x, y: q.y }));
     lines.push({ ...x, pts });
   }
-  return { level, pos, lines, groups, w: g.width ?? 0, h: g.height ?? 0 };
+  const hubs: Record<string, number> = {};
+  if (Object.keys(pos).length >= hub.boxes) {
+    const from = new Map<string, Set<string>>();
+    for (const l of lines) { const a = nodeOf(m, level, l.fa), b = nodeOf(m, level, l.fb); if (a !== b) from.set(b, (from.get(b) ?? new Set()).add(a)); }
+    for (const [b, set] of from) if (set.size >= hub.from) hubs[b] = set.size;
+    for (const l of lines) if (hubs[nodeOf(m, level, l.fb)] && nodeOf(m, level, l.fa) !== nodeOf(m, level, l.fb)) l.hub = true;
+  }
+  return { level, pos, lines, groups, w: g.width ?? 0, h: g.height ?? 0, hubs };
 }
 
 /** Where a function row is in the functions layout: its box's left edge, the row's middle, the box's width. */
@@ -206,6 +219,7 @@ export interface Label { keys: string[]; text: string; full: string; x: number; 
 export function placeLabels(lay: Lay, s = 1, charW = 7.2): Label[] {
   const at = new Map<string, { b: Label; pts: Pt[] }>();
   for (const l of lay.lines) {
+    if (l.hub) continue;   // into a much-called box: its rows carry the numbers
     const q = l.pts[l.pts.length - 1], k = `${Math.round(q.x)},${Math.round(q.y)}`, e = at.get(k);
     if (e) { e.b.keys.push(`${l.a}>${l.b}`); e.b.text = e.b.full = `${e.b.full} · ${l.text}`; continue; }
     at.set(k, { b: { keys: [`${l.a}>${l.b}`], text: l.text, full: l.text, x: q.x - 12 * s, y: q.y, w: 0, h: 0, thread: l.thread }, pts: l.pts });
@@ -338,3 +352,11 @@ export function howOftenLevel(run: Run, row: number): { level: number; text: str
   if (loops.length === 1 && loops[0].count != null) return { level: 1, text: `×${loops[0].count}` };
   return { level: loops.length, text: `${loops.length} loop${loops.length > 1 ? 's' : ''}` };
 }
+
+/** The part of the diagram in view (diagram units), with a screen's margin around it so scrolling finds boxes drawn. */
+export function viewRect(scroll: { x: number; y: number }, size: { w: number; h: number }, k: number, margin = 600): { x0: number; y0: number; x1: number; y1: number } {
+  const m = margin / k;
+  return { x0: (scroll.x - PAD) / k - m, y0: (scroll.y - PAD) / k - m, x1: (scroll.x + size.w - PAD) / k + m, y1: (scroll.y + size.h - PAD) / k + m };
+}
+/** Whether a box meets that part. */
+export const meets = (r: { x0: number; y0: number; x1: number; y1: number }, b: { x: number; y: number; w: number; h: number }) => b.x + b.w >= r.x0 && b.x <= r.x1 && b.y + b.h >= r.y0 && b.y <= r.y1;

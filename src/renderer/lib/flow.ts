@@ -9,8 +9,9 @@
 import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename } from './api';
 import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols, ensureOpen } from './lsp';
 import { states } from './store';
-import { parseCpp, loopsAt, functionDefs, definedNames, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
-import { analyseFunction, walkRun, fnExtent, AstNode, FnInfo, Run, Target } from '../../shared/flowrun';
+import { parseCpp, loopsAt, functionDefs, definedNames, addressTaken, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
+import { analyseFunction, walkRun, fnExtent, functionNode, AstNode, FnInfo, Run, Target } from '../../shared/flowrun';
+import { effects } from '../../shared/flowfacts';
 import type { Tree } from '@lezer/common';
 
 export interface FlowFn { key: string; item: CallItem; file: string; nums: string[]; line: number }
@@ -55,7 +56,12 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<unknown>) {
 }
 
 /** A main in the project: where its name is, found without clangd. */
-export interface Entry { file: string; line: number; ch: number; name: string; rel: string; label: string }
+export interface Entry { file: string; line: number; ch: number; name: string; rel: string; label: string; kind?: 'main' | 'interrupt' }
+
+/** Interrupt handlers: nothing in the code calls them, the hardware does — CMSIS vector names, *_ISR, AVR's ISR(…). */
+const ISR_NAME = /^(?:\w+_IRQHandler|SysTick_Handler|PendSV_Handler|SVC_Handler|NMI_Handler|HardFault_Handler|MemManage_Handler|BusFault_Handler|UsageFault_Handler|DebugMon_Handler|\w+_ISR|ISR)$/;
+/** …or marked as one: GCC's interrupt attributes, IAR's and TI's __interrupt. */
+const ISR_MARK = /__attribute__\s*\(\(\s*(?:interrupt|isr|signal)\b|\b__interrupt\b|\b__irq\b/;
 /** The key of the function an entry is: the same as a call item's (keyOf) once clangd resolves it. */
 export const entryKey = (e: Entry) => `${fileToUri(e.file)}#${e.line}`;
 
@@ -69,13 +75,16 @@ export async function findEntries(root: string): Promise<Entry[]> {
   const files = ((await api.fs.sources(root)) as string[]).filter((f) => SOURCE.test(f));
   await pool(files, 16, async (f) => {
     const v = await readText(f);
-    if (!/\b(w?main|w?WinMain)\s*\(/.test(v.text)) return;
+    if (!/\b(w?main|w?WinMain)\s*\(|_IRQHandler\b|_Handler\b|_ISR\b|\bISR\s*\(|__interrupt\b|__irq\b|\(\(\s*(?:interrupt|isr|signal)\b/.test(v.text)) return;
     const { text, tree } = await src(f);
     for (const d of functionDefs(tree, text)) {
-      if (!MAIN_NAMES.has(d.name)) continue;
+      const isr = !MAIN_NAMES.has(d.name) && (ISR_NAME.test(d.name) || ISR_MARK.test(text.slice(d.from, offsetOf(text, d.line, 0) + (text.split('\n')[d.line] ?? '').indexOf(d.name))));
+      if (!MAIN_NAMES.has(d.name) && !isr) continue;
       const lineText = text.split('\n')[d.line] ?? '';
       const rel = f.startsWith(root) ? f.slice(root.length).replace(/^[\\/]/, '') : f;
-      found.push({ file: f, line: d.line, ch: Math.max(0, lineText.search(new RegExp(`\\b${d.name}\\s*\\(`))), name: d.name, rel, label: programName(f, []) });
+      // AVR's ISR(TIMER0_OVF_vect): the vector names it
+      const label = !isr ? programName(f, []) : d.name === 'ISR' ? (lineText.match(/ISR\s*\(\s*(\w+)/)?.[1] ?? 'ISR') : d.name;
+      found.push({ file: f, line: d.line, ch: Math.max(0, lineText.search(new RegExp(`\\b${d.name}\\s*\\(`))), name: d.name, rel, label, kind: isr ? 'interrupt' : 'main' });
     }
   });
   return found.sort((a, b) => a.rel.localeCompare(b.rel) || a.line - b.line);
@@ -163,15 +172,23 @@ function derivedOf(bases: Map<string, Set<string>>, cls: string): Set<string> {
  * is then found from the text: the source files whose left margin names it, parsed, and used when there is exactly one
  * (ports of the same function stay unresolved until the index says which is compiled). Null when none or several.
  */
-function textDefinitions(root: string) {
-  let byName: Promise<Map<string, string[]>> | null = null;
-  const names = () => byName ??= (async () => {
+/** The project's function names and the source files that define them (by the text sieve), built once per crawl. */
+let nameIdx: { root: string; p: Promise<Map<string, string[]>> } | null = null;
+function nameIndex(root: string): Promise<Map<string, string[]>> {
+  if (nameIdx?.root === root) return nameIdx.p;
+  const p = (async () => {
     const m = new Map<string, string[]>();
     for (const f of ((await api.fs.sources(root)) as string[]).filter((x) => SOURCE.test(x))) {
       for (const n of definedNames((await readText(f)).text)) { const l = m.get(n); if (l) l.push(f); else m.set(n, [f]); }
     }
     return m;
   })();
+  nameIdx = { root, p };
+  return p;
+}
+
+function textDefinitions(root: string) {
+  const names = () => nameIndex(root);
   const found = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem): Promise<CallItem | null> => {
     let p = found.get(it.name);
@@ -200,6 +217,36 @@ function nearest<T extends { file: string }>(hits: T[], decl: string): T | null 
   const ranked = hits.map((h) => ({ h, s: shared(h.file) })).sort((a, b) => b.s - a.s);
   return ranked[0].s > ranked[1].s ? ranked[0].h : null;
 }
+/**
+ * A plain C function defined more than once in the project (one per port or board): clangd's index keeps whichever it
+ * read last, so the run could differ between sessions. The pick is made stable instead: the definition sharing the
+ * most folders with the caller, then the first by path. Methods, overloads and static (file-local) functions are
+ * left to clangd. Null when clangd's own target stands.
+ */
+function stableDefinitions(root: string) {
+  const picked = new Map<string, Promise<CallItem | null>>();
+  return (it: CallItem, caller: string): Promise<CallItem | null> => {
+    const k = `${it.name}@${caller.replace(/[\\/][^\\/]*$/, '')}`;
+    let p = picked.get(k);
+    if (!p) picked.set(k, p = (async () => {
+      const files = (await nameIndex(root)).get(it.name) ?? [];
+      if (files.length < 2) return null;
+      const hits: { file: string; d: FnDef; text: string }[] = [];
+      for (const file of files) {
+        const { text, tree } = await src(file);
+        for (const d of functionDefs(tree, text)) if (d.name === it.name && !/\bstatic\b/.test(text.slice(d.from, offsetOf(text, d.line, 0)) + (text.split('\n')[d.line] ?? ''))) hits.push({ file, d, text });
+      }
+      if (hits.length < 2) return null;
+      const dirs = (f: string) => f.split(/[\\/]/).slice(0, -1), c = dirs(caller);
+      const shared = (f: string) => { const a = dirs(f); let i = 0; while (i < a.length && i < c.length && a[i] === c[i]) i++; return i; };
+      const best = hits.sort((a, b) => shared(b.file) - shared(a.file) || a.file.localeCompare(b.file))[0];
+      if (best.file === uriToFile(it.uri)) return null;
+      const ch = Math.max(0, (best.text.split('\n')[best.d.line] ?? '').search(new RegExp(`\\b${it.name}\\s*\\(`)));
+      return callItemAt(best.file, { line: best.d.line, character: ch });
+    })());
+    return p;
+  };
+}
 const declOnly = (it: CallItem) => HEADER.test(it.uri) && it.range.end.line === it.range.start.line;
 
 /**
@@ -211,7 +258,8 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   let truncated = false;
   const bases = await classBases(root);
   const overridden = new Map<string, Promise<CallItem[]>>();   // method key → its overrides
-  const fromText = textDefinitions(root);
+  nameIdx = null; taken = null;   // a new crawl reads the text again
+  const fromText = textDefinitions(root), stable = stableDefinitions(root);
 
   /** Overrides of a method, if its class has derived classes that define a method of that name. */
   const overridesOf = (it: CallItem): Promise<CallItem[]> => {
@@ -219,8 +267,9 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
     let p = overridden.get(k);
     if (p) return p;
     p = (async () => {
-      const parts = (it.detail ?? '').split('::');
-      const cls = parts.length > 1 ? parts[parts.length - 2] : '';
+      // clangd's detail for a method is its class ("Shape", "ns::Shape"); some servers give "Shape::area"
+      const parts = (it.detail ?? '').split('::').filter(Boolean);
+      const cls = parts[parts.length - 1] === it.name ? parts[parts.length - 2] ?? '' : parts[parts.length - 1] ?? '';
       if (it.kind !== 6 || !cls) return [];
       const derived = derivedOf(bases, cls);
       if (!derived.size) return [];
@@ -241,7 +290,12 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
       const node = nodes.get(keyOf(it))!;
       const [raw, subs] = await Promise.all([outgoing(it), overridesOf(it)]);
       // a callee known only by its declaration (the index still loading): its definition, found from the text
-      await Promise.all(raw.map(async (c) => { if (c.to && declOnly(c.to) && c.fromRanges?.length && inProject(uriToFile(c.to.uri))) { const d = await fromText(c.to); if (d) c.to = d; } }));
+      await Promise.all(raw.map(async (c) => {
+        if (!c.to || !c.fromRanges?.length || !inProject(uriToFile(c.to.uri))) return;
+        if (declOnly(c.to)) { const d = await fromText(c.to); if (d) c.to = d; }
+        // a C function with one definition per port: the same one every session
+        else if (c.to.kind === 12 && /^\w+$/.test(c.to.name) && /\.c$/i.test(uriToFile(c.to.uri))) { const d = await stable(c.to, uriToFile(it.uri)); if (d) c.to = d; }
+      }));
       node.raw = raw;   // every call with every call site, library ones too: the analyser places each one
       for (const c of raw) {
         if (!c.fromRanges?.length || !inProject(uriToFile(c.to.uri))) continue;
@@ -429,6 +483,16 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
   };
 }
 
+/**
+ * How several programs connect: which starts which (by name, through system/exec/CreateProcess…), and the files
+ * they share. Traces each one; the program on screen keeps its own trace.
+ */
+export async function connectPrograms(root: string, starts: CallItem[], onProgress?: (n: number) => void): Promise<Pick<FlowGraph, 'lanes' | 'links' | 'shared'>> {
+  const keep = lastCrawl;
+  try { const g = await buildFlow(root, onProgress, starts); return { lanes: g.lanes, links: g.links, shared: g.shared }; }
+  finally { lastCrawl = keep; }
+}
+
 // ---------- the run: one entry point's steps in execution order (src/shared/flowrun.ts) ----------
 
 let lastCrawl: { root: string; nodes: Map<string, Node> } | null = null;
@@ -463,17 +527,40 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
       const calls = node.raw.map((c) => `${keyOf(c.to)}:${+nodes.has(keyOf(c.to))}:${(c.fromRanges ?? []).map((r) => `${r.start.line}.${r.start.character}`).join(',')}`).join('|');
       const hit = flowCache.get(ck);
       if (hit && hit.text === text && hit.calls === calls) { flows.set(k, hit.info); return; }
-      const ast = (await api.lsp.request('textDocument/ast', { textDocument: { uri: it.uri }, range: it.range }).catch(() => null)) as AstNode | null;
+      const ast = functionNode((await api.lsp.request('textDocument/ast', { textDocument: { uri: it.uri }, range: it.range }).catch(() => null)) as AstNode | null);
       const flow = ast ? analyseFunction(ast, text, node.raw.filter((c) => c.fromRanges?.length).map((c) => ({ to: target(c.to), fromRanges: c.fromRanges }))) : { body: [], dropped: [] };
       const overrides = node.calls.filter((c) => c.virtual).map((c) => nodes.get(c.to)).filter((x): x is Node => !!x).map((x) => target(x.item));
-      const info: FnInfo = { name: it.name, file, line: it.selectionRange.start.line, ...fnExtent(ast, it.range), flow, overrides };
+      const info: FnInfo = { name: it.name, file, line: it.selectionRange.start.line, ...fnExtent(ast, it.range), flow, overrides, effects: ast ? { ...effects(ast, text), owner: it.kind === 6 || it.kind === 9 ? it.detail : undefined } : undefined };
       if (ast) flowCache.set(ck, { text, calls, info });
       flows.set(k, info);
     }));
     done += byFile.get(file)!.length;
     onProgress?.(done, reach.size);
   });
-  return walkRun(start, (k) => flows.get(k));
+  const run = walkRun(start, (k) => flows.get(k));
+  // a call through a pointer: the functions whose address the code takes are what it may reach (probable)
+  const ind = run.rows.filter((r) => r.kind === 'indirect');
+  if (ind.length) {
+    const t = await addressTakenIn(lastCrawl.root);
+    for (const r of ind) {
+      const from = r.caller != null ? run.rows[r.caller].file : '', dir = from.replace(/[\\/][^\\/]*$/, '');
+      r.could = [...t].sort((a, b) => +!a[1].some((f) => f.startsWith(dir)) - +!b[1].some((f) => f.startsWith(dir)) || a[0].localeCompare(b[0])).map(([n]) => n).slice(0, 12);
+    }
+  }
+  return run;
+}
+
+/** Functions of the project whose address some source file takes, with the files that define them; once per crawl. */
+let taken: { root: string; p: Promise<[string, string[]][]> } | null = null;
+function addressTakenIn(root: string): Promise<[string, string[]][]> {
+  if (taken?.root === root) return taken.p;
+  const p = (async () => {
+    const idx = await nameIndex(root), names = new Set(idx.keys()), out = new Set<string>();
+    for (const f of ((await api.fs.sources(root)) as string[]).filter((x) => SOURCE.test(x) || HEADER.test(x))) for (const n of addressTaken((await readText(f)).text, names)) out.add(n);
+    return [...out].map((n): [string, string[]] => [n, idx.get(n) ?? []]);
+  })();
+  taken = { root, p };
+  return p;
 }
 
 export const shortName = (root: string, file: string) => (file.startsWith(root) ? file.slice(root.length + 1) : basename(file));

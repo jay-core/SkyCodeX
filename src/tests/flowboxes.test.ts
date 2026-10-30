@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { loadFixture } from './flowrun.fixture';
-import { boxModel, layoutBoxes, placeLabels, labelScale, levelFor, routesBetween, routePoints, neighbourhood, howOftenLevel, frameWords, rowAt, Level, Lay } from '../shared/flowboxes';
+import { boxModel, layoutBoxes, placeLabels, labelScale, levelFor, routesBetween, routePoints, neighbourhood, howOftenLevel, frameWords, rowAt, Level, Lay, viewRect, meets, nodeOf } from '../shared/flowboxes';
 
 const FIX = path.join(__dirname, 'fixtures');
 const { run: runOf } = loadFixture(path.join(FIX, 'tinyhttp-flow.json'), path.resolve(__dirname, '../../samples/tinyhttp'));
@@ -139,5 +139,30 @@ describe('the walk marker', () => {
     expect(pts.some((p) => p.y === ph.y && p.x >= ph.x && p.x <= ph.x + ph.w)).toBe(true);   // through parse_headers' row
     expect(pts.some((p) => p.y === hd.y && p.x >= hd.x && p.x <= hd.x + hd.w)).toBe(true);   // and handle's
     expect(pts[pts.length - 1]).toEqual({ x: rt.x + 34, y: rt.y });
+  });
+});
+
+describe('drawing only what is in view', () => {
+  it('every box that meets the view (and a screen around it) is drawn; those far away are not', () => {
+    const r = viewRect({ x: 2000, y: 0 }, { w: 1000, h: 800 }, 1, 600);
+    expect(meets(r, { x: 2500, y: 100, w: 260, h: 80 })).toBe(true);            // on screen
+    expect(meets(r, { x: 1200, y: 100, w: 260, h: 80 })).toBe(true);            // within a screen to the left
+    expect(meets(r, { x: 100, y: 100, w: 260, h: 80 })).toBe(false);            // far left
+    expect(meets(r, { x: 2500, y: 3000, w: 260, h: 80 })).toBe(false);          // far below
+    const z = viewRect({ x: 0, y: 0 }, { w: 1000, h: 800 }, 0.5, 600);          // zoomed out: more of the diagram is in view
+    expect(meets(z, { x: 2800, y: 100, w: 260, h: 80 })).toBe(true);
+  });
+});
+
+describe('a much-called box', () => {
+  it('lines into it are marked and carry no numbers; the box says how many call it', async () => {
+    const l = await layoutBoxes(m, 'files', elk, { boxes: 2, from: 2 });
+    const hubs = Object.keys(l.hubs);
+    expect(hubs.length).toBeGreaterThan(0);
+    for (const x of l.lines) expect(!!x.hub).toBe(!!l.hubs[nodeOf(m, 'files', x.fb)] && nodeOf(m, 'files', x.fa) !== nodeOf(m, 'files', x.fb));
+    const labelled = new Set(placeLabels(l, 1).flatMap((b) => b.keys));
+    for (const x of l.lines.filter((y) => y.hub)) expect(labelled.has(`${x.a}>${x.b}`)).toBe(false);
+    // the default threshold leaves tinyhttp (8 files) as it was
+    expect(Object.keys((await layoutBoxes(m, 'files', elk)).hubs)).toEqual([]);
   });
 });

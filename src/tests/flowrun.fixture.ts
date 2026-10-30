@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { analyseFunction, walkRun, fnExtent, FnInfo, Target, Run } from '../shared/flowrun';
+import { effects } from '../shared/flowfacts';
 
 interface Item { key: string; name: string; kind: number; detail: string; file: string | null; lib: string; range: any; selectionRange: any }
 interface Fn extends Item { ast: any; calls: { to: Item; fromRanges: any[] }[] }
@@ -14,7 +15,7 @@ export function loadFixture(fixture: string, root: string) {
   for (const f of fns) {
     const text = fs.readFileSync(path.join(root, f.file!), 'utf8');
     const flow = analyseFunction(f.ast, text, f.calls.map((c) => ({ to: target(c.to), fromRanges: c.fromRanges })));
-    infos.set(f.key, { name: f.name.replace(/^.*::/, ''), file: f.file!, line: f.selectionRange.start.line, ...fnExtent(f.ast, f.range), flow });
+    infos.set(f.key, { name: f.name.replace(/^.*::/, ''), file: f.file!, line: f.selectionRange.start.line, ...fnExtent(f.ast, f.range), flow, effects: { ...effects(f.ast, text), owner: f.kind === 6 || f.kind === 9 ? f.detail || f.name.replace(/::[^:]*$/, '') : undefined } });
   }
   return { infos, run: (start: string): Run => walkRun(start, (k) => infos.get(k)) };
 }

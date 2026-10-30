@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseCpp, loopsAt, functionDefs, definedNames, offsetOf, lineOf, THREAD_RE } from '../shared/flowcore';
+import { parseCpp, loopsAt, functionDefs, definedNames, addressTaken, offsetOf, lineOf, THREAD_RE } from '../shared/flowcore';
+import { THREAD_START } from '../shared/flowrun';
+import { rankEntries } from '../shared/entries';
 
 const SRC = `void Server::start() {
     for (int i = 0; i < 16; ++i) f(i);
@@ -51,5 +53,17 @@ describe('flow core', () => {
       '#define TX_DISABLE() x()', '/* not(this) */', ' * nor(this)', 'int x = f(2);',
     ].join('\n');
     expect([...definedNames(text)].sort()).toEqual(['_tx_initialize_kernel_enter', '_tx_thread_create', 'helper', 'update']);
+  });
+  it('functions whose address is taken: tables, callbacks, stored pointers — not calls, comments or strings', () => {
+    const names = new Set(['on_get', 'on_post', 'worker', 'helper', 'unused', 'fmt']);
+    const text = 'static Handler table[] = { on_get, on_post };\nregister_cb(&worker);\nint x = helper(2);\n// unused, here\nputs("fmt;");\nauto p = Ns::worker;';
+    expect([...addressTaken(text, names)].sort()).toEqual(['on_get', 'on_post', 'worker']);
+  });
+  it('threads and RTOS tasks start with the function they are given, wrappers included', () => {
+    for (const n of ['std::thread', 'pthread_create', '_txe_thread_create', '_tx_thread_create', 'xTaskCreateStatic', 'osThreadNew', 'OSTaskCreateExt', 'k_thread_create']) expect(THREAD_START.test(n)).toBe(true);
+    expect(THREAD_START.test('thread_create_helper')).toBe(false);
+  });
+  it('interrupt handlers come after programs', () => {
+    expect(rankEntries([{ rel: 'src/irq.c', kind: 'interrupt' }, { rel: 'tests/main.c', kind: 'main' }]).map((e) => e.rel)).toEqual(['tests/main.c', 'src/irq.c']);
   });
 });

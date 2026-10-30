@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { loadFixture, describeRun } from './flowrun.fixture';
-import { forCount, matchParen, analyseFunction, fnExtent } from '../shared/flowrun';
+import { forCount, matchParen, analyseFunction, fnExtent, functionNode } from '../shared/flowrun';
 
 const FIX = path.join(__dirname, 'fixtures');
 
@@ -171,6 +171,12 @@ describe('helpers', () => {
     // a tree the analyser cannot follow at all: the calls in source order, marked approximate
     const bad = analyseFunction({ kind: 'Function', range: R(0, 0, 2, 1), children: [{ kind: 'Compound', role: 'statement', range: R(0, 9, 2, 1), children: [{ kind: 'Return', role: 'statement', range: undefined as never, children: [null as never] }] }] }, text, [{ to: g, fromRanges: [R(1, 8, 1, 9)] }]);
     expect(bad.body).toEqual([{ t: 'call', to: g, at: { line: 1, character: 8 }, approx: true }]);
+  });
+  it('a function inside extern "C" is found inside its wrapper', () => {
+    const fn = { kind: 'Function', range: { start: { line: 1, character: 11 }, end: { line: 1, character: 40 } } };
+    expect(functionNode({ kind: 'LinkageSpec', children: [fn] })).toBe(fn);
+    expect(functionNode(fn)).toBe(fn);
+    expect(functionNode(null)).toBeNull();
   });
   it('matching parentheses skips strings, characters, raw strings and comments', () => {
     expect(matchParen('f(a, ")", \')\') x', 1)).toBe(13);
