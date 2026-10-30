@@ -81,7 +81,7 @@ Mock-ups: `docs/concepts/flow-boxes/` (tinyhttp and thorvg, real data). Prototyp
 
 - **Folders:** files sit inside dashed folder frames (`SRC/RENDERER`), laid out as one graph (ELK `INCLUDE_CHILDREN`), so lines cross folders cleanly.
 - **Shared utilities:** a file called from 3 or more other files (`tvgMath.h`, `tvgArray.h`) gets no lines at all. Its box says `used by N files`, and hovering a caller lights the step numbers inside it. This keeps hubs from turning the graph into a web.
-- **Unreached files:** files the flow never reaches are not boxes in the graph. A shelf under it says `+653 files not reached from this start · listed in the folder tab, greyed`. A reached file with no running function (`legacy/cgi.cpp`) sits on that shelf as a dashed box: `not reached from main`.
+- **Unreached files:** files the flow never reaches are not boxes in the graph (nor parsed). A shelf under it says `+653 files not reached from this start`. A reached file with no running function (`legacy/cgi.cpp`) sits on that shelf as a dashed box: `not reached from main`.
 - **No wrapping:** the graph is never wrapped into rows. Tried, and it sends lines around the whole graph. Wide graphs scale down to fit width, and zooming in follows the selection.
 
 **Hover (files level).**
@@ -303,6 +303,7 @@ All deterministic, from the same syntax trees, call graph, thread starts and lib
 - **Folding:** a call's subtree folds into one row (`+40 steps`); helpers fold into their caller's line; std/OS/third-party hidden unless asked for.
 - **Getting there:** find a function (`/`) to see the paths from the entry points to it.
 - **Drawing:** only what is on screen; very large views drawn on the GPU rather than as page elements.
+- **Opening a large project (built):** entry points are found from the text (tree-sitter), not from clangd, and ranked from their paths alone (`src/shared/entries.ts`: samples, demos, `src/`, `main.c` first; tests, tools, ports and build scaffolding last). Only the chosen one is traced and run; the choice is kept per folder. A call clangd can only place at a header declaration while its index loads is followed to its definition from the text (names at the left margin, confirmed by the parser; of several, the one sharing the most folders with the declaring header; ports of one function stay unresolved until the index says which is compiled). One function the analyser cannot follow (a statement written by a macro) gives its calls in source order, marked approximate, never stopping the run. A function's facts are cached against its text and the calls clangd reports for it, so the run after indexing is not built from the declarations seen before it. The boxes layouts are kept per run, so switching views costs nothing. ThreadX (3,400 files, 278 `main`s), measured: `samples/demo_threadx.c` chosen, about 70 functions in 11 s (was a one-row run after 43 s), the full run (≈ 85 functions, 50 steps) once clangd's index is ready after ≈ 90 s; zoom frames 13–60 ms; no text on text at any zoom; a sequence step in under 35 ms.
 
 ## 10. Languages
 
@@ -316,7 +317,7 @@ All deterministic, from the same syntax trees, call graph, thread starts and lib
 - Rightmost column crowding when code rows are shown everywhere: horizontal scroll for that column, or wrapped code rows.
 - Boxes view, still to do: the Tab transition (rows gliding into their boxes), PNG export, the shared-utility rule for very large projects (a file called from many others drawn without lines).
 - Virtual-call overrides in the flow engine (`src/renderer/lib/flow.ts`): written, not yet reaching overrides (class-base map + `workspace/symbol`).
-- Programs view (several `main`s) not yet built in the app; data side (lanes, shared files, starts-another-program) is in `flow.ts`.
+- Programs view (several `main`s) not yet built in the app. The flow now traces only the program shown, so what connects programs (which starts which, shared files) is to be computed when that view is built.
 
 ## 12. Prototypes (src/concepts/flow)
 

@@ -13,19 +13,20 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 **Version 1.0** for macOS (Apple silicon), Windows (x64) and Linux (x64): portable apps, downloadable from the repository's [Releases](https://github.com/jay-core/lithograph-editor/releases) page. Each build is checked by opening the packaged app on its own system before it is published. Since 1.0 the editor extras have been removed so the project can focus on the flow view, and the interface and the flow view are being reworked next. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
 
 Working now:
-- **Flow view:** how the program runs, from every `main` (a library without one starts from its public API, `inc/`, `include/`), as two views of the same run (Tab switches, keeping the step):
+- **Flow view:** how the program runs, from one entry point at a time — the `main` picked last time in that folder, else the most likely one (a sample, demo or the project's own `main` before tests, tools and ports); others from a chip, or a searchable list when there are more than six (a library without `main` starts from its public API, `inc/`, `include/`) — as two views of the same run (Tab switches, keeping the step):
   - **sequence:** one row per call in execution order, stepping with the keyboard through calls, returns and loop passes; the lines around each call, the whole call chain as links, chapters on the spine, folding a big call, finding a function and walking one of its paths, a tour, and walks shared as a link or saved as a walkthrough
   - **boxes:** files as boxes, the functions that run as rows in step order, a line from each caller's row to each callee's row with the calls' step numbers — readable at every zoom (fit width, fit all, 100%, 150%, any scale, with scrolling and a minimap; zoomed out it is drawn as files, then folders)
   - every route between two functions (shift-click), a marker that plays the run along the lines (Space), focus, how often each function runs, SVG export
   - in both: a magnifier that follows the pointer at any zoom (M), what-if (fold away what a condition would skip and compare), a depth skyline to scrub, jump letters, what you've read, notes on steps, and the functions you have edited and not saved marked with every call that reaches them
-  - the call graph comes from clangd's index, many requests at a time, so large projects build in seconds (thorvg: about 1,000 calls in under a second)
+  - the call graph comes from clangd's index, many requests at a time, and only the program shown is traced, so large projects build in seconds (thorvg: about 1,000 calls in under a second; Eclipse ThreadX, 3,400 files and 278 `main`s: about 70 functions on screen in 11 s, before clangd has finished indexing — calls the index cannot place yet are followed to their only definition in the source text — and the full run once it has)
 - **Any project, built or not:** a folder without `compile_commands.json` (Meson or Make projects not yet built, plain source folders) gets one written into SkyCodeX's own data folder, never into the project, so clangd indexes everything and the project's own `#include`s resolve.
 - **Preview panes:**
   - calls of the function under the cursor as cards, two levels, shiftable
   - every call in the source (the editor for pane 1, pane 1's card for pane 2, and so on) outlined in its card's colour; hover shows its connector, a click brings its card into view, lit, keeps the connector until something else is selected, and shows how many levels deep the call goes
   - standard-library cards; macros, `static_assert`, lambdas and indirect calls listed after a divider
 - **Colours:** Settings → appearance has a hue, saturation and lightness slider for every colour — the whole editor, code, diagnostics, preview cards, the flow views — previewed live, written to `settings.toml`.
-- **Refresh** (bottom right): reads every file again and rebuilds the previews, the flow and its views.
+- **Refresh** (bottom right, and in the flow view): reads every file again — new files, functions and entry points — and rebuilds the previews, the flow and its views; when a build has written or rewritten the project's `compile_commands.json`, clangd starts again on it.
+- **Folder tab:** new file and new folder (in the folder last clicked, else the open file's), and a button that opens the system's own terminal in that folder (Terminal on macOS; Windows Terminal or Command Prompt; the desktop's terminal on Linux) — a separate window, not part of SkyCodeX.
 - **Reading and editing with the inbuilt clangd:**
   - ⌘/Ctrl-click to the definition, into any header, standard ones included
   - errors, completion, hover, rename (F2), fixes and refactorings (⌘/Ctrl .), references (⇧F12)
@@ -37,7 +38,7 @@ Working now:
 
 Next:
 - the flow view and its interface, reworked for any size of codebase
-- one view per program when a project has several `main`s, with what connects them
+- one view per program when a project has several `main`s, with what connects them (today the flow shows one program at a time)
 - calls through virtual methods followed to their overrides
 - more entry points: threads and RTOS tasks, interrupt handlers, callbacks
 - flow for more languages

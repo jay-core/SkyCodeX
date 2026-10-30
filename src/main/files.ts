@@ -24,6 +24,14 @@ export function atomicWrite(file: string, text: string): void {
   }
 }
 
+/**
+ * A path as the interface keeps it: on Windows with forward slashes and an upper-case drive letter, the form clangd's
+ * file URIs come back in, so a file reached from the tree, a search or a definition is one file (Node accepts it).
+ */
+export function slashPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? p.replace(/\\/g, '/').replace(/^([a-z]):/, (_m, d: string) => `${d.toUpperCase()}:`) : p;
+}
+
 export interface DirEntry {
   name: string;
   path: string;
@@ -37,7 +45,7 @@ export function listDir(dir: string): DirEntry[] {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
   return entries
     .filter((e) => !HIDDEN.has(e.name) && !e.name.endsWith('.skycodex.tmp'))
-    .map((e) => ({ name: e.name, path: path.join(dir, e.name), dir: e.isDirectory() }))
+    .map((e) => ({ name: e.name, path: slashPath(path.join(dir, e.name)), dir: e.isDirectory() }))
     .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
 }
 

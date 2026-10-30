@@ -6,7 +6,8 @@ import { parse } from 'smol-toml';
 import { resolveDataDir, portableBase } from '../main/datadir';
 import { loadSettings, setSetting, lineOf } from '../main/settings';
 import { defaultFileText, defaults, SETTINGS } from '../shared/settings-schema';
-import { atomicWrite, saveBuffer, loadBuffers, dropBuffer, listSources } from '../main/files';
+import { atomicWrite, saveBuffer, loadBuffers, dropBuffer, listSources, slashPath } from '../main/files';
+import { normPath } from '../shared/paths';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-'));
 
@@ -121,5 +122,30 @@ describe('memory symbols → source names', () => {
     expect(symbolQuery('_GLOBAL__sub_I_main.cpp')).toBeNull();
     expect(symbolQuery('.str.1')).toBeNull();
     expect(symbolQuery('ltmp0')).toBeNull();
+  });
+});
+
+describe('a terminal in a folder', async () => {
+  const { terminalFor } = await import('../main/terminal');
+  it('each system opens its own terminal there', () => {
+    expect(terminalFor('/p', 'darwin', () => false)).toEqual({ cmd: 'open', args: ['-a', 'Terminal', '/p'], cwd: '/p' });
+    expect(terminalFor('C:\\p', 'win32', (x) => x === 'wt.exe')).toEqual({ cmd: 'wt.exe', args: ['-d', 'C:\\p'], cwd: 'C:\\p' });
+    expect(terminalFor('C:\\p', 'win32', () => false)).toEqual({ cmd: 'cmd.exe', args: ['/c', 'start', 'cmd.exe'], cwd: 'C:\\p' });
+    expect(terminalFor('/p', 'linux', (x) => x === 'konsole' || x === 'xterm')).toEqual({ cmd: 'konsole', args: ['--workdir', '/p'], cwd: '/p' });
+    expect(terminalFor('/p', 'linux', (x) => x === 'x-terminal-emulator' || x === 'konsole')!.cmd).toBe('x-terminal-emulator');
+    expect(terminalFor('/p', 'linux', () => false)).toBeNull();
+  });
+});
+
+describe('one spelling per file on Windows', () => {
+  it('the main process sends forward slashes and an upper-case drive; elsewhere paths pass unchanged', () => {
+    expect(slashPath('c:\\proj\\src\\a.cpp', 'win32')).toBe('C:/proj/src/a.cpp');
+    expect(slashPath('/home/me/a\\b.cpp', 'linux')).toBe('/home/me/a\\b.cpp');
+  });
+  it('the interface spells a Windows path the same way from any source, and leaves other paths alone', () => {
+    expect(normPath('C:\\proj\\src\\a.cpp')).toBe('C:/proj/src/a.cpp');
+    expect(normPath('c:/proj/src/a.cpp')).toBe('C:/proj/src/a.cpp');
+    expect(normPath('/Users/me/odd\\name.cpp')).toBe('/Users/me/odd\\name.cpp');
+    expect(normPath(slashPath('d:\\x\\y.h', 'win32'))).toBe('D:/x/y.h');
   });
 });

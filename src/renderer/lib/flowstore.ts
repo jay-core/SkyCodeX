@@ -1,7 +1,8 @@
 // What the flow page's two views share: the graph, the run of the chosen entry point, the walk through it, and which
 // view shows. Kept outside the components so switching views (Tab) keeps everything, the selected step included.
 import { createSignal } from 'solid-js';
-import { buildFlow, buildRun, FlowGraph } from './flow';
+import { buildFlow, buildRun, findEntries, resolveEntry, entryKey, FlowGraph, Entry } from './flow';
+import { rankEntries } from '../../shared/entries';
 import { root, files, states } from './store';
 import { api } from './api';
 import { lspState } from './lsp';
@@ -15,27 +16,49 @@ export function setFlowView(v: FlowView) { setFlowViewRaw(v); try { localStorage
 
 export const [graph, setGraph] = createSignal<FlowGraph | null>(null);
 export const [status, setStatus] = createSignal('');
+/** The project's entry points (its mains), best first; lane is the one shown. */
+export const [entries, setEntries] = createSignal<Entry[]>([]);
 export const [lane, setLaneRaw] = createSignal(0);
 export const [seq, setSeq] = createSignal<Seq | null>(null);
 export const [trail, setTrail] = createSignal<StepState[]>([]);
 export const [runStatus, setRunStatus] = createSignal('');
+/** The start key of the run shown (a function's uri#line), for links and what is kept per start. */
+export const entryStart = () => graph()?.lanes[0]?.start ?? '';
 
 let builtFor = '', firstBuild = 0, building: Promise<void> | null = null, again = false;
+/** The entry chosen in this folder (kept between sessions), by its key. */
+let chosen = '';
+const chosenKey = () => `flow.entry:${root()}`;
 
-/** Builds the graph (and the run of the current entry point). Calls made while one is running wait for it, then run once more. */
+/**
+ * Finds the entry points (text only), then traces and runs only the one chosen — the one picked last time in this
+ * folder, else the best ranked — so a project with hundreds of mains shows its first picture in seconds. Calls made
+ * while one is running wait for it, then run once more.
+ */
 export async function rebuild(): Promise<void> {
   if (!root() || lspState() !== 'ready') return;
   if (building) { again = true; return building; }
   building = (async () => {
-    if (builtFor !== root()) { firstBuild = Date.now(); setLaneRaw(0); setSeq(null); setTrail([]); }
+    if (builtFor !== root()) {
+      firstBuild = Date.now(); setLaneRaw(0); setSeq(null); setTrail([]); setEntries([]); setGraph(null);
+      try { chosen = localStorage.getItem(chosenKey()) ?? ''; } catch { chosen = ''; }
+    }
     builtFor = root();
-    setStatus(t('tracing calls from main…'));
-    const g = await buildFlow(root(), (n) => setStatus(`tracing calls from main… ${n} functions`));
+    setStatus(t('finding entry points…'));
+    const found = rankEntries(await findEntries(root()));
+    setEntries(found);
+    const i = Math.max(0, found.findIndex((e) => entryKey(e) === chosen));
+    setLaneRaw(i);
+    const e = found[i];
+    const start = e ? await resolveEntry(e) : null;
+    const what = e ? `${e.name === 'main' ? '' : `${e.name} in `}${e.label}` : 'the public API';
+    setStatus(`tracing calls from ${what}…`);
+    const g = await buildFlow(root(), (n) => setStatus(`tracing calls from ${what}… ${n} functions`), start ? [start] : []);
     setGraph(g);
     const files = g.boxes.filter((b) => !b.dead).length, stop = g.truncated ? ` · stopped at ${g.limit} functions` : '';
     setStatus(g.note || (g.library
       ? `from the public API (${g.library} functions) · ${g.fns.length} functions reached · ${files} files${stop}`
-      : `${g.entries.length > 1 ? `${g.entries.length} entry points · ` : ''}${g.fns.length} functions · ${files} files${stop}`));
+      : `${g.fns.length} functions · ${files} files${stop}`));
     await buildLaneRun();
     // clangd may still be loading its index: rebuild until every call resolves to a definition (30 s at most)
     if (g.unresolved && Date.now() - firstBuild < 30000) setTimeout(rebuild, 2000);
@@ -47,7 +70,7 @@ export function ensureBuilt() { if (builtFor !== root() || !graph()) rebuild(); 
 
 /** The run of the chosen entry point. A rebuild keeps the place in the walk when the same rows come back. */
 async function buildLaneRun() {
-  const g = graph(), l = g?.lanes[lane()];
+  const g = graph(), l = g?.lanes[0];
   if (!g || !l) { setSeq(null); setTrail([]); return; }
   setRunStatus(t('reading each function…'));
   const run = await buildRun(l.start, (d, n) => setRunStatus(`reading each function… ${d} of ${n}`));
@@ -57,12 +80,17 @@ async function buildLaneRun() {
   if (!keep) setTrail([startState(s)]);
   setRunStatus('');
 }
+/** Shows another entry point: kept as this folder's choice, then traced and run. */
 export async function setLane(i: number) {
-  if (i === lane()) return;
+  const e = entries()[i];
+  if (!e || i === lane() && seq()) return;
+  chosen = entryKey(e);
+  try { localStorage.setItem(chosenKey(), chosen); } catch { /* kept for this run */ }
   setLaneRaw(i);
   setSeq(null);
   setTrail([]);
-  await buildLaneRun();
+  setGraph(null);
+  await rebuild();
 }
 
 /** One move along the run, for either view: the new place, or a note saying why it can't be made here. */

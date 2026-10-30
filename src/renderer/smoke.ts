@@ -11,8 +11,9 @@ import { files, states } from './lib/store';
 import { offsetToPos } from './lib/cm';
 import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
-import { buildFlow, buildRun } from './lib/flow';
-import { setFlowView, changed, seq } from './lib/flowstore';
+import { buildFlow, buildRun, findEntries, resolveEntry } from './lib/flow';
+import { rankEntries } from '../shared/entries';
+import { setFlowView, changed, seq, entries, lane, entryStart, runStatus } from './lib/flowstore';
 import { pal } from './lib/lines';
 
 const errors: string[] = [];
@@ -609,7 +610,9 @@ async function bootCheck(report: Record<string, unknown>) {
     setFlowView('sequence');
     await sleep(300);
     // the analyser end to end, through the app's own clangd: every step from main, in execution order
-    const g = await buildFlow(root());
+    const entry = rankEntries(await findEntries(root()))[0];
+    report.entry = entry?.rel;
+    const g = await buildFlow(root(), undefined, entry ? [await resolveEntry(entry)] : []);
     const run = await buildRun(g.lanes[0].start);
     report.runSteps = run.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, ''));
     report.runIndirect = run.rows.filter((r) => r.kind === 'indirect').map((r) => `${r.via} ${r.text}`);
@@ -708,6 +711,7 @@ async function largeCheck(report: Record<string, unknown>) {
     const t5 = performance.now();
     const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
     const fl = await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0 && !/tracing/.test(flowStatus()), 240000);
+    steps.entry = { count: entries().length, chosen: entries()[lane()]?.rel, name: entries()[lane()]?.name, start: entryStart() };
     steps.flow = { status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, dead: document.querySelectorAll('.fbox.dead').length, arrows: document.querySelectorAll('.flab').length, ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
     await sleep(1500);
     await api.smoke.capture('large-2-flow');
@@ -716,6 +720,48 @@ async function largeCheck(report: Record<string, unknown>) {
     await sleep(1000);
     await until(() => !/tracing/.test(flowStatus()), 240000);
     await sleep(1500);
+    // the run of the first entry point, then the boxes view drawn from it: how long, how big, and readable at every zoom
+    const t7 = performance.now();
+    await until(() => !!seq() && !runStatus() && document.querySelectorAll('.fbox .fr, .fbox .t').length > 0, 240000);
+    steps.runState = { runStatus: runStatus(), status: flowStatus(), rows: seq()?.run.rows.slice(0, 8).map((r: any) => `${r.kind} ${r.name ?? r.key ?? ''}`) };
+    steps.run = { rows: seq()?.run.rows.length, steps: seq()?.run.rows.filter((r) => r.kind === 'step').length, files: document.querySelectorAll('.fbox').length, ms: Math.round(performance.now() - t7) };
+    const chipOf = (t: string) => [...document.querySelectorAll('.bxctl .chip')].find((c) => c.textContent === t) as HTMLElement | undefined;
+    const zooms: Record<string, unknown>[] = [];
+    for (const z of ['fit width', 'fit all', '100%', '150%', '−', '−', '−', '−', '−', '−']) {
+      const tz = performance.now();
+      chipOf(z)?.click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const frameMs = Math.round(performance.now() - tz);
+      await sleep(600);
+      const bad = auditBoxes();
+      zooms.push({ z, at: document.querySelector('.bxctl .ro')?.textContent, level: (document.querySelector('.bxctl .lvl')?.textContent ?? '').split(' ·')[0], boxes: document.querySelectorAll('.fbox').length, labels: document.querySelectorAll('.flab').length, frameMs, collisions: bad.length, first: bad.slice(0, 2) });
+    }
+    steps.boxZooms = zooms;
+    await api.smoke.capture('large-4-boxes-zoomed-out');
+    chipOf('100%')?.click();
+    await sleep(800);
+    await api.smoke.capture('large-5-boxes-100');
+    // the sequence on the same run: each step answers within a frame or two, and no text lands on other text
+    setFlowView('sequence');
+    await until(() => document.querySelectorAll('.seqv .srow').length > 0, 30000);
+    const sv = document.querySelector('.seqv') as HTMLElement, moves: number[] = [], seqBad: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      const tm = performance.now();
+      sv.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      moves.push(Math.round(performance.now() - tm));
+      await sleep(120);
+    }
+    await sleep(600);
+    seqBad.push(...auditSequence());
+    steps.sequence = { rows: document.querySelectorAll('.seqv .srow').length, moveMsMax: Math.max(...moves), moveMsMedian: moves.sort((a, b) => a - b)[moves.length >> 1], collisions: seqBad.length, first: seqBad.slice(0, 2) };
+    await api.smoke.capture('large-6-sequence');
+    setFlowView('boxes');
+    const t8 = performance.now();
+    let back = false;
+    for (let f = 0; f < 1800 && !(back = document.querySelectorAll('.fbox:not(.dead)').length > 0); f++) await new Promise((r) => requestAnimationFrame(r));
+    steps.boxesBack = back ? Math.round(performance.now() - t8) : 'timed out';
+    await sleep(800);
     steps.flowMs = (document.querySelector(".flow") as any)?.dataset?.ms;
     steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, visible: [...document.querySelectorAll('.fbox:not(.dead)')].filter((e) => +getComputedStyle(e).opacity > 0.9).length };
     await api.smoke.capture('large-2b-flow-indexed');

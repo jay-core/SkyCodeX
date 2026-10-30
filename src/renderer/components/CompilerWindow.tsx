@@ -1,7 +1,6 @@
 import { For, Show, createSignal, createResource, onMount, onCleanup } from 'solid-js';
 import { api } from '../lib/api';
-import { root, flash } from '../lib/store';
-import { startLsp } from '../lib/lsp';
+import { flash, restartLsp } from '../lib/store';
 import { afterPaint } from '../lib/motion';
 
 export const [compilerOpen, setCompilerOpen] = createSignal(false);
@@ -69,12 +68,12 @@ export default function CompilerWindow() {
   const useEngine = async (value: string) => {
     await api.settings.set('clangd.path', value);
     await refetch();
-    if (root()) startLsp(root());   // the new engine takes over at once
+    restartLsp();   // the new engine takes over at once
   };
   const readAs = async (value: string) => {
     await api.settings.set('compiler.read_as', value);
     await refetch();
-    if (root()) startLsp(root());   // clangd reads the project again as that compiler
+    restartLsp();   // clangd reads the project again as that compiler
   };
   const install = async (r: Release, replaces?: string) => {
     setConfirm(null); setPicking(false); setPickKind(null);
@@ -90,7 +89,7 @@ export default function CompilerWindow() {
     const res = (await api.packs.remove(p.id)) as { ok: boolean; message?: string };
     if (!res.ok) flash(res.message ?? 'not removed');
     await refetch();
-    if (root() && info()?.setting === 'auto') startLsp(root());
+    if (info()?.setting === 'auto') restartLsp();
   };
 
   const engineLabel = (i: Info) =>

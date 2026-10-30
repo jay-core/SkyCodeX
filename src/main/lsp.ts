@@ -51,6 +51,13 @@ export function findCompileCommands(root: string): string | null {
   return null;
 }
 
+/** Where the project's own compile database is and when it was written ('' when it has none). */
+export function ccStamp(root: string): string {
+  const d = root ? findCompileCommands(root) : null;
+  if (!d) return '';
+  try { return `${d}@${fs.statSync(path.join(d, 'compile_commands.json')).mtimeMs}`; } catch { return ''; }
+}
+
 const SKIP_DIR = /^(\.|node_modules$|__pycache__$|language_packs$|third[_-]?party$|vendor$)/i;
 const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|m|mm)$/i, HEADER = /\.(h|hh|hpp|hxx|h\+\+|inl|ipp|tcc|tpp)$/i;
 const MAX_SOURCES = 20000;
@@ -123,6 +130,10 @@ export class LspClient {
 
   /** The compile_commands.json folder in use: the project's own, or the one SkyCodeX wrote for it. */
   ccDir: string | null = null;
+  /** The project's own compile_commands.json when clangd started (where, and when it was written). */
+  ccSeen = '';
+  /** Whether a build has since written or rewritten the project's own compile_commands.json, so clangd should start again. */
+  ccChanged(root: string): boolean { return ccStamp(root) !== this.ccSeen; }
 
   start(clangd: string, root: string, extraArgs: string[], stateDir?: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null, env?: Record<string, string>, drivers: (ccDir: string) => string[] = () => []): Promise<unknown> {
     const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
@@ -130,6 +141,7 @@ export class LspClient {
     const own = !!cc;
     if (!cc && stateDir) { try { cc = ensureCompileCommands(root, stateDir, compiler); } catch (e) { this.onLog(`compile database: ${e}`); } }
     this.ccDir = cc;
+    this.ccSeen = ccStamp(root);
     if (cc) args.push(`--compile-commands-dir=${cc}`);
     // the compilers clangd may ask for their headers and macros: the one the code is read as, and those the project's
     // own compile_commands.json names (when they are installed compilers)

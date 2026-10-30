@@ -1,5 +1,7 @@
 // Typed access to the preload bridge.
 import type { LithoApi } from '../../preload/preload';
+import { normPath } from '../../shared/paths';
+export { normPath };
 
 declare global { interface Window { litho: LithoApi } }
 export const api = window.litho;
@@ -20,7 +22,7 @@ export function fileToUri(p: string): string {
 }
 export function uriToFile(u: string): string {
   const s = decodeURIComponent(u.replace(/^file:\/\//, ''));
-  return /^\/[A-Za-z]:/.test(s) ? s.slice(1) : s;
+  return normPath(/^\/[A-Za-z]:/.test(s) ? s.slice(1) : s);
 }
 export const basename = (p: string) => p.replace(/\\/g, '/').split('/').pop() ?? p;
 export const relPath = (root: string, p: string) => (p.startsWith(root) ? p.slice(root.length).replace(/^[\\/]/, '') : p);

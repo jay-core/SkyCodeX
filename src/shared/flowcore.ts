@@ -74,6 +74,17 @@ export function functionDefs(tree: Tree, text: string): FnDef[] {
   return out;
 }
 
+/**
+ * Names a file may define, from its text alone: a name followed by "(" on a line that starts at the left margin (the
+ * way C and C++ definitions are written, the return type on that line or the one before). A cheap first sieve — the
+ * parser confirms each one — so that, before clangd's index is ready, a call into another file can find its body.
+ */
+export function definedNames(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/^(?![#/*\s{}])[^;{}()=\n]*?\b([A-Za-z_]\w*)\s*\(/gm)) out.add(m[1]);
+  return out;
+}
+
 function findDeep(n: SyntaxNode, name: string): SyntaxNode | null {
   for (let c = n.firstChild; c; c = c.nextSibling) {
     if (c.name === name) return c;

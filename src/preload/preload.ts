@@ -25,6 +25,9 @@ const api = {
     set: (key: string, value: unknown) => invoke('settings:set', key, value),
     onChange: (cb: (s: unknown) => void) => on('settings:changed', cb),
   },
+  shell: {
+    terminal: (dir: string) => invoke('shell:terminal', dir),
+  },
   fs: {
     pickFolder: () => invoke('fs:pickFolder'),
     pickFile: (dir: string) => invoke('fs:pickFile', dir),
@@ -34,6 +37,7 @@ const api = {
     targets: (root: string) => invoke('fs:targets', root),
     read: (file: string) => invoke('fs:read', file),
     exists: (file: string) => invoke('fs:exists', file),
+    mkdir: (dir: string) => invoke('fs:mkdir', dir),
     write: (file: string, text: string) => invoke('fs:write', file, text),
     mtime: (file: string) => invoke('fs:mtime', file),
     watch: (root: string) => invoke('fs:watch', root),
@@ -54,6 +58,7 @@ const api = {
   power: { battery: () => invoke('power:battery') as Promise<boolean>, onChange: (cb: (battery: boolean) => void) => on('power:battery', cb) },
   lsp: {
     start: (root: string) => invoke('lsp:start', root),
+    stale: () => invoke('lsp:stale') as Promise<boolean>,
     request: (method: string, params: unknown) => invoke('lsp:request', method, params),
     notify: (method: string, params: unknown) => invoke('lsp:notify', method, params),
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),

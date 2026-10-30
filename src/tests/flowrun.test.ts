@@ -158,6 +158,20 @@ describe('helpers', () => {
     expect(forCount('for (int i = 0; i < 4; ++i)', '{ if (i == 0) f(); puts("break"); }')).toBe(4);
     expect(forCount('for (int i = 0; i < 4; i += 2)', '{}')).toBeNull();
   });
+  it('a statement written by a macro (no range in the tree) still gives its calls, and nothing throws', () => {
+    // void f() {\n  GUARD(g());\n}  — clangd gives the macro's if no range; the call inside it keeps one
+    const text = 'void f() {\n  GUARD(g());\n}\n';
+    const R = (l1: number, c1: number, l2: number, c2: number) => ({ start: { line: l1, character: c1 }, end: { line: l2, character: c2 } });
+    const g = { key: 'g', name: 'g', project: true, ctor: false, container: '' };
+    const ast = { kind: 'Function', range: R(0, 0, 2, 1), children: [{ kind: 'Compound', role: 'statement', range: R(0, 9, 2, 1), children: [
+      { kind: 'If', role: 'statement', children: [{ kind: 'Call', role: 'expression', range: R(1, 8, 1, 11), children: [{ kind: 'DeclRef', role: 'expression', range: R(1, 8, 1, 9) }] }, { kind: 'Compound', role: 'statement' }] },
+    ] }] };
+    const f = analyseFunction(ast, text, [{ to: g, fromRanges: [R(1, 8, 1, 9)] }]);
+    expect(JSON.stringify(f.body)).toContain('"key":"g"');
+    // a tree the analyser cannot follow at all: the calls in source order, marked approximate
+    const bad = analyseFunction({ kind: 'Function', range: R(0, 0, 2, 1), children: [{ kind: 'Compound', role: 'statement', range: R(0, 9, 2, 1), children: [{ kind: 'Return', role: 'statement', range: undefined as never, children: [null as never] }] }] }, text, [{ to: g, fromRanges: [R(1, 8, 1, 9)] }]);
+    expect(bad.body).toEqual([{ t: 'call', to: g, at: { line: 1, character: 8 }, approx: true }]);
+  });
   it('matching parentheses skips strings, characters, raw strings and comments', () => {
     expect(matchParen('f(a, ")", \')\') x', 1)).toBe(13);
     expect(matchParen('f(/* ) */ a // )\n)', 1)).toBe(17);

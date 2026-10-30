@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCpp, loopsAt, functionDefs, offsetOf, lineOf, THREAD_RE } from '../shared/flowcore';
+import { parseCpp, loopsAt, functionDefs, definedNames, offsetOf, lineOf, THREAD_RE } from '../shared/flowcore';
 
 const SRC = `void Server::start() {
     for (int i = 0; i < 16; ++i) f(i);
@@ -42,5 +42,14 @@ describe('flow core', () => {
     expect(THREAD_RE.test('std::thread flusher([this] {')).toBe(true);
     expect(THREAD_RE.test('pthread_create(&t, 0, run, 0)')).toBe(true);
     expect(THREAD_RE.test('threading_model()')).toBe(false);
+  });
+  it('names a file may define, from the left margin: definitions and prototypes, not calls, macros or comments', () => {
+    const text = [
+      'UINT  _tx_thread_create(TX_THREAD *t,', '    CHAR *name)', '{', '    _tx_thread_system_resume(t);', '}',
+      'VOID', '_tx_initialize_kernel_enter(VOID)', '{ }',
+      'void Paint::update(int k) {}', 'static int helper(void);',
+      '#define TX_DISABLE() x()', '/* not(this) */', ' * nor(this)', 'int x = f(2);',
+    ].join('\n');
+    expect([...definedNames(text)].sort()).toEqual(['_tx_initialize_kernel_enter', '_tx_thread_create', 'helper', 'update']);
   });
 });

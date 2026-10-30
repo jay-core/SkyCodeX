@@ -6,7 +6,8 @@
 // shared as a link or written out as a walkthrough. Every position comes from layoutSeq (src/shared/flowseq.ts),
 // which never lets two rows or labels share space.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
-import { seq, trail, setTrail, runStatus, status, graph, lane, setLane, changed } from '../lib/flowstore';
+import { seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed } from '../lib/flowstore';
+import { entryKey as keyOfEntry } from '../lib/flow';
 import {
   move, Move, layoutSeq, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
   encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf,
@@ -62,7 +63,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const [compare, setCompare] = createSignal(false);
   const whatOptions = (it: number) => { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); };
   // ---- what you've read: the functions you have been to, kept per folder and start ----
-  const store = (kind: string) => `flow.${kind}:${root()}:${graph()?.lanes[lane()]?.start ?? ''}`;
+  const store = (kind: string) => `flow.${kind}:${root()}:${entryStart()}`;
   const [read, setRead] = createSignal<Set<string>>(new Set());
   createEffect(on([seq, root], () => setRead(new Set(load<string[]>(store('read'), [])))));
   createEffect(on(() => cur()?.at, (a) => {
@@ -333,7 +334,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
 
   // ---- sharing ----
   const [share, setShare] = createSignal(false);
-  const entryKey = () => graph()?.lanes[lane()]?.start ?? '';
+  const entryKey = () => entryStart();
   async function copyLink() {
     setShare(false);
     const t = encodeWalk(entryKey(), trail(), 40, notesByItem());
@@ -361,9 +362,9 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!s || !text.trim().startsWith('skycodex:walk')) return false;
     const entry = /entry=([^&]*)/.exec(text)?.[1];
     const want = entry ? decodeURIComponent(entry) : '';
-    const li = graph()?.lanes.findIndex((l) => l.start === want) ?? -1;
-    if (want && li < 0) { say({ key: 'G', what: 'this walk starts somewhere this folder does not have', why: want }); return true; }
-    if (li >= 0 && li !== lane()) { await setLane(li); s = S(); }
+    const li = entries().findIndex((e) => keyOfEntry(e) === want);
+    if (want && want !== entryStart() && li < 0) { say({ key: 'G', what: 'this walk starts somewhere this folder does not have', why: want }); return true; }
+    if (want && want !== entryStart()) { await setLane(li); s = S(); }
     const w = s ? decodeWalk(s, text) : null;
     if (!w) { say({ key: 'G', what: 'this walk does not match the run as it is now', why: 'the code changed since it was shared' }); return true; }
     setFolded(new Set<number>()); setPath(null);

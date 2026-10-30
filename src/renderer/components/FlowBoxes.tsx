@@ -25,6 +25,11 @@ const LABEL_PX = 12, LABEL_CH = 7.2;
 /** The zoom chosen last time, or null the first time. */
 const storedZoom = (): Zoom | null => { try { const z = localStorage.getItem('flow.boxes.zoom'); return z === 'all' || z === 'width' || z === '100' || z === '150' || z === '' ? z : null; } catch { return null; } };
 
+const ALT = navigator.platform.startsWith('Mac') ? '⌥' : 'Alt';
+
+/** The three levels' layouts of a run, kept while that run is shown: switching views and back lays nothing out again. */
+const layCache = new WeakMap<object, Partial<Record<Level, Lay>>>();
+
 export default function FlowBoxes(props: { switcher: JSX.Element }) {
   let scroller!: HTMLDivElement, mini!: HTMLCanvasElement, canvasEl!: HTMLDivElement;
   const reduce = () => !!settings()['motion.reduce'];
@@ -46,8 +51,12 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   createEffect(on(model, async (m) => {
     const g = ++gen;
     if (!m) { setLays({}); return; }
-    const out: Partial<Record<Level, Lay>> = {};
-    for (const lv of ['functions', 'files', 'folders'] as Level[]) { out[lv] = await layoutBoxes(m, lv, elk); if (g !== gen) return; }
+    let out = layCache.get(m.run);
+    if (!out) {
+      const fresh: Partial<Record<Level, Lay>> = {};
+      for (const lv of ['functions', 'files', 'folders'] as Level[]) { fresh[lv] = await layoutBoxes(m, lv, elk); if (g !== gen) return; }
+      layCache.set(m.run, out = fresh);
+    }
     setLays(out);
     if (!fitted || zoom()) {
       // the first time: fit the width if the functions stay readable there, else 100% and scroll
@@ -530,12 +539,12 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
             </div>
           )}</Show>
           <div class="bxctl">
-            <span class="lvl">{lv() === 'functions' ? 'functions' : lv() === 'files' ? 'files' : 'folders'}<Show when={unreached()}> · {unreached()} file{unreached() === 1 ? '' : 's'} not reached from this start (greyed in the folder tab)</Show></span>
+            <span class="lvl">{lv() === 'functions' ? 'functions' : lv() === 'files' ? 'files' : 'folders'}<Show when={unreached()}> · {unreached()} file{unreached() === 1 ? '' : 's'} not reached from this start</Show></span>
             <span class="grow" />
             <For each={[['all', 'fit all'], ['width', 'fit width'], ['100', '100%'], ['150', '150%']] as [Zoom, string][]}>{([z, t]) => <button class="chip" classList={{ on: zoom() === z }} onClick={() => { applyZoom(z); canvasEl.focus(); }}>{t}</button>}</For>
-            <button class="chip" title="zoom out (⌥ −)" onClick={() => zoomTo(k() / 1.25, { ms: 260 })}>−</button>
+            <button class="chip" title={`zoom out (${ALT} −)`} onClick={() => zoomTo(k() / 1.25, { ms: 260 })}>−</button>
             <span class="ro">{Math.round(k() * 100)}%</span>
-            <button class="chip" title="zoom in (⌥ +)" onClick={() => zoomTo(k() * 1.25, { ms: 260 })}>+</button>
+            <button class="chip" title={`zoom in (${ALT} +)`} onClick={() => zoomTo(k() * 1.25, { ms: 260 })}>+</button>
           </div>
           <Magnifier host={() => scroller} source={() => { const z = scroller?.querySelector('.bxsz') as HTMLElement | null; if (!z) return null; const r = scroller.getBoundingClientRect(); return { el: z, x: r.left - scroller.scrollLeft, y: r.top - scroller.scrollTop, w: z.offsetWidth, h: z.offsetHeight }; }} />
           <Show when={caption()}><div class="scap"><Show when={caption()!.key}><span class="key">{caption()!.key}</span></Show>{caption()!.what}<Show when={caption()!.why}><span class="why">{caption()!.why}</span></Show></div></Show>

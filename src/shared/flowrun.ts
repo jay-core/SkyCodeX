@@ -63,10 +63,18 @@ const LEFT_FIRST = /^(?:<<|>>|\[\]|->\*|,)$/;
 const before = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
 const within = (r: Range, outer: Range) => before(outer.start, r.start) && before(r.end, outer.end);
 const kids = (n: AstNode) => n.children ?? [];
+/** Statements read from their source text (header, keyword, declaration), which need a range to be read. */
+const SHAPED = new Set(['If', 'Switch', 'While', 'Do', 'For', 'CXXForRange', 'CXXTry', 'Return', 'Break', 'Continue', 'Goto', 'IndirectGoto', 'CoreturnStmt', 'Coreturn', 'Decl']);
 
-/** What one function does, in evaluation order. text is the function's whole file. */
+/**
+ * What one function does, in evaluation order. text is the function's whole file. A tree the analyser cannot follow
+ * still gives the function's calls, in source order and marked approximate, so one odd function never stops a run.
+ */
 export function analyseFunction(ast: AstNode, text: string, calls: OutCall[]): FnFlow {
-  return new Analyser(ast, text, calls).run();
+  try { return new Analyser(ast, text, calls).run(); } catch {
+    const at = calls.flatMap((c) => c.fromRanges.map((r) => ({ to: c.to, at: r.start }))).sort((a, b) => (before(a.at, b.at) ? -1 : 1));
+    return { body: at.map((x): FlowNode => ({ t: 'call', to: x.to, at: x.at, approx: true })), dropped: [] };
+  }
 }
 
 class Analyser {
@@ -178,6 +186,8 @@ class Analyser {
 
   private stmt(s: AstNode): FlowNode[] {
     if (!s.range && !kids(s).length) return [];
+    // a statement the tree gives no place for (written by a macro): its parts are read in order, without its shape
+    if (!s.range && SHAPED.has(s.kind)) return this.stmts(kids(s));
     const line = s.range?.start.line ?? 0;
     switch (s.kind) {
       case 'Compound': return this.stmts([s]);

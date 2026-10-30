@@ -3,7 +3,7 @@ import { createSignal, createRoot } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { EditorState } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
-import { api, basename } from './api';
+import { api, basename, normPath } from './api';
 import { setPowerPrefs } from './power';
 import { setPalette } from './lines';
 import { SETTINGS as ALL_SETTINGS } from '../../shared/settings-schema';
@@ -64,7 +64,8 @@ export function flash(msg: string, ms = 3200) {
   window.setTimeout(() => { if (toast() === msg) setToast(null); }, ms);
 }
 
-export async function openFolder(path: string) {
+export async function openFolder(folder: string) {
+  const path = normPath(folder);   // a folder kept by an older version may be spelled with backslashes
   for (const f of files.list) if (f.dirty) await api.buffers.save(f.path, states.get(f.path)!.doc.toString());
   setRoot(path); setFiles({ list: [], active: '' }); states.clear(); saved.clear();
   await api.fs.watch(path);
@@ -72,7 +73,15 @@ export async function openFolder(path: string) {
   persistSession();
 }
 
-export async function openFile(path: string, at?: { line: number; character: number }, textOverride?: string) {
+/** Starts clangd again on this folder (another engine, compiler or compile database), then hands it the open files. */
+export async function restartLsp() {
+  if (!root()) return;
+  await startLsp(root());
+  for (const [path, st] of states) openDoc(path, st.doc.toString());
+}
+
+export async function openFile(file: string, at?: { line: number; character: number }, textOverride?: string) {
+  const path = normPath(file);
   if (!states.has(path)) {
     let text: string;
     try { text = await api.fs.read(path); } catch (e) { flash(`can't open ${basename(path)}: ${e}`); return; }

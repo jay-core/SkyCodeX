@@ -6,13 +6,14 @@ import path from 'node:path';
 import { resolveDataDir, ensureLayout } from './datadir';
 import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
-import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers } from './files';
+import { atomicWrite, listDir, listSources, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
 import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync } from 'node:child_process';
 import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, Compiler, ReadAs } from './compilers';
+import { openTerminal } from './terminal';
 
 // ---------- portable data dir: decided before anything else touches the disk ----------
 const appRoot = path.resolve(__dirname, '..', '..');
@@ -117,21 +118,23 @@ ipcMain.handle('app:info', () => ({
 // ---------- files ----------
 ipcMain.handle('fs:pickFolder', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
-  return r.canceled ? null : r.filePaths[0];
+  return r.canceled ? null : slashPath(r.filePaths[0]);
 });
 ipcMain.handle('fs:pickFile', async (_e, dir: string) => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], defaultPath: dir || undefined });
-  return r.canceled ? null : r.filePaths[0];
+  return r.canceled ? null : slashPath(r.filePaths[0]);
 });
 ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
   const r = await dialog.showSaveDialog(win!, { defaultPath: defaultPath || undefined });
-  return r.canceled ? null : r.filePath;
+  return r.canceled ? null : slashPath(r.filePath);
 });
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
 ipcMain.handle('fs:targets', (_e, root: string) => buildTargets(root));
 ipcMain.handle('fs:read', (_e, file: string) => fs.readFileSync(file, 'utf8'));
 ipcMain.handle('fs:exists', (_e, file: string) => fs.existsSync(file));
+ipcMain.handle('fs:mkdir', (_e, dir: string) => { fs.mkdirSync(dir, { recursive: true }); return true; });
+ipcMain.handle('shell:terminal', (_e, dir: string) => openTerminal(dir));
 ipcMain.handle('fs:write', (_e, file: string, text: string) => { atomicWrite(file, text); dropBuffer(BUFFERS, file); return fs.statSync(file).mtimeMs; });
 ipcMain.handle('fs:mtime', (_e, file: string) => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } });
 
@@ -145,7 +148,7 @@ ipcMain.handle('fs:watch', (_e, root: string) => {
     let batch = new Set<string>(), timer: NodeJS.Timeout | undefined;
     watcher = fs.watch(root, { recursive: true }, (_ev, name) => {
       if (!name || IGNORE.test(name)) return;
-      batch.add(path.join(root, name));
+      batch.add(slashPath(path.join(root, name)));
       clearTimeout(timer);
       timer = setTimeout(() => { const b = [...batch]; batch = new Set(); send('fs:changedBatch', b); }, 150);
     });
@@ -177,6 +180,7 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
     return { ok: true, clangd, capabilities: lsp.capabilities };
   } catch (e) { return { ok: false, message: String(e) }; }
 });
+ipcMain.handle('lsp:stale', () => !!lspRoot && lsp.ccChanged(lspRoot));
 ipcMain.handle('lsp:request', (_e, method: string, params: unknown) => lsp.request(method, params));
 
 // ---------- language servers of other packs (Rust, Python, Go), started when a file of that language opens ----------

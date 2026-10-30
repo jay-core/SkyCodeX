@@ -522,6 +522,13 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scode .cm-editor { height: 100%; }
 .scode .snext { background: rgba(173, 155, 111, .14); box-shadow: inset 3px 0 #ad9b6f; }
 .lanes { display: flex; gap: 10px; margin-right: 12px; }
+.epick { position: relative; margin-right: 6px; }
+.eplist { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 520px; max-width: 70vw; background: #1f201f; box-shadow: 0 18px 40px rgba(0,0,0,.55); }
+.eplist input { width: 100%; box-sizing: border-box; padding: 9px 14px; background: none; border: 0; border-bottom: 1px solid #2a2d2a; outline: 0; font: 13px var(--mono); color: #e3e6df; }
+.eprows { max-height: 52vh; overflow: auto; padding: 4px 0; display: grid; }
+.eprows button { display: flex; gap: 12px; align-items: baseline; padding: 4px 14px; text-align: left; white-space: nowrap; overflow: hidden; }
+.eprows .nm { font: 12.5px var(--mono); color: #c9cdc5; } .eprows .w { font: 300 11.5px var(--ui); color: #5f665f; overflow: hidden; text-overflow: ellipsis; }
+.eprows button:hover, .eprows button.on { background: rgba(173,155,111,.12); } .eprows button.on .nm { color: var(--accent); }
 .seqv.still .seqin, .seqv.still .srow, .seqv.still .sframe, .seqv.still .sbar, .seqv.still .sarw, .seqv.still .sband { transition: none; animation: none; }
 
 /* ---------- call outlines (lib/callmarks.ts): a thin box in the colour of the card each call leads to ---------- */
