@@ -68,6 +68,8 @@ Mock-ups: `docs/concepts/flow-boxes/` (tinyhttp and thorvg, real data). Prototyp
 - **Every route between two functions:** shift-click a second function (either direction). The routes' rows and lines light (flowing dashes), everything else steps back; the preview pane lists each route, how often it is taken and the loops and early exits it passes (`past if (headers.empty()) → return`). 1–9 shows one route, Enter or "walk it" sends a marker along it lighting each function as it arrives, Esc clears.
 - **Play (Space):** a marker moves along the lines from step to step — up the lines it came in on for a return, down for a call — dim on the lines, the row lighting as it arrives, the view scrolling ahead when the next step is out of sight. A loop whose count is known goes round exactly that many times; one whose count is known only at run time goes round once and says so. + / − change the speed.
 - **Focus (F):** a function and two calls around it; the rest fades. **How often (H, or the chip):** each row shaded by the loops around it (`once`, `×4`, `2 loops`). **Follow a line:** click it to select the other end. **Export:** the diagram as drawn, as an SVG picture.
+- **The current step stands out at every zoom:** its box has an amber edge and a warm tint, its row a solid amber fill and bar, the line into it is thicker; the rows of its call chain are warm.
+- **Change ripple:** functions whose unsaved code differs from the file on disk are marked mint, and the rows of every call that reaches them faintly.
 
 **Two zoom levels, one graph.** Layout is ELK layered, left to right, orthogonal lines (as in the app today). The start file is on the left with `start ▸`.
 
@@ -103,7 +105,7 @@ Mock-ups: `docs/concepts/flow-boxes/` (tinyhttp and thorvg, real data). Prototyp
 
 **Audit:** the §5b collision audit covers this view too. It checks text against text, and **any line through text**. 0 collisions across all 23 tinyhttp walk states and the thorvg files view.
 
-## 3c. Ideas for both views (proposed, not built)
+## 3c. Ideas for both views (all built: §3b, §4)
 
 Demo: `docs/concepts/flow-ux/flow-ux-ideas.mp4` (1:51), played in the real app on the real tinyhttp run: `src/concepts/flow/ux/` (`data.ts` writes the run from the recorded clangd fixture, `ux.ts` draws each idea over the live sequence view, `record-ux.cjs` records it).
 
@@ -122,7 +124,27 @@ Demo: `docs/concepts/flow-ux/flow-ux-ideas.mp4` (1:51), played in the real app o
 - **End of the run:** a final marker (`end of the run · main returns`), counter `23 / 23 · end`.
 
 - **Built (step 2):** `src/shared/flowseq.ts` (pure: rows shown, every move, layout, the box's facts; tests in `src/tests/flowseq.test.ts`), `components/Sequence.tsx` (the view, drawing only the rows near the viewport so any run size stays fast), `components/SeqCode.tsx` (the step's code with the line leading to the next step marked), `lib/flowstore.ts` (graph, run, walk and view shared by both views; Tab keeps the step). Files as columns when they fit (≤ 8, ≥ 150 px each), call depth otherwise. Folding: a helper of ≤ 3 lines that calls nothing folds into its caller's row only when it runs there unconditionally — a helper inside a loop or an `if` keeps its row, so no condition is hidden. A function's extent comes from its syntax tree (call items can carry the first line only). The boot check walks the view with real key presses and audits every state for text on text (0), and checks the views keep the step.
-- **Not built yet:** P pin, F fold, / find, ⌥ → / ⌥ ← decisions, C / D / A detail levels (step 3), chapters on the spine, risk pixels (with the analyses, step 6), ↓ into an indirect call's candidates (with the engine gaps, step 7).
+- **Built (2026-10-30, ideas 1–8 and 10–13 of §3c):**
+  - **Quieter structure:** only the call chain you are in keeps its bars (3 px, warm); the others are hairlines. Rows off the walk stay readable (.55).
+  - **The return route:** when a move returns, a dashed line is drawn from the step left, back up the bar of what finished, into the caller and on to the next row, then fades (skipped with reduced motion).
+  - **Code in the box:** the selected step's box quotes the lines around its call in the caller, the call line marked (`from handle · server.cpp:28`).
+  - **Peek:** hovering a row for a moment shows its function's first lines; the selected step stays.
+  - **Breadcrumbs:** the header shows the whole call chain, each name a link; a long chain shows its first name and last four, `…` opens it all.
+  - **Chapters on the spine:** the entry function's own calls and loops, and the largest of them split one level down (`chapters()` in flowseq.ts); hairlines beside the spine, a list on hover, a click goes there.
+  - **Fold (⇧F):** a call's inner steps become one row under it — `+12 steps · parse_headers · route · …` and a mini spine of call depths; → passes over a folded call, a click or ⇧F opens it, and any move into it opens it. The layout guarantee holds folded (tested for every foldable call and audited in the boot check).
+  - **Search and paths (/):** find a function by name (with the steps it runs at), then pick one of its paths from the start; → then follows that path and rows off it step back; Esc leaves it.
+  - **Share:** copy a link to the walk (`skycodex:walk?entry=…&at=…`, places and loop passes, checked against the run when opened — paste it into G) or save it as a walkthrough (`.md`: each place, where it is, who calls it, the loops and conditions around it).
+  - **Tour (T):** plays step by step, naming each step and its caller, and waits at each loop and decision (↵ go on, R another pass, L leave).
+- **Built with them (the new ideas of §3c):**
+  - **What if · compare:** a condition's note on a row is a question (`what if headers.empty() is true?`); asking it folds away the steps it would skip into one row (`if headers.empty() is true: handle returns here · 13 rows would not run`), and compare shows both shapes side by side — the steps as they run, and what happens instead (`then: back in start`). From the run alone (`whatIf()` in flowseq.ts, tested); Esc ends it.
+  - **Depth skyline:** the whole run as a profile of call depth along the bottom (loops shaded, edits mint, notes marked); drag along it to scrub; K hides it.
+  - **Jump letters (J):** every row in view gets two letters; type them to go there.
+  - **What you've read:** functions you have been to are ticked and counted (`read 16 of 23`), kept per folder and start.
+  - **Margin notes (N):** a note on a step, shown at the end of its row and on the spine; kept per folder and start, carried in the walk's link and written into the walkthrough.
+  - **Change ripple:** as in boxes, with a note in the header (`edited, not saved: handle · runs at 10`).
+  - **The return line** has a colour of its own (Settings → colours → flow, `#62d6ff` by default), thin and dashed.
+- **The magnifier (both views):** the chip or M turns on a lens that follows the pointer and shows a live copy of the view under it at 1.5×, 2×, 3× or 4× (− / + beside the chip); it stays inside the view, works at any zoom and is remembered — for reading small text without zooming everything, and for weaker eyesight.
+- **Not built yet:** P pin, ⌥ → / ⌥ ← decisions, C / D / A detail levels (step 3), risk pixels (with the analyses, step 6), ↓ into an indirect call's candidates (with the engine gaps, step 7).
 
 ## 5. Detail levels (per function or everywhere)
 
@@ -292,7 +314,7 @@ All deterministic, from the same syntax trees, call graph, thread starts and lib
 ## 11. Open items
 
 - Rightmost column crowding when code rows are shown everywhere: horizontal scroll for that column, or wrapped code rows.
-- Boxes view, still to do: the Tab transition (rows gliding into their boxes), PNG export, the loupe, the shared-utility rule for very large projects (a file called from many others drawn without lines).
+- Boxes view, still to do: the Tab transition (rows gliding into their boxes), PNG export, the shared-utility rule for very large projects (a file called from many others drawn without lines).
 - Virtual-call overrides in the flow engine (`src/renderer/lib/flow.ts`): written, not yet reaching overrides (class-base map + `workspace/symbol`).
 - Programs view (several `main`s) not yet built in the app; data side (lanes, shared files, starts-another-program) is in `flow.ts`.
 

@@ -12,7 +12,7 @@ import { offsetToPos } from './lib/cm';
 import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
 import { buildFlow, buildRun } from './lib/flow';
-import { setFlowView } from './lib/flowstore';
+import { setFlowView, changed, seq } from './lib/flowstore';
 import { pal } from './lib/lines';
 
 const errors: string[] = [];
@@ -229,6 +229,9 @@ export async function runSmoke() {
     await sleep(1200);
     report.flowBoxes = [...document.querySelectorAll('.fbox .t')].map((e) => e.textContent);
     report.flowLabels = [...document.querySelectorAll('.flab')].map((e) => e.textContent);
+    // the rename above is unsaved: the change ripple marks the renamed function's row
+    report.flowRipple = [...document.querySelectorAll('.fbox .fr.chg .nm')].map((e) => e.textContent);
+    report.flowChanged = [...changed()].map((i) => { const r = seq()!.run.rows[i]; return `${r.name} ${r.file.split('/').pop()}:${r.start}+${r.lines}`; });
     await api.smoke.capture('5-flow');
     const server = [...document.querySelectorAll('.fbox')].find((e) => /src\/server\.cpp$/.test(e.querySelector('.t')?.getAttribute('title') ?? '')) as HTMLElement | undefined;
     if (server) {
@@ -552,6 +555,21 @@ async function bootCheck(report: Record<string, unknown>) {
     (report.seqCollisions as string[]).push(...auditSequence());
     await api.smoke.capture('seq-handle');
     report.seqCodeLines = document.querySelectorAll('.scode .cm-line').length;
+    // the lines around the call in the step's box; a folded call (and the audit with it); chapters from the spine
+    report.seqCallCode = document.querySelectorAll('.sband .scall > div:not(.from)').length;
+    await press('Home'); for (let i = 0; i < 9; i++) await press('ArrowRight');
+    await press('F', true);
+    report.seqFold = !!document.querySelector('.srow.sfold');
+    (report.seqCollisions as string[]).push(...auditSequence().map((x) => `folded: ${x}`));
+    await press('F', true);
+    const spine = document.querySelector('.sspine') as HTMLElement, sr = spine.getBoundingClientRect();
+    spine.dispatchEvent(new MouseEvent('mousemove', { clientX: sr.left + 3, clientY: sr.top + sr.height / 2, bubbles: true }));
+    await sleep(500);
+    report.seqChapters = document.querySelectorAll('.schap button').length;
+    spine.dispatchEvent(new MouseEvent('mouseleave'));
+    await sleep(500);
+    await press('Home');
+    for (let i = 0; i < 14; i++) await press('ArrowRight');
     report.seqUses = [...document.querySelectorAll('.seqv .srow .u')].map((e) => e.textContent);
     report.seqHeader = document.querySelector('.ph .seqk')?.textContent;
     const stepName = (document.querySelector('.ph .seqpath')?.textContent ?? '').split('›').pop()!.trim();

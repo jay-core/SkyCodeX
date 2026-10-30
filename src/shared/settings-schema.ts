@@ -103,6 +103,7 @@ function colors(): SettingDef[] {
     c('flow.now', '--flow-now', '#ad9b6f', 'the step you are on'),
     c('flow.repetition', '--flow-rep', '#6f9e9e', 'loops and passes'),
     c('flow.risk', '--flow-risk', '#b8605a', 'races and other risks'),
+    c('flow.return', '--flow-return', '#62d6ff', 'the line drawn back to the caller when a call returns'),
   ];
 }
 

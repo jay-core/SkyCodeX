@@ -5,7 +5,7 @@
 // the two; Space plays the run as a marker moving along the lines. The model and layout: src/shared/flowboxes.ts.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { seq, trail, graph, status, runStatus, stepMove } from '../lib/flowstore';
+import { seq, trail, graph, status, runStatus, stepMove, changed } from '../lib/flowstore';
 import { root, settings, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import {
@@ -14,6 +14,7 @@ import {
 } from '../../shared/flowboxes';
 import { move, loopsAt, Move } from '../../shared/flowseq';
 import StepPreview, { openStep } from './StepPreview';
+import Magnifier from './Magnifier';
 
 const elk = new ELK() as unknown as { layout: (g: unknown) => Promise<any> };
 type Zoom = 'all' | 'width' | '100' | '150' | '';
@@ -275,6 +276,16 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     setTimeout(() => setHot(new Set<number>()), 1600);
   }
 
+  // ---- the change ripple: functions edited and not saved, and the calls that reach them ----
+  const ripple = createMemo(() => {
+    const s = S(), c = changed(), chainOf = new Set<number>();
+    if (!s || !c.size) return { rows: c, chain: chainOf };
+    s.run.rows.forEach((r, i) => { if (c.has(stepOf(s.run, i)) && r.kind !== 'indirect' && r.kind !== 'value') for (let p = r.caller; p != null; p = s.run.rows[p].caller) chainOf.add(p); });
+    return { rows: c, chain: chainOf };
+  });
+
+
+
   // ---- captions ----
   const [caption, setCaption] = createSignal<{ key: string; what: string; why: string } | null>(null);
   let capTimer: ReturnType<typeof setTimeout> | undefined;
@@ -464,7 +475,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                     const fns = () => filesIn(f).flatMap((x) => model()!.rowsOf.get(x) ?? []);
                     return (
                       <Show when={p()}>
-                        <div class="fbox" classList={{ on: lv() !== 'functions' && selNode() === f, fade: fileOn(f) === false, start: filesIn(f).includes(startFile()) }}
+                        <div class="fbox" classList={{ cur: selNode() === f, fade: fileOn(f) === false, start: filesIn(f).includes(startFile()) }}
                           style={{ left: `${p()!.x}px`, top: `${p()!.y}px`, width: `${p()!.w}px`, height: `${p()!.h}px` }}
                           onMouseEnter={() => setHoverFile(f)} onMouseLeave={() => setHoverFile(null)}
                           onClick={(e) => { if (lv() !== 'functions') { const first = fns().sort((a, b) => R()[a].n - R()[b].n)[0]; if (first != null) { if (e.shiftKey) routeTo(first); else jumpRow(first); } } }}
@@ -484,7 +495,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                           <Show when={lv() === 'functions'}>
                             <For each={boxGeom(model()!, f, 'functions').rows}>{(r) => r.type === 'fn'
                               ? (
-                                <div class="fr" classList={{ sel: r.row === selRow(), chain: r.row !== selRow() && chain().has(r.row), on: rowOn(r.row) === true || hot().has(r.row), dim: rowOn(r.row) === false, hot: hot().has(r.row) }}
+                                <div class="fr" classList={{ sel: r.row === selRow(), chain: r.row !== selRow() && chain().has(r.row), on: rowOn(r.row) === true || hot().has(r.row), dim: rowOn(r.row) === false, hot: hot().has(r.row), chg: ripple().rows.has(r.row), chgc: ripple().chain.has(r.row) && !ripple().rows.has(r.row) }}
                                   style={{ top: `${r.y}px`, background: heat() && howOftenLevel(S()!.run, r.row).level ? `rgba(111,158,158,${[0, 0.1, 0.2, 0.32, 0.4][Math.min(4, howOftenLevel(S()!.run, r.row).level)]})` : undefined }}
                                   onClick={(e) => { e.stopPropagation(); if (e.shiftKey) routeTo(r.row); else jumpRow(r.row); canvasEl.focus(); }} title={`${short(R()[r.row].name)} · ${basename(f)}:${R()[r.row].line + 1}`}>
                                   <span class="n">{R()[r.row].n}</span><span class="nm">{short(R()[r.row].name)}</span>
@@ -526,6 +537,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
             <span class="ro">{Math.round(k() * 100)}%</span>
             <button class="chip" title="zoom in (⌥ +)" onClick={() => zoomTo(k() * 1.25, { ms: 260 })}>+</button>
           </div>
+          <Magnifier host={() => scroller} source={() => { const z = scroller?.querySelector('.bxsz') as HTMLElement | null; if (!z) return null; const r = scroller.getBoundingClientRect(); return { el: z, x: r.left - scroller.scrollLeft, y: r.top - scroller.scrollTop, w: z.offsetWidth, h: z.offsetHeight }; }} />
           <Show when={caption()}><div class="scap"><Show when={caption()!.key}><span class="key">{caption()!.key}</span></Show>{caption()!.what}<Show when={caption()!.why}><span class="why">{caption()!.why}</span></Show></div></Show>
         </div>
       </div>

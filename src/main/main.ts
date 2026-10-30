@@ -24,8 +24,11 @@ const data = resolveDataDir({
   appDataFallback: app.getPath('appData'),
 });
 ensureLayout(data.dir);
-app.setPath('userData', path.join(data.dir, 'state', 'chromium'));
-app.setPath('sessionData', path.join(data.dir, 'state', 'chromium'));
+// a smoke run keeps the interface's own storage apart too (state/smoke is emptied at its start, below), so it never
+// changes the user's choices and every run starts the same
+const CHROMIUM = path.join(data.dir, 'state', process.argv.includes('--smoke') ? 'smoke' : '', 'chromium');
+app.setPath('userData', CHROMIUM);
+app.setPath('sessionData', CHROMIUM);
 app.setPath('logs', path.join(data.dir, 'logs'));
 app.setPath('crashDumps', path.join(data.dir, 'logs', 'crashes'));
 

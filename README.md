@@ -14,9 +14,10 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 
 Working now:
 - **Flow view:** how the program runs, from every `main` (a library without one starts from its public API, `inc/`, `include/`), as two views of the same run (Tab switches, keeping the step):
-  - **sequence:** one row per call in execution order, stepping with the keyboard through calls, returns and loop passes
+  - **sequence:** one row per call in execution order, stepping with the keyboard through calls, returns and loop passes; the lines around each call, the whole call chain as links, chapters on the spine, folding a big call, finding a function and walking one of its paths, a tour, and walks shared as a link or saved as a walkthrough
   - **boxes:** files as boxes, the functions that run as rows in step order, a line from each caller's row to each callee's row with the calls' step numbers — readable at every zoom (fit width, fit all, 100%, 150%, any scale, with scrolling and a minimap; zoomed out it is drawn as files, then folders)
   - every route between two functions (shift-click), a marker that plays the run along the lines (Space), focus, how often each function runs, SVG export
+  - in both: a magnifier that follows the pointer at any zoom (M), what-if (fold away what a condition would skip and compare), a depth skyline to scrub, jump letters, what you've read, notes on steps, and the functions you have edited and not saved marked with every call that reaches them
   - the call graph comes from clangd's index, many requests at a time, so large projects build in seconds (thorvg: about 1,000 calls in under a second)
 - **Any project, built or not:** a folder without `compile_commands.json` (Meson or Make projects not yet built, plain source folders) gets one written into SkyCodeX's own data folder, never into the project, so clangd indexes everything and the project's own `#include`s resolve.
 - **Preview panes:**

@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';
-import { buildSeq, startState, move, Move, StepState, layoutSeq, stepFacts, loopsAt, embers, leadingComment, Seq } from '../shared/flowseq';
+import { buildSeq, startState, move, Move, StepState, layoutSeq, stepFacts, loopsAt, embers, leadingComment, Seq, hiddenBy, foldable, chapters, encodeWalk, decodeWalk, walkthrough, whatIf } from '../shared/flowseq';
 
 const FIX = path.join(__dirname, 'fixtures'), TINY = path.resolve(__dirname, '../../samples/tinyhttp');
 const run = loadFixture(path.join(FIX, 'tinyhttp-flow.json'), TINY).run('src/main.cpp#3');
@@ -165,5 +165,94 @@ describe('the selected step’s box', () => {
     expect(leadingComment(lines, run.rows[itemNamed('handle')].start)).toBe('Handles one client request end-to-end.');
     expect(leadingComment(lines, run.rows[itemNamed('start')].start)).toBe('');
     expect(leadingComment(['/**', ' * Two', ' * lines.', ' */', 'int f();'], 4)).toBe('Two lines.');
+  });
+});
+
+describe('folding a call', () => {
+  it('what runs inside takes no space, the call gets one row more for its summary, and nothing overlaps', () => {
+    for (let f = 0; f < s.items.length; f++) {
+      if (!foldable(s, f)) continue;
+      const folded = new Set([f]), hidden = hiddenBy(s, folded);
+      expect(hidden.size).toBe(s.lastItem[f] - f);
+      for (const a of [0, f, s.items.length]) {
+        if (hidden.has(a)) continue;
+        const g = layoutSeq(s, a, { width: 900, rowH: 23, slotH: 15, top: 46, boxH: 120, folded });
+        for (const i of hidden) expect(g.h[i]).toBe(0);
+        expect(g.h[f]).toBe(23 + 23 + (a === f ? 120 : 0));
+        const bands: [number, number, string][] = g.y.map((y, i) => [y, y + g.h[i], `row ${i}`] as [number, number, string]).filter(([y0, y1]) => y1 > y0);
+        for (const [fr, y] of g.slotY) bands.push([y, y + 15, `slot ${fr}`]);
+        bands.sort((p, q) => p[0] - q[0]);
+        for (let i = 1; i < bands.length; i++) expect(bands[i][0], `fold ${f}, state ${a}: ${bands[i - 1][2]} overlaps ${bands[i][2]}`).toBeGreaterThanOrEqual(bands[i - 1][1]);
+      }
+    }
+  });
+});
+
+describe('chapters', () => {
+  it('main\'s own calls, and the big one split one level down', () => {
+    const c = chapters(s).map((x) => `${x.depth}:${x.label} ${x.from}-${x.to}`);
+    expect(c).toEqual([
+      `0:load_config ${at('load_config')}-${at('read_env')}`, `0:Server ${at('Server')}-${at('Server')}`, `0:start ${at('start')}-${s.lastItem[at('start')]}`,
+      `1:listen ${at('listen')}-${at('listen')}`, `1:run ${at('run')}-${at('flush')}`, `1:↻ while (running_ && socket_.accept(req)) ${at('accept')}-${s.lastItem[at('start')]}`,
+      `0:stop ${at('stop')}-${s.items.length - 1}`,
+    ]);
+  });
+});
+
+describe('sharing a walk', () => {
+  it('a link reopens the same places, passes included', () => {
+    const w = walk(['next', 'next', 'again', 'again', 'next']).trail;
+    const back = decodeWalk(s, encodeWalk('src/main.cpp#3', w))!;
+    expect(back.entry).toBe('src/main.cpp#3');
+    expect(back.trail.map((t) => [t.at, t.passes])).toEqual(w.map((t) => [t.at, t.passes]));
+  });
+  it('notes travel with the link and into the walkthrough', () => {
+    const w = walk(['next', 'next']).trail;
+    const back = decodeWalk(s, encodeWalk('e', w, 40, { [at('read_env')]: 'reads TINY_PORT, then 3 more, a, b & c' }))!;
+    expect(back.notes).toEqual({ [at('read_env')]: 'reads TINY_PORT, then 3 more, a, b & c' });
+    expect(walkthrough(s, w, 't', (f) => f, () => '', back.notes)).toContain('   > note: reads TINY_PORT, then 3 more, a, b & c');
+  });
+  it('a link naming places this run does not have is refused', () => {
+    expect(decodeWalk(s, 'skycodex:walk?entry=x&at=999')).toBeNull();
+    expect(decodeWalk(s, `skycodex:walk?entry=x&at=${at('read_env')}.0-9`)).toBeNull();   // the loop runs 4 times
+    expect(decodeWalk(s, 'https://example.com')).toBeNull();
+  });
+  it('a walkthrough states each place, its caller and what is around it', () => {
+    const w = walk(['next', 'next', 'again']).trail;
+    const md = walkthrough(s, w, 'tinyhttp', (f) => f, (f, l) => fs.readFileSync(path.join(TINY, f), 'utf8').split('\n')[l]);
+    expect(md).toContain('**step 3 · read_env** — `src/config.cpp:');
+    expect(md).toContain('in the loop `for (int i = 0; i < 4; ++i)` · pass 2 of 4');
+    expect(md).toMatch(/called from load_config \(`src\/config.cpp:\d+`\): `const char\* v = read_env\(keys\[i\]\);`/);
+  });
+});
+
+describe('what if', () => {
+  const frameOf = (kind: string, text: string) => run.frames.findIndex((f) => f.kind === kind && f.text === text);
+  it('past an early return: everything after it is skipped and the function returns', () => {
+    const w = whatIf(s, frameOf('guard', 'if (headers.empty())'))!;
+    expect(w.ask).toBe('what if headers.empty() is true?');
+    expect(w.says).toBe('handle returns here');
+    expect(w.then).toBe('back in start');
+    expect(name(s, w.skip[0])).toBe('route');
+    expect(w.skip[1]).toBe(s.lastItem[at('handle')]);
+  });
+  it('the right side of && is not evaluated when the left is false', () => {
+    const w = whatIf(s, run.frames.findIndex((f) => f.kind === 'arm' && f.label.startsWith('&& to_lower')))!;
+    expect(w.ask).toBe('what if it != h.end() is false?');
+    expect(name(s, w.skip[0])).toBe('to_lower');
+    expect(w.rows).toBe(1);
+    expect(w.then).toBe('22 close');
+  });
+  it('the skipped rows take no space and nothing overlaps', () => {
+    const w = whatIf(s, frameOf('guard', 'if (headers.empty())'))!;
+    const g = layoutSeq(s, at('handle'), { width: 900, rowH: 23, slotH: 15, top: 46, boxH: 120, skip: w.skip });
+    for (let i = w.skip[0]; i <= w.skip[1]; i++) expect(g.h[i]).toBe(0);
+    const bands: [number, number][] = g.y.map((y, i) => [y, y + g.h[i]] as [number, number]).filter(([a, b]) => b > a);
+    for (const [, y] of g.slotY) bands.push([y, y + 15]);
+    bands.sort((p, q) => p[0] - q[0]);
+    for (let i = 1; i < bands.length; i++) expect(bands[i][0]).toBeGreaterThanOrEqual(bands[i - 1][1]);
+  });
+  it('a loop is not a condition', () => {
+    expect(whatIf(s, frameOf('loop', 'for (int i = 0; i < 4; ++i)'))).toBeNull();
   });
 });

@@ -200,7 +200,7 @@ export interface SeqGeom {
   barX: number[];                    // per item: where the bar of a running function is drawn
   height: number;
 }
-export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth'; laneMin?: number; maxLanes?: number }
+export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number] }
 
 /** Columns, rows and label slots. Every row and every label has its own y band; no two overlap (checked in tests). */
 export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
@@ -233,20 +233,161 @@ export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
       barX.push(depthX(R[row].depth) + 3);
     }
   });
+  // folded calls: what runs inside one is drawn as a single row under it (hidden items take no space)
+  const hidden = hiddenBy(s, o.folded);
+  // what-if: the items a condition would skip take no space; a row under the item before them says so
+  if (o.skip) for (let i = o.skip[0]; i <= o.skip[1]; i++) hidden.add(i);
   // label slots: each loop gets a thin row of its own above its first item (loops starting together stack, outermost first)
   const startsAt = new Map<number, number[]>();
-  for (const [f, [a]] of s.span) if (s.run.frames[f].kind === 'loop') startsAt.set(a, [...(startsAt.get(a) ?? []), f]);
+  for (const [f, [a]] of s.span) if (s.run.frames[f].kind === 'loop' && !hidden.has(a)) startsAt.set(a, [...(startsAt.get(a) ?? []), f]);
   for (const l of startsAt.values()) l.sort((p, q) => depthOf(s.run.frames, p) - depthOf(s.run.frames, q));
   const y: number[] = [], h: number[] = [], slotY = new Map<number, number>();
   let yy = o.top;
   for (let it = 0; it <= N; it++) {
     for (const f of startsAt.get(it) ?? []) { slotY.set(f, yy); yy += o.slotH; }
     y.push(yy);
-    const hh = it === at ? o.rowH + o.boxH : o.rowH;
+    const hh = hidden.has(it) ? 0 : (it === at ? o.rowH + o.boxH : o.rowH) + (o.folded?.has(it) && !hidden.has(it) ? o.rowH : 0) + (o.skip && it === o.skip[0] - 1 ? o.rowH : 0);
     h.push(hh);
     yy += hh;
   }
   return { mode, lanes, y, h, slotY, x, barX, height: yy };
+}
+/** The items folded calls hide: everything that runs inside each folded item (the folded item itself shows). */
+export function hiddenBy(s: Seq, folded?: Set<number>): Set<number> {
+  const out = new Set<number>();
+  for (const f of folded ?? []) for (let i = f + 1; i <= (s.lastItem[f] ?? f); i++) out.add(i);
+  for (const f of folded ?? []) if (out.has(f)) for (let i = f + 1; i <= s.lastItem[f]; i++) out.add(i);
+  return out;
+}
+/** Whether a call has anything inside it to fold. */
+export const foldable = (s: Seq, it: number) => it >= 0 && it < s.items.length && s.lastItem[it] > it;
+
+// ---------- what if a condition went the other way ----------
+export interface WhatIf { frame: number; skip: [number, number]; ask: string; says: string; then: string; rows: number }
+/**
+ * The steps that run only because a condition went one way, and what happens instead if it goes the other: past an
+ * early exit (`if (headers.empty()) return`) everything after it is skipped and the function returns (or the loop
+ * goes on, or is left); inside an if's arm or the right side of && / ||, the arm's steps are skipped. Null when the
+ * frame is not a condition or nothing shown runs under it.
+ */
+export function whatIf(s: Seq, frame: number): WhatIf | null {
+  const f = s.run.frames[frame], sp = s.span.get(frame);
+  if (!f || !sp || (f.kind !== 'guard' && f.kind !== 'arm') || sp[0] === 0) return null;
+  const R = s.run.rows, owner = f.owner != null ? R[f.owner]?.name.replace(/^.*::(?=[^:]+$)/, '') ?? '' : '';
+  const rows = sp[1] - sp[0] + 1;
+  const cond = f.text.replace(/^if \((.*)\)$/, '$1');
+  let ask: string, says: string;
+  if (f.kind === 'guard') {
+    ask = `what if ${cond} is true?`;
+    says = f.label === 'return' ? `${owner} returns here` : f.label === 'continue' ? 'the loop goes on to its next pass' : f.label === 'break' ? 'the loop is left here' : `${f.label} here`;
+  } else {
+    const m = /^(&&|\|\|) (.*)$/.exec(f.label);
+    if (m) { ask = `what if ${cond} is ${m[1] === '&&' ? 'false' : 'true'}?`; says = `${m[2]} is not evaluated`; }
+    else if (f.label === 'else') { ask = `what if ${cond} is true?`; says = 'the else branch does not run'; }
+    else { ask = `what if ${cond} is false?`; says = `the ${f.label === 'then' ? 'if' : f.label} branch does not run`; }
+  }
+  // where control goes instead: out of the function, round its loop, or on to what follows the skipped steps
+  const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  const caller = f.owner != null ? R[f.owner]?.caller : null;
+  const loop = f.parent != null ? s.run.frames[f.parent] : null;
+  let then: string;
+  if (f.kind === 'guard' && f.label === 'return') then = caller != null ? `back in ${short(R[caller].name)}` : 'the end of the run';
+  else if (f.kind === 'guard' && (f.label === 'continue' || f.label === 'break') && loop?.kind === 'loop') then = f.label === 'continue' ? `the next pass of ${loop.text}` : `on after ${loop.text}`;
+  else then = sp[1] + 1 < s.items.length ? `${R[s.items[sp[1] + 1]].kind === 'step' ? R[s.items[sp[1] + 1]].n + ' ' : ''}${short(R[s.items[sp[1] + 1]].name)}` : 'the end of the run';
+  return { frame, skip: [sp[0], sp[1]], ask, says, then, rows };
+}
+
+// ---------- chapters: the run's parts, for the spine ----------
+export interface Chapter { from: number; to: number; label: string; depth: number }
+/**
+ * The run's parts: each call the entry function makes (and each loop in its own body) is a chapter; a chapter that is
+ * more than a quarter of the run is split the same way one level down. Only what the run states.
+ */
+export function chapters(s: Seq): Chapter[] {
+  const R = s.run.rows, N = s.items.length, out: Chapter[] = [];
+  if (!N) return out;
+  const parts = (owner: number, from: number, to: number, depth: number) => {
+    const res: Chapter[] = [];
+    const loops = s.run.frames.map((f, k) => ({ f, k })).filter(({ f, k }) => f.kind === 'loop' && f.owner === owner && s.span.has(k));
+    for (let it = from; it <= to; it++) {
+      const row = s.items[it];
+      if (R[row].caller !== owner) continue;
+      const loop = loops.find(({ k }) => s.span.get(k)![0] === it);
+      if (loop) { const [a, b] = s.span.get(loop.k)!; res.push({ from: a, to: b, label: `↻ ${loop.f.text}`, depth }); it = b; continue; }
+      res.push({ from: it, to: s.lastItem[it], label: R[row].name.replace(/^.*::(?=[^:]+$)/, ''), depth });
+      it = s.lastItem[it];
+    }
+    return res;
+  };
+  for (const c of parts(s.items[0], 1, N - 1, 0)) {
+    out.push(c);
+    if (c.to - c.from + 1 > N / 4) {
+      const owner = c.label.startsWith('↻') ? R[s.items[c.from]].caller! : s.items[c.from];
+      out.push(...parts(owner, c.label.startsWith('↻') ? c.from : c.from + 1, c.to, 1));
+    }
+  }
+  return out;
+}
+
+// ---------- walks to share ----------
+/** A walk as text that reopens it: the entry point's key and the places walked (item, then loop passes). */
+export function encodeWalk(entry: string, trail: StepState[], keep = 40, notes: Record<number, string> = {}): string {
+  const states = trail.slice(-keep).map((t) => [t.at, ...Object.entries(t.passes).filter(([, p]) => p > 1).map(([f, p]) => `${f}-${p}`)].join('.'));
+  const ns = Object.entries(notes).filter(([, t]) => t.trim()).map(([it, t]) => `${it}:${encodeURIComponent(t)}`).join(',');
+  return `skycodex:walk?entry=${encodeURIComponent(entry)}&at=${states.join(',')}${ns ? `&notes=${encodeURIComponent(ns)}` : ''}`;
+}
+/** The places a shared walk names, checked against this run; null when it is not a walk or names places that do not exist. */
+export function decodeWalk(s: Seq, text: string): { entry: string; trail: StepState[]; notes: Record<number, string> } | null {
+  const m = /^skycodex:walk\?entry=([^&]*)&at=([\d.,-]+)(?:&notes=([^&]*))?$/.exec(text.trim());
+  if (!m) return null;
+  const trail: StepState[] = [];
+  for (const part of m[2].split(',')) {
+    const [a, ...ps] = part.split('.');
+    const at = Number(a);
+    if (!Number.isInteger(at) || at < 0 || at > s.items.length) return null;
+    const passes: Record<number, number> = {};
+    for (const f of loopsAt(s, at)) passes[f] = 1;
+    for (const p of ps) { const [f, n] = p.split('-').map(Number); if (!(f in passes) || !(n >= 1)) return null; const c = s.run.frames[f].count; if (c != null && n > c) return null; passes[f] = n; }
+    trail.push({ at, passes, how: trail.length ? 'jump' : 'start', key: '', what: '', why: '' });
+  }
+  const notes: Record<number, string> = {};
+  if (m[3]) for (const part of decodeURIComponent(m[3]).split(',')) {
+    const k = part.indexOf(':'), it = Number(part.slice(0, k));
+    if (k < 1 || !Number.isInteger(it) || it < 0 || it >= s.items.length) return null;
+    notes[it] = decodeURIComponent(part.slice(k + 1));
+  }
+  return trail.length ? { entry: decodeURIComponent(m[1]), trail, notes } : null;
+}
+/**
+ * A walk written out as a walkthrough to read or send: each place in the order walked, what runs there, where it is,
+ * who calls it and the loops and conditions around it — each line restating what the run proved.
+ */
+export function walkthrough(s: Seq, trail: StepState[], title: string, rel: (file: string) => string, lineOf: (file: string, line: number) => string, notes: Record<number, string> = {}): string {
+  const R = s.run.rows, out = [`# ${title}`, '', `${trail.length} places, in the order walked.`, ''];
+  const seen = new Set<string>();
+  let k = 0;
+  for (const t of trail) {
+    const key = `${t.at}|${JSON.stringify(t.passes)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (t.at >= s.items.length) { out.push(`${++k}. **end of the run** — ${R[s.items[0]]?.name ?? 'the entry point'} returns`, ''); continue; }
+    const r = R[s.items[t.at]], short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+    const head = r.kind === 'step' ? `step ${r.n} · ${short(r.name)}` : r.kind === 'ref' ? `${short(r.name)} again (step ${R[r.ref!].n})` : r.kind === 'indirect' ? `call through ${r.via}` : `${r.name}, named not called`;
+    out.push(`${++k}. **${head}**${r.kind === 'step' || r.kind === 'ref' ? ` — \`${rel(r.file)}:${r.line + 1}\`` : ''}`);
+    if (r.caller != null && r.at) {
+      const cf = R[r.caller];
+      out.push(`   called from ${short(cf.name)} (\`${rel(cf.file)}:${r.at.line + 1}\`): \`${lineOf(cf.file, r.at.line).trim()}\``);
+    }
+    for (const f of r.frames.map((i) => ({ i, fr: s.run.frames[i] }))) {
+      if (f.fr.kind === 'loop') out.push(`   in the loop \`${f.fr.text}\`${t.passes[f.i] ? ` · pass ${t.passes[f.i]}${f.fr.count != null ? ` of ${f.fr.count}` : ''}` : ''}`);
+      else if (f.fr.kind === 'guard') out.push(`   only past \`${f.fr.text}\` (it can ${f.fr.label})`);
+      else if (f.fr.kind === 'arm') out.push(`   only when \`${f.fr.text}\`${f.fr.label === 'else' ? ' is false' : ''}`);
+      else if (f.fr.kind === 'thread') out.push('   on a new thread');
+    }
+    if (notes[t.at]?.trim()) out.push(`   > note: ${notes[t.at].trim()}`);
+    out.push('');
+  }
+  return out.join('\n');
 }
 function depthOf(frames: RunFrame[], f: number): number { let d = 0; for (let p = frames[f].parent; p != null; p = frames[p].parent) d++; return d; }
 

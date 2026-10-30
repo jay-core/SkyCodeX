@@ -2,7 +2,8 @@
 // view shows. Kept outside the components so switching views (Tab) keeps everything, the selected step included.
 import { createSignal } from 'solid-js';
 import { buildFlow, buildRun, FlowGraph } from './flow';
-import { root } from './store';
+import { root, files, states } from './store';
+import { api } from './api';
 import { lspState } from './lsp';
 import { buildSeq, startState, move, Move, Seq, StepState } from '../../shared/flowseq';
 import { t } from './i18n';
@@ -72,4 +73,48 @@ export function stepMove(m: Move): { state?: StepState; note?: string } {
   if (r.note) return { note: r.note };
   setTrail(r.trail);
   return { state: r.trail[r.trail.length - 1] };
+}
+
+// ---------- the change ripple: functions of the run edited and not yet saved ----------
+/** Step rows whose function's code in an unsaved buffer differs from the file on disk. */
+export const [changed, setChanged] = createSignal<Set<number>>(new Set());
+let changedGen = 0;
+export async function refreshChanged() {
+  const s = seq(), g = ++changedGen;
+  if (!s) { setChanged(new Set<number>()); return; }
+  const out = new Set<number>();
+  for (const f of files.list) {
+    if (!f.dirty || !states.has(f.path)) continue;
+    const buf = states.get(f.path)!.doc.toString().split('\n');
+    const disk = ((await api.fs.read(f.path).catch(() => '')) as string).split('\n');
+    if (g !== changedGen) return;
+    // the edited region: everything between the lines that still match from the top and from the bottom
+    let p = 0, q = 0;
+    while (p < buf.length && p < disk.length && buf[p] === disk[p]) p++;
+    while (q < buf.length - p && q < disk.length - p && buf[buf.length - 1 - q] === disk[disk.length - 1 - q]) q++;
+    const a = p, b = Math.max(p, buf.length - q);   // buffer lines [a, b) changed (an empty range is a pure deletion at a)
+    s.run.rows.forEach((r, i) => {
+      if (r.kind !== 'step' || r.file !== f.path) return;
+      const end = r.start + Math.max(1, r.lines);
+      if (r.start < Math.max(b, a + 1) && end > a) out.add(i);
+    });
+  }
+  if (g === changedGen) setChanged(out);
+}
+
+// ---------- the magnifier (both views): off, or how much larger the lens shows ----------
+const storedMag = (() => { try { const v = Number(localStorage.getItem('flow.magnify')); return v >= 1.5 && v <= 4 ? v : 0; } catch { return 0; } })();
+const lastMag = (() => { try { const v = Number(localStorage.getItem('flow.magnify.last')); return v >= 1.5 && v <= 4 ? v : 2; } catch { return 2; } })();
+export const [magnify, setMagnifyRaw] = createSignal(storedMag);
+let magStrength = storedMag || lastMag;
+export function setMagnify(z: number) {
+  setMagnifyRaw(z);
+  if (z) magStrength = z;
+  try { localStorage.setItem('flow.magnify', String(z)); if (z) localStorage.setItem('flow.magnify.last', String(z)); } catch { /* kept for this run */ }
+}
+export const toggleMagnify = () => setMagnify(magnify() ? 0 : magStrength);
+/** One step stronger or weaker: 1.5×, 2×, 3×, 4×. */
+export function stepMagnify(dir: 1 | -1) {
+  const steps = [1.5, 2, 3, 4], i = steps.indexOf(magnify() || magStrength);
+  setMagnify(steps[Math.max(0, Math.min(steps.length - 1, (i < 0 ? 1 : i) + dir))]);
 }
