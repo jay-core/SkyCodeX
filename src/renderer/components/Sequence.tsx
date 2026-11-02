@@ -6,13 +6,14 @@
 // shared as a link or written out as a walkthrough. Every position comes from layoutSeq (src/shared/flowseq.ts),
 // which never lets two rows or labels share space.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
-import { seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed } from '../lib/flowstore';
+import { seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
+import { watch, journey, watchable, argName } from '../../shared/flowwatch';
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
   move, Move, layoutSeq, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
   encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings } from '../../shared/flowseq';
 import { routesBetween, RouteInfo } from '../../shared/flowboxes';
-import type { RunFrame } from '../../shared/flowrun';
+import type { RunFrame, Exit } from '../../shared/flowrun';
 import { settings, root, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
@@ -34,7 +35,7 @@ const KEYS: [string, string][] = [
   ['R', 'another pass of the loop'], ['L', 'leave the loop'], ['⇧ ←', 'previous pass'], [']  [', 'next / previous call in the same function'],
   ['Home / End', 'start / end of the run'], ['G', 'go to a step number, or paste a shared walk'], ['/', 'find a function and its paths from the start'],
   ['A', 'around the step: its callers and two levels of calls, the rest folded'], ['D / ⇧ D', 'more code in this function / everywhere: calls, decisions, all code'], ['⇧ F', 'fold or unfold this call'], ['T', 'tour: plays and waits at each loop and decision'], ['J', 'jump: two letters on every row in view'],
-  ['N', 'a note on this step'], ['K', 'the depth skyline on or off'], ['M', 'the magnifier on or off'], ['Enter', 'open the code at this step'],
+  ['E', 'ways out: the usual path dims, every early return, throw and exit lights'], ['W', 'watch a variable: every step that sets or reads it, through renames'], ['V', 'a value’s journey from this step: a parameter or what its calls pass on'], ['N', 'a note on this step'], ['K', 'the depth skyline on or off'], ['M', 'the magnifier on or off'], ['Enter', 'open the code at this step'],
   ['Space', 'play; again to pause'], ['+ / −', 'play faster / slower'], ['Tab', 'switch to the boxes view'], ['?', 'this list'],
 ];
 
@@ -130,6 +131,53 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   // what the run shows without running it (src/shared/flowseq.ts findings)
   const found = createMemo(() => (S() ? findings(S()!.run) : []));
   const [foundOpen, setFoundOpen] = createSignal(false);
+  // ways out (E): every early return, throw, break, goto and call that never returns, with what leads there
+  const exitsAt = (it: number): Exit[] => { const s = S(); return s ? earlyExits(s.run, s.items[it]) : []; };
+  const leaving = createMemo(() => { const s = S(); return s ? leavingCount(s.run) : 0; });
+  /** One way out as written: the condition it sits under, then the statement (or the call that never returns). */
+  const exitWords = (x: Exit) => `${x.when.length ? `${x.when[x.when.length - 1]} → ` : ''}${x.kind === 'noreturn' ? `${x.callee} — never returns` : x.text}`;
+  // watch a variable (W) and a value's journey (V): a picker, then the steps that touch it stay lit, saying how
+  const [pick, setPick] = createSignal<{ kind: 'W' | 'V'; q: string; options: { label: string; note: string; go: () => void }[] } | null>(null);
+  /** Values settled per call: the arm around this row that cannot happen in its call (first: the row that says why). */
+  const deadAt = (it: number) => {
+    const s = S();
+    if (!s) return null;
+    const f = s.run.rows[s.items[it]].frames.find((k) => s.run.frames[k].dead);
+    if (f == null) return null;
+    const fr = s.run.frames[f], before = it > 0 ? s.items[it - 1] : -1;
+    return { why: fr.dead!, first: !(before >= fr.from && before <= fr.to) };
+  };
+  const hitsAt = (it: number) => { const f = followed(), s = S(); return f && s ? f.hits.filter((h) => h.row === s.items[it]) : []; };
+  function openWatch() {
+    const s = S();
+    if (!s) return;
+    if (followed() || pick()) { setFollowed(null); setPick(null); say({ key: 'W', what: 'the whole run', why: '' }); return; }
+    setPick({ kind: 'W', q: '', options: watchable(s.run).map((v) => ({ label: `${v.owner ? `${short(v.owner)}::` : ''}${v.name}`, note: `${v.uses} function${v.uses === 1 ? '' : 's'}`, go: () => showFollow(`${v.owner ? `${short(v.owner)}::` : ''}${v.name}`, watch(s.run, v)) })) });
+  }
+  function openJourney() {
+    const s = S(), c = cur();
+    if (!s || !c || atEnd()) return;
+    if (followed() || pick()) { setFollowed(null); setPick(null); say({ key: 'V', what: 'the whole run', why: '' }); return; }
+    let row = s.items[c.at];
+    if (R()[row].kind !== 'step') row = R()[row].caller ?? row;
+    const e = s.run.effects?.[R()[row].key], names: string[] = [];
+    for (const p of e?.params ?? []) names.push(p.name);
+    R().forEach((r) => { if (r.caller === row) for (const a of r.args ?? []) { const n = argName(a); if (/^[A-Za-z_][\w.>-]*$/.test(n) && !names.includes(n)) names.push(n); } });
+    if (!names.length) { say({ key: 'V', what: `${short(R()[row].name)} takes and passes on nothing to follow`, why: '' }); return; }
+    setPick({ kind: 'V', q: '', options: names.map((n) => ({ label: n, note: e?.params?.some((p) => p.name === n) ? `a parameter of ${short(R()[row].name)}` : `passed on by ${short(R()[row].name)}`, go: () => showFollow(`${n} from ${short(R()[row].name)}`, journey(s.run, row, n)) })) });
+  }
+  function showFollow(label: string, hits: ReturnType<typeof watch>) {
+    setPick(null);
+    setFollowed({ label, hits });
+    const steps = new Set(hits.map((h) => h.row)).size;
+    say({ key: '·', what: `${label}: ${steps} step${steps === 1 ? '' : 's'} touch it`, why: steps ? 'the rest is dimmed · Esc for all' : 'nothing in this run sets or reads it' });
+    canvas.focus();
+  }
+  function toggleWaysOut() {
+    const on = !waysOut();
+    setWaysOut(on);
+    say({ key: 'E', what: on ? `ways out: ${leaving()} function${leaving() === 1 ? '' : 's'} can leave early` : 'the whole run', why: on ? 'the usual path is dimmed · E again for all' : '' });
+  }
   const CODE_H = 18;
   const code = createMemo(() => { const s = S(); return s ? codeBlocks(s, detailOf, (f) => lines(f)) : new Map(); });
   const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n: number, b: { lines: unknown[] }) => n + b.lines.length, 0) * CODE_H + 4])));
@@ -427,7 +475,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
 
   // ---- keys ----
   function onKey(e: KeyboardEvent) {
-    if (gotoOpen() || find() || noteOpen() || e.metaKey || e.ctrlKey) return;
+    if (gotoOpen() || find() || noteOpen() || pick() || e.metaKey || e.ctrlKey) return;
     const k = e.key, sh = e.shiftKey;
     if (jump()) {
       e.preventDefault(); e.stopPropagation();
@@ -451,11 +499,13 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       F: () => { if (cur()) toggleFold(cur()!.at); },
       d: () => cycleDetail(false), D: () => cycleDetail(true),
       a: () => toggleAround(), A: () => toggleAround(),
+      e: () => toggleWaysOut(), E: () => toggleWaysOut(),
+      w: () => openWatch(), W: () => openWatch(), v: () => openJourney(), V: () => openJourney(),
       j: () => setJump({ typed: '' }), J: () => setJump({ typed: '' }),
       n: () => { if (cur() && !atEnd()) setNoteOpen(true); }, N: () => { if (cur() && !atEnd()) setNoteOpen(true); },
       k: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); }, K: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); },
       ' ': () => setPlaying(!playing()), '+': () => setSpeed(Math.min(4, speed() * 1.5)), '=': () => setSpeed(Math.min(4, speed() * 1.5)), '-': () => setSpeed(Math.max(0.25, speed() / 1.5)),
-      Escape: () => { setHelp(false); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
+      Escape: () => { setHelp(false); setFollowed(null); setPick(null); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
     };
     if (k === 'ArrowDown' && cur() && !atEnd() && rowOf(cur()!.at).kind === 'indirect') { say({ key: '↓', what: 'step into', why: 'where it goes is known only at run time' }); e.preventDefault(); return; }
     if (k === 'Tab') return;   // the flow page switches views (components/Flow.tsx)
@@ -610,7 +660,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   return (
     <div class="body" style={{ height: '100%' }}>
       <div class="pane" style={{ flex: 1 }}>
-        <div class="ph" style={{ padding: '0 22px' }}>
+        <div class="ph wrap" style={{ padding: '0 22px' }}>
           <Show when={header()} fallback={<span>{runStatus() || status()}</span>}>
             <span class="seqk">{header()!.k}</span>
             <Show when={header()!.loop}><span class="seqloop">{header()!.loop}</span></Show>
@@ -628,11 +678,12 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={header() && runStatus()}><span class="sub">{runStatus()}</span></Show>
           <Show when={found().length}>
             <span class="sfnd">
-              <button class="chip" classList={{ on: foundOpen() }} title="what the code shows without running it: results thrown away, state two threads touch without a lock" onClick={() => setFoundOpen(!foundOpen())}>{found().length} finding{found().length > 1 ? 's' : ''}</button>
+              <button class="chip" classList={{ on: foundOpen() }} title="what the code shows without running it: results thrown away, state two threads touch without a lock, locks, memory and files left open at a way out" onClick={() => setFoundOpen(!foundOpen())}>{found().length} finding{found().length > 1 ? 's' : ''}</button>
               <Show when={foundOpen()}>
-                <div class="sfndl" onKeyDown={(e) => { if (e.key === 'Escape') { setFoundOpen(false); canvas.focus(); } }}>
+                <div class="sfndl" ref={(el) => requestAnimationFrame(() => { const r = el.getBoundingClientRect(); if (r.left < 8) el.style.transform = `translateX(${Math.ceil(8 - r.left)}px)`; })}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setFoundOpen(false); canvas.focus(); } }}>
                   <For each={found()}>{(f) => (
-                    <button classList={{ race: f.kind === 'race' }} onClick={() => { setFoundOpen(false); const it = S()!.itemOf[f.rows[0]]; if (it >= 0) go({ jump: it }); canvas.focus(); }}>
+                    <button classList={{ race: f.kind === 'race' || f.kind === 'pair' }} onClick={() => { setFoundOpen(false); const it = S()!.itemOf[f.rows[0]]; if (it >= 0) go({ jump: it }); canvas.focus(); }}>
                       <span class="g">{f.grade === 'proved' ? 'proved' : 'possible'}</span><span>{f.text}</span>
                     </button>
                   )}</For>
@@ -640,6 +691,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               </Show>
             </span>
           </Show>
+          <Show when={leaving()}><button class="chip" classList={{ on: waysOut() }} aria-pressed={waysOut()} title="ways out: the usual path dims, every early return, throw, break, goto and call that never returns lights, with what leads there (E)" onClick={() => { toggleWaysOut(); canvas.focus(); }}>ways out</button></Show>
           <Show when={aroundOn() || N() > 150}><button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button></Show>
           <button class="chip" classList={{ on: detailAll() !== 'calls' || detailFn().size > 0 }} title="how much code to show between calls: calls only, with decisions, or all code (⇧D everywhere, D for the current function)" onClick={() => { cycleDetail(true); canvas.focus(); }}>{detailAll() === 'calls' ? 'calls' : detailAll() === 'decisions' ? 'decisions' : 'all code'}</button>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
@@ -656,7 +708,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </Show>
           </span>
         </div>
-        <div class="seqv" classList={{ still: reduce(), onpath: !!path() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
+        <div class="seqv" classList={{ still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
             <Show when={geom()!.mode === 'files'}>
@@ -703,7 +755,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const sel = () => cur()?.at === it;
                 const tag = () => (sel() ? '' : it === prevAt() ? '← back' : it === nextAt() ? (nextIsReturn() ? `next → · back in ${short(nextIsReturn())}` : 'next →') : '');
                 return (
-                  <div class={`srow k-${r().kind}`} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it) }}
+                  <div class={`srow k-${r().kind}`} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel() }}
                     style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.y[it]}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
                     onClick={() => { setPeek(null); go({ jump: it }); canvas.focus(); }}
                     onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; peekTimer = setTimeout(() => setPeek({ it, up }), 450); }}
@@ -716,6 +768,13 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <Show when={r().kind === 'value'}><span class="nt">named, not called</span></Show>
                     <Show when={notes(it)}><span class="nt" classList={{ ask: whatOptions(it).length > 0 }} title={whatOptions(it).length ? 'what if this went the other way?' : undefined}
                       onClick={(e) => { const o = whatOptions(it); if (!o.length) return; e.stopPropagation(); setWhatMenu(whatMenu()?.it === it ? null : { it, options: o }); }}>{notes(it)}</span></Show>
+                    <Show when={waysOut() && exitsAt(it).length}>
+                      <span class="sx" title={exitsAt(it).map((x) => `line ${x.line + 1}: ${[...x.when, x.kind === 'noreturn' ? `${x.text} (${x.callee} never returns)` : x.text].join(' → ')}`).join('\n')}>
+                        {exitWords(exitsAt(it)[0])}<span class="ln"> · {exitsAt(it)[0].line + 1}</span>{exitsAt(it).length > 1 ? ` · +${exitsAt(it).length - 1} more` : ''}
+                      </span>
+                    </Show>
+                    <Show when={deadAt(it)?.first}><span class="sd" title={`cannot happen in this call: ${deadAt(it)!.why}`}>not in this call · {deadAt(it)!.why}</span></Show>
+                    <Show when={followed() && hitsAt(it).length}><span class="sw">{hitsAt(it).map(hitWords).join(' · ')}</span></Show>
                     <Show when={!sel() && uses(it)}><span class="u">uses {uses(it)}</span></Show>
                     <Show when={tag()}><span class="tag">{tag()}</span></Show>
                     <Show when={notesByItem()[it]}><span class="snote" title={notesByItem()[it]}>✎ {notesByItem()[it]}</span></Show>
@@ -813,6 +872,17 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           </Show>
           <Magnifier host={() => canvas} source={() => { const el = canvas?.querySelector('.seqin') as HTMLElement | null; if (!el) return null; const r = canvas.getBoundingClientRect(); return { el, x: r.left, y: r.top, w: canvas.clientWidth, h: geom()?.height ?? canvas.clientHeight }; }} />
           <Show when={caption()}><div class="scap"><Show when={caption()!.key}><span class="key">{caption()!.key}</span></Show>{caption()!.what}<Show when={caption()!.why}><span class="why">{caption()!.why}</span></Show></div></Show>
+          <Show when={pick()}>{(p) => {
+            const shown = () => p().options.filter((o) => o.label.toLowerCase().includes(pick()!.q.toLowerCase())).slice(0, 12);
+            return (
+              <div class="scap spick"><span class="key">{p().kind}</span>{p().kind === 'W' ? 'watch' : 'follow'}
+                <input class="sgoto" type="text" placeholder={p().kind === 'W' ? 'a member or global' : 'a parameter or what it passes on'} ref={(el) => setTimeout(() => el.focus())}
+                  onInput={(e) => setPick({ ...pick()!, q: (e.target as HTMLInputElement).value })}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') shown()[0]?.go(); if (e.key === 'Escape') { setPick(null); canvas.focus(); } }} />
+                <div class="spickl"><For each={shown()}>{(o) => <button onMouseDown={(e) => { e.preventDefault(); o.go(); }}><span>{o.label}</span><span class="why">{o.note}</span></button>}</For></div>
+              </div>
+            );
+          }}</Show>
           <Show when={gotoOpen()}>
             <div class="scap"><span class="key">G</span>go to step <input class="sgoto" type="text" placeholder="number, or a shared walk" ref={(el) => setTimeout(() => el.focus())}
               onKeyDown={async (e) => {

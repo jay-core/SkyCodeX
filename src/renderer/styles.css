@@ -57,6 +57,8 @@ input, select { font: inherit; color: var(--bright); }
 .pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .ph { height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; font: 300 15px var(--ui); color: #4f564f; white-space: nowrap; }
 .ph .grow { flex: 1; }
+/* the flow pages' headers carry many controls: in a narrow window they wrap onto a second line rather than hide */
+.ph.wrap { height: auto; min-height: 36px; flex-wrap: wrap; row-gap: 2px; }
 .chip { font: 300 12.5px var(--ui); color: var(--faint); }
 .chip.on { color: var(--bright); }
 .chip:hover { color: var(--dim); }
@@ -233,6 +235,7 @@ input, select { font: inherit; color: var(--bright); }
 .fbox .fr.on { background: rgba(173,155,111,.1); color: #e3e6df; } .fbox .fr.on .n { color: #b8a676; }
 .fbox .fr.hot { background: rgba(173,155,111,.24); color: #f0eadb; box-shadow: inset 3px 0 var(--flow-now); }
 .fbox .fr.dim, .fbox .lpl.dim { opacity: .3; }
+.fbox .fr.wx .nm { color: #e3e6df; } .fbox .fr .c.x { color: var(--err); }
 .fbox .lpl { position: absolute; left: 44px; right: 10px; height: 16px; font: 300 11px/16px var(--ui); color: #3f5a5a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .3s; }
 .fbox .lpl.hot { color: #8fc0c0; }
 .bxgrp { position: absolute; background: rgba(111,158,158,.035); border: 1px solid #263030; }
@@ -420,6 +423,21 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .srow .u { font: 300 11px var(--ui); color: #464c46; }
 .srow .tag { font: 300 11px var(--ui); color: #8a7f5f; }
 .srow.far { opacity: .55; }
+/* ways out (E): the usual path dims, steps that can leave early keep full strength with their ways out in the error colour */
+.seqv.waysout .srow.wq { opacity: .18 !important; }
+.seqv.waysout .srow.wx { opacity: 1 !important; }
+.srow .sx { font: 300 11.5px var(--ui); color: var(--err); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.srow .sx .ln { color: #7a5a54; }
+/* a value followed (W, V): the steps that touch it keep full strength, with how; the rest dims */
+.seqv.following .srow.fq { opacity: .18 !important; }
+.seqv.following .srow.fw { opacity: 1 !important; }
+.srow.sdead { opacity: .32; }
+.srow .sd { font: 300 11px var(--ui); color: #7a8a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.srow .sw { font: 300 11.5px var(--ui); color: var(--info); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.spick .sgoto { width: 220px; }
+.spickl { position: absolute; left: 0; bottom: calc(100% + 4px); min-width: 100%; background: #1f201f; box-shadow: 0 -12px 30px rgba(0,0,0,.45); display: grid; padding: 4px 0; }
+.spickl button { display: flex; justify-content: space-between; gap: 18px; padding: 5px 15px; text-align: left; font: 300 13px var(--ui); color: var(--fg); }
+.spickl button:hover { background: rgba(173,155,111,.12); color: var(--bright); }
 .srow.k-ref .nm, .srow.k-value .nm { color: #6f756e; }
 .srow.k-ref .n, .srow.k-indirect .n, .srow.k-value .n { color: #4f564f; }
 .srow.k-indirect .nm { color: #7d8a8a; }

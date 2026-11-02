@@ -12,6 +12,8 @@
 //     runs; later calls are references to that step.
 
 import type { Effects } from './flowfacts';
+import { PAIR_CALL, unclosed, Unclosed } from './flowpairs';
+import { caseOf, exprOf, has, paramsIn, plainType, settledValue, showValue, switchArms, truthOf, valuesOf, Expr, Vals } from './flowvalues';
 
 export interface Pos { line: number; character: number }
 export interface Range { start: Pos; end: Pos }
@@ -24,7 +26,8 @@ export interface OutCall { to: Target; fromRanges: Range[] }
 
 export type FlowNode =
   /** a call to a function; unsequenced: the language leaves its order against a sibling argument open */
-  | { t: 'call'; to: Target; at: Pos; unsequenced?: boolean; approx?: boolean }
+  /** argx: the arguments as the syntax tree computes them, where understood (src/shared/flowvalues.ts) */
+  | { t: 'call'; to: Target; at: Pos; unsequenced?: boolean; approx?: boolean; noreturn?: boolean; args?: string[]; argx?: (Expr | null)[]; obj?: string }
   /** a function named but not called here: a callback, a function pointer, a thread's start routine */
   | { t: 'value'; to: Target; at: Pos }
   /**
@@ -34,10 +37,13 @@ export type FlowNode =
    */
   | { t: 'indirect'; via: Via; text: string; at: Pos }
   | { t: 'stmt'; kind: StmtKind; line: number; text: string; body: FlowNode[] }
-  /** cond always runs; then one arm (or none). For && and ||, the one arm is the right-hand side. */
-  | { t: 'branch'; kind: 'if' | 'switch' | '?:' | '&&' | '||' | 'try'; text: string; line: number; cond: FlowNode[]; arms: Arm[] }
+  /**
+   * cond always runs; then one arm (or none). For && and ||, the one arm is the right-hand side. test: the condition
+   * (an if's, a switch's value, the left side of && / || / ?:) when it reads a parameter (src/shared/flowvalues.ts)
+   */
+  | { t: 'branch'; kind: 'if' | 'switch' | '?:' | '&&' | '||' | 'try'; text: string; line: number; cond: FlowNode[]; arms: Arm[]; test?: Expr }
   /** once: before the first pass (a for's init, a range-for's range); each: every pass, in order */
-  | { t: 'loop'; kind: 'while' | 'for' | 'for each' | 'do'; text: string; line: number; count: number | null; once: FlowNode[]; each: FlowNode[] }
+  | { t: 'loop'; kind: 'while' | 'for' | 'for each' | 'do'; text: string; line: number; count: number | null; once: FlowNode[]; each: FlowNode[]; test?: Expr }
   /** a lambda's body: runs when the lambda is called, or on a new thread */
   | { t: 'deferred'; kind: 'lambda' | 'thread'; text: string; line: number; body: FlowNode[] }
   /** a static local's initializer: the first time only */
@@ -45,10 +51,16 @@ export type FlowNode =
   /** what follows an early exit (`if (x) return …;`): runs only when that exit was not taken */
   | { t: 'guard'; text: string; exit: StmtKind; line: number; body: FlowNode[] };
 export type Via = 'pointer' | 'member pointer' | 'std::function' | 'dependent' | 'unresolved';
-export interface Arm { label: string; line: number; body: FlowNode[]; fallsThrough?: boolean }
+/** cases: a switch arm's case values, one per label (null for default, or a label not understood) */
+export interface Arm { label: string; line: number; body: FlowNode[]; fallsThrough?: boolean; cases?: (Expr | null)[] }
 export type StmtKind = 'code' | 'return' | 'break' | 'continue' | 'throw' | 'goto' | 'co_return';
 /** dropped: places the index names a function but the syntax tree shows no call (a built-in operator, say) */
-export interface FnFlow { body: FlowNode[]; dropped: { name: string; at: Pos }[] }
+/**
+ * unlisted: names of functions called directly in the body that clangd's call list doesn't name. While clangd is still
+ * updating its index such calls are missing from the graph, so a caller can tell the graph isn't complete yet.
+ */
+/** jumps: the body has a goto or a label, so a part that looks unreachable may be jumped into */
+export interface FnFlow { body: FlowNode[]; dropped: { name: string; at: Pos }[]; unlisted?: string[]; jumps?: true }
 
 const CALLS = new Set(['Call', 'CXXMemberCall', 'CUDAKernelCall', 'UserDefinedLiteral']);
 const CONSTRUCTS = new Set(['CXXConstruct', 'CXXTemporaryObject', 'CXXInheritedCtorInit', 'CXXNew']);
@@ -57,6 +69,8 @@ const DEPENDENT = new Set(['CXXDependentScopeMember', 'DependentScopeDeclRef', '
 const UNEVALUATED = new Set(['UnaryExprOrTypeTrait', 'CXXNoexcept', 'CXXTypeid', 'CXXUuidof', 'Requires', 'Concept', 'CXXDefaultArg', 'CXXDefaultInit']);
 const SKIP_ROLES = new Set(['type', 'specifier', 'template name', 'template argument']);
 const EXITS: StmtKind[] = ['return', 'break', 'continue', 'throw', 'goto', 'co_return'];
+/** How clang's dump writes a function type that never returns. */
+const NORETURN = /__attribute__\(\(noreturn\)\)/;
 /** Calls that start a thread with the callable they are given. */
 /** Calls that start a thread or an RTOS task with the function they are given (RTOS APIs often behind a wrapper: ThreadX's tx_thread_create is _txe_thread_create). */
 export const THREAD_START = /^(?:std::)?(?:thread|jthread|async|pthread_create|_beginthread(?:ex)?|CreateThread|xTaskCreate\w*|k_thread_create|taskSpawn|task_create|rt_thread_(?:create|init)|osThreadNew|osThreadCreate|_*txe?_thread_create|OSTaskCreate\w*|OS_(?:TASK_)?Create\w*|QtConcurrent::run)$/;
@@ -87,6 +101,7 @@ class Analyser {
   private values = new Map<AstNode, { to: Target; at: Pos }[]>();
   private loose: { to: Target; range: Range; done: boolean }[] = [];
   private dropped: { name: string; at: Pos }[] = [];
+  private unlisted = new Set<string>();
   private all: AstNode[] = [];
 
   constructor(private ast: AstNode, private text: string, calls: OutCall[]) {
@@ -158,7 +173,8 @@ class Analyser {
     }
     const rest = this.loose.filter((l) => !l.done);
     for (const l of rest) body.push({ t: 'call', to: l.to, at: l.range.start, approx: true });
-    return { body, dropped: this.dropped };
+    const jumps = this.all.some((n) => /^(?:Goto|IndirectGoto|Label|AddrLabel)$/.test(n.kind));
+    return { body, dropped: this.dropped, unlisted: [...this.unlisted], ...(jumps ? { jumps: true as const } : {}) };
   }
 
   // ---------- statements ----------
@@ -257,7 +273,7 @@ class Analyser {
     const arms: Arm[] = [];
     if (h.rest[0]) arms.push({ label: 'then', line: h.rest[0].range?.start.line ?? s.range!.start.line, body: this.stmts([h.rest[0]]) });
     if (h.rest[1]) arms.push({ label: 'else', line: h.rest[1].range?.start.line ?? s.range!.start.line, body: this.stmts([h.rest[1]]) });
-    return { t: 'branch', kind: 'if', text: h.text, line: s.range!.start.line, cond, arms };
+    return { t: 'branch', kind: 'if', text: h.text, line: s.range!.start.line, cond, arms, ...test(h.head) };
   }
 
   private switchStmt(s: AstNode): FlowNode {
@@ -265,24 +281,30 @@ class Analyser {
     const cond: FlowNode[] = [];
     this.headExprs(h.head, cond);
     const arms: Arm[] = [];
-    let cur: { labels: string[]; line: number; list: AstNode[] } | null = null;
-    const flush = () => { if (cur) { const body = this.stmts(cur.list); const last = body[body.length - 1]; arms.push({ label: cur.labels.join(' · '), line: cur.line, body, fallsThrough: !last || !exits(last) }); } };
+    let cur: { labels: string[]; cases: (Expr | null)[]; line: number; list: AstNode[] } | null = null;
+    const flush = () => { if (cur) { const body = this.stmts(cur.list); const last = body[body.length - 1]; arms.push({ label: cur.labels.join(' · '), line: cur.line, body, fallsThrough: !last || !exits(last), cases: cur.cases }); } };
     const visitCase = (c: AstNode) => {
       // case 1: case 2: stmt — the labels chain through the case's last child
       if (c.kind === 'Case' || c.kind === 'Default') {
         const label = c.kind === 'Default' ? 'default' : 'case ' + (kids(c)[0]?.range ? this.oneLine(kids(c)[0].range!) : '');
-        if (!cur || cur.list.length) { flush(); cur = { labels: [label], line: c.range?.start.line ?? 0, list: [] }; } else cur.labels.push(label);
+        // a GNU case range (case 1 ... 5) is not one value
+        const value = c.kind === 'Default' || /\bgnu_range\b/.test(arcOf(c)) ? null : caseOf(kids(c)[0]);
+        const v = value && value.k !== '?' ? value : null;
+        if (!cur || cur.list.length) { flush(); cur = { labels: [label], cases: [v], line: c.range?.start.line ?? 0, list: [] }; } else { cur.labels.push(label); cur.cases.push(v); }
         const sub = kids(c)[kids(c).length - 1];
         if (sub && sub !== kids(c)[0] || c.kind === 'Default' && sub) visitCase(sub);
         return;
       }
-      if (!cur) cur = { labels: ['before any case'], line: c.range?.start.line ?? 0, list: [] };
+      if (!cur) cur = { labels: ['before any case'], cases: [null], line: c.range?.start.line ?? 0, list: [] };
       cur.list.push(c);
     };
     for (const b of h.rest) for (const c of b.kind === 'Compound' ? kids(b) : [b]) visitCase(c);
     flush();
     for (const a of arms) if (a.body.length && last(a.body)?.t === 'stmt' && (last(a.body) as { kind: StmtKind }).kind === 'break') a.body.pop();   // a case's closing break is how it ends, not a step
-    return { t: 'branch', kind: 'switch', text: h.text, line: s.range!.start.line, cond, arms };
+    // every label of this switch is one of its arms' (none inside a nested block, as in Duff's device)
+    const labels = (n: AstNode): number => kids(n).reduce((k, c) => k + (c.kind === 'Switch' ? 0 : (c.kind === 'Case' || c.kind === 'Default' ? 1 : 0) + labels(c)), 0);
+    const whole = h.rest.reduce((k, b) => k + labels(b) + (b.kind === 'Case' || b.kind === 'Default' ? 1 : 0), 0) === arms.reduce((k, a) => k + (a.cases?.length ?? 0), 0) - (arms[0]?.label === 'before any case' ? 1 : 0);
+    return { t: 'branch', kind: 'switch', text: h.text, line: s.range!.start.line, cond, arms, ...(whole ? test(h.head) : {}) };
   }
 
   private tryStmt(s: AstNode): FlowNode {
@@ -310,7 +332,7 @@ class Analyser {
     if (s.kind === 'While') {
       this.headExprs(h.head, each);
       each.push(...this.stmts(h.rest));
-      return { t: 'loop', kind: 'while', text: h.text, line, count: null, once, each };
+      return { t: 'loop', kind: 'while', text: h.text, line, count: null, once, each, ...test(h.head) };
     }
     if (s.kind === 'For') {
       // init ; cond ; inc — told apart by where the header's own semicolons are
@@ -349,7 +371,7 @@ class Analyser {
       this.expr(c[0], cond, false);
       if (c[1]) this.expr(c[1], rhs, false);
       if (!rhs.length) { out.push(...cond); return; }
-      out.push({ t: 'branch', kind: n.detail, text: c[0].range ? this.oneLine(c[0].range) : '', line: n.range!.start.line, cond, arms: [{ label: c[1].range ? this.oneLine(c[1].range) : '', line: c[1].range?.start.line ?? 0, body: rhs }] });
+      out.push({ t: 'branch', kind: n.detail, text: c[0].range ? this.oneLine(c[0].range) : '', line: n.range!.start.line, cond, arms: [{ label: c[1].range ? this.oneLine(c[1].range) : '', line: c[1].range?.start.line ?? 0, body: rhs }], ...test([c[0]]) });
       return;
     }
     if (n.kind === 'ConditionalOperator' || n.kind === 'BinaryConditionalOperator') {
@@ -358,7 +380,7 @@ class Analyser {
       if (n.kind === 'ConditionalOperator') { if (c[1]) this.expr(c[1], a, false); if (c[2]) this.expr(c[2], b, false); }
       else if (c[c.length - 1]) this.expr(c[c.length - 1], b, false);
       if (!a.length && !b.length) { out.push(...cond); return; }
-      out.push({ t: 'branch', kind: '?:', text: c[0].range ? this.oneLine(c[0].range) : '', line: n.range!.start.line, cond, arms: [{ label: 'then', line: c[1]?.range?.start.line ?? 0, body: a }, { label: 'else', line: c[c.length - 1]?.range?.start.line ?? 0, body: b }] });
+      out.push({ t: 'branch', kind: '?:', ...test([c[0]]), text: c[0].range ? this.oneLine(c[0].range) : '', line: n.range!.start.line, cond, arms: [{ label: 'then', line: c[1]?.range?.start.line ?? 0, body: a }, { label: 'else', line: c[c.length - 1]?.range?.start.line ?? 0, body: b }] });
       return;
     }
     if ((n.kind === 'BinaryOperator' || n.kind === 'CompoundAssignOperator') && ASSIGN.test(n.detail ?? '')) {
@@ -386,7 +408,14 @@ class Analyser {
       const sites = this.sites.get(n) ?? [];
       const ind: Via | null = n.kind === 'Call' ? indirectVia(callee) : n.kind === 'CXXMemberCall' && memberPointer(callee) ? 'member pointer' : null;
       if (ind && !sites.some((s) => s.to.project)) out.push({ t: 'indirect', via: ind, text: callee?.range ? this.oneLine(callee.range) : '', at: n.range!.start });
-      for (const s of sites) out.push({ t: 'call', to: s.to, at: s.at });
+      // a direct call clangd's list doesn't name (its index not up to date yet, or a builtin)
+      if (!ind && !sites.length) { const nm = calleeName(callee); if (nm) this.unlisted.add(nm.replace(/^.*::/, '')); }
+      // the compiler's type for the callee says it never returns (exit, abort, longjmp, pthread_exit …)
+      const never = NORETURN.test((callee as { arcana?: string } | undefined)?.arcana ?? '') || NORETURN.test((unwrap(callee) as { arcana?: string } | undefined)?.arcana ?? '');
+      // a call of the project's own functions (a value followed through them, src/shared/flowwatch.ts), or one that
+      // opens or closes something (src/shared/flowpairs.ts), keeps its arguments, and a method its object, as written
+      const kept = sites.some((x) => x.to.project || PAIR_CALL.test(x.to.name.replace(/^.*::/, ''))) ? this.written(n, callee) : {};
+      for (const s of sites) out.push({ t: 'call', to: s.to, at: s.at, ...(never ? { noreturn: true } : {}), ...kept });
       return;
     }
     if (CONSTRUCTS.has(n.kind)) {
@@ -398,6 +427,14 @@ class Analyser {
     for (const k of c) this.expr(k, out, threadArg);
     for (const v of this.values.get(n) ?? []) out.push(threadArg ? { t: 'deferred', kind: 'thread', text: v.to.name, line: v.at.line, body: [{ t: 'call', to: v.to, at: v.at }] } : { t: 'value', to: v.to, at: v.at });
     for (const s of this.sites.get(n) ?? []) out.push({ t: 'call', to: s.to, at: s.at });
+  }
+
+  /** A call's arguments as written, and the object of a method call. */
+  private written(n: AstNode, callee: AstNode | undefined): { args?: string[]; argx?: (Expr | null)[]; obj?: string } {
+    const u = unwrap(callee), base = u && (u.kind === 'Member' || u.kind === 'UnresolvedMember') ? kids(u)[0] : undefined;
+    const args = kids(n).slice(1).map((a) => (a.range ? this.oneLine(a.range) : ''));
+    const argx = kids(n).slice(1).map((a) => { const x = exprOf(a); return x.k === '?' ? null : x; });
+    return { ...(args.length ? { args } : {}), ...(argx.some(Boolean) ? { argx } : {}), ...(base?.range ? { obj: this.oneLine(base.range) } : {}) };
   }
 
   /** Arguments, left to right as written; when two of them call project functions, which runs first is the compiler's choice. */
@@ -412,6 +449,13 @@ class Analyser {
 }
 
 const last = <T>(a: T[]) => a[a.length - 1];
+const arcOf = (n: AstNode) => ((n as { arcana?: string }).arcana ?? '');
+/** A condition that reads a parameter, as the syntax tree has it: the header's one expression (no declaration or init-statement). */
+function test(head: AstNode[]): { test?: Expr } {
+  if (head.length !== 1 || head[0].role !== 'expression') return {};
+  const x = exprOf(head[0]);
+  return has(x, (y) => y.k === 'param') ? { test: x } : {};
+}
 const firstLine = (s: string) => { const l = s.split('\n')[0].trim(); return l.length < s.trim().length ? l + ' …' : l; };
 function unwrap(n: AstNode | undefined): AstNode | undefined {
   while (n && (n.kind === 'ImplicitCast' || n.kind === 'Paren' || n.kind === 'MaterializeTemporary' || n.kind === 'ExprWithCleanups')) n = kids(n)[0];
@@ -475,13 +519,13 @@ function exits(n: FlowNode): boolean {
   return false;
 }
 /** An if whose taken arm leaves the block while the other does not: what follows runs only when it was not taken. */
-function earlyExit(n: FlowNode): { text: string; exit: StmtKind; line: number } | null {
+function earlyExit(n: FlowNode): { text: string; exit: StmtKind; line: number; arm: number } | null {
   if (n.t !== 'branch' || n.kind !== 'if') return null;
   const ex = n.arms.map((a) => { const l = last(a.body); return l && exits(l) ? exitKind(l) : null; });
   if (ex.every((e) => e) && n.arms.length === 2) return null;   // both leave: handled by exits()
   const i = ex.findIndex((e) => e);
   if (i < 0) return null;
-  return { text: n.arms[i].label === 'then' ? n.text : `${n.text} … else`, exit: ex[i]!, line: n.line };
+  return { text: n.arms[i].label === 'then' ? n.text : `${n.text} … else`, exit: ex[i]!, line: n.line, arm: i };
 }
 function exitKind(n: FlowNode): StmtKind {
   if (n.t === 'stmt') return n.kind;
@@ -586,6 +630,7 @@ export interface RunRow {
   recursive?: boolean;       // ref: a call back into a step still running
   unsequenced?: boolean;
   approx?: boolean;          // placed at its statement, not its exact position (a macro)
+  args?: string[];           // step, ref: the call's arguments as written
   via?: string;              // indirect: how (pointer, std::function, …); value: the callee
   could?: string[];          // indirect: functions it may reach — those whose address the code takes (probable, not proved)
   text?: string;
@@ -601,9 +646,63 @@ export interface RunFrame {
   line: number;
   from: number; to: number;  // the rows inside it
   parent: number | null;
+  /** cannot happen in this call: the values the call passed settle its condition the other way (src/shared/flowvalues.ts) */
+  dead?: string;
 }
 /** effects: what each function of the run does besides calling (src/shared/flowfacts.ts), by its key. */
-export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects> }
+/** unlisted: project functions the bodies call that the graph doesn't list yet (set by the caller, which knows the project's names). */
+/** exits: every way out of each function of the run (exitsOf), by its key. */
+/** pairs: what each function opens and leaves open at a way out (src/shared/flowpairs.ts), by its key. */
+export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]> }
+
+/**
+ * A way out of a function, or of a loop: a return, throw, break, continue, goto or co_return as written, or a call
+ * that never returns (its type says so, or the project's own function is declared so). when: the conditions it sits
+ * under, outermost first, as written (`headers.empty()`, `cmd · case 3`); early: anything but the function's normal
+ * end (its last statement, a plain return).
+ */
+export interface Exit { kind: StmtKind | 'noreturn'; line: number; text: string; when: string[]; early: boolean; callee?: string }
+
+/** Every way out of a function's body; a lambda's or a thread's body is its own function and is left out. */
+export function exitsOf(body: FlowNode[], neverReturns: (to: Target) => boolean = () => false): Exit[] {
+  const out: Exit[] = [];
+  const never = (list: FlowNode[]): Target | null => {
+    for (const n of list) {
+      if (n.t === 'call' && (n.noreturn || (n.to.project && neverReturns(n.to)))) return n.to;
+      if (n.t === 'stmt') { const t = never(n.body); if (t) return t; }
+    }
+    return null;
+  };
+  const walk = (list: FlowNode[], when: string[], top: boolean) => {
+    // the last statement: calls a macro wrote, whose place the tree doesn't give, are put after it (approx)
+    let lastAt = list.length - 1;
+    while (lastAt > 0 && list[lastAt].t === 'call' && (list[lastAt] as { approx?: boolean }).approx) lastAt--;
+    list.forEach((n, i) => {
+      const end = top && i === lastAt;
+      switch (n.t) {
+        case 'stmt': {
+          if (n.kind !== 'code') { out.push({ kind: n.kind, line: n.line, text: n.text, when, early: !(end && n.kind === 'return') }); break; }
+          const t = never(n.body);
+          if (t) out.push({ kind: 'noreturn', line: n.line, text: n.text, when, early: true, callee: t.name });
+          break;
+        }
+        case 'call':
+          if (n.noreturn || (n.to.project && neverReturns(n.to))) out.push({ kind: 'noreturn', line: n.at.line, text: n.to.name, when, early: true, callee: n.to.name });
+          break;
+        case 'guard': walk(n.body, when, top); break;
+        case 'once': walk(n.body, when, false); break;
+        case 'branch':
+          walk(n.cond, when, false);
+          for (const a of n.arms) walk(a.body, [...when, a.label === 'then' ? n.text : `${n.text} · ${n.kind === '&&' || n.kind === '||' ? `${n.kind} ${a.label}` : a.label}`], false);
+          break;
+        case 'loop': walk(n.once, when, false); walk(n.each, [...when, n.text], false); break;
+        default: break;   // value, indirect: not a way out; deferred: another function's body
+      }
+    });
+  };
+  walk(body, [], true);
+  return out;
+}
 
 /** Every step from the entry point, numbered in execution order. flows: the facts of each function, by key. */
 export function walkRun(start: string, flows: (key: string) => FnInfo | undefined): Run {
@@ -612,8 +711,57 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   const running = new Set<string>();
   const missing = new Set<string>();
   let n = 0;
+  // values settled per call: for a step, each parameter whose value its call settles (src/shared/flowvalues.ts)
+  const known = new Map<number, Map<string, { v: Vals; type: string; text: string; call: string; origin: string }>>();
+  const deadIn = (fs: number[]) => fs.some((f) => frames[f].dead);
+  const bind = (row: number, argx: (Expr | null)[] | undefined) => {
+    const r = rows[row], e = flows(r.key)?.effects, pv = e?.paramValues;
+    if (!argx || !pv || !e?.params || r.caller == null || deadIn(r.frames)) return;
+    const from = known.get(r.caller), out = new Map<string, { v: Vals; type: string; text: string; call: string; origin: string }>();
+    const call = `${r.name}(${(r.args ?? []).join(', ')})`;
+    e.params.forEach((p, i) => {
+      const x = argx[i], t = pv[p.name];
+      // the argument as the compiler converted it, of the parameter's own type
+      const ty = x && 'ty' in x ? x.ty : '';
+      if (!x || !t || !ty || plainType(ty) !== plainType(t)) return;
+      const v = valuesOf(x, (nm) => from?.get(nm)?.v);
+      if (!settledValue(v)) return;
+      const via = paramsIn(x).map((nm) => from?.get(nm)?.origin).find(Boolean);
+      out.set(p.name, { v, type: t, text: r.args?.[i] ?? '', call, origin: via ?? call });
+    });
+    if (out.size) known.set(row, out);
+  };
+  /** Which arms of a branch can run in this call (null: not settled by it), and why the others cannot. */
+  const settle = (node: Extract<FlowNode, { t: 'branch' } | { t: 'loop' }>, owner: number, around: number[]): { live: boolean[]; why: string } | null => {
+    const vals = known.get(owner);
+    if (!vals || !node.test || flows(rows[owner].key)?.flow.jumps || deadIn(around)) return null;
+    const get = (nm: string) => vals.get(nm)?.v, none = () => undefined;
+    let live: boolean[] | null;
+    if (node.t === 'loop') {
+      // a while whose condition is false from the start never runs its body (the condition itself runs once, so only
+      // one wholly understood, with no calls in it, is settled)
+      live = node.kind === 'while' && !has(node.test, (y) => y.k === '?') && truthOf(node.test, get) === false && truthOf(node.test, none) == null ? [false] : null;
+    } else if (node.kind === 'switch') {
+      const ty = 'ty' in node.test ? node.test.ty : '';
+      const arms = node.arms.map((a) => ({ cases: a.cases ?? [null], isDefault: a.label.split(' · ').map((l) => l === 'default'), fallsThrough: !!a.fallsThrough }));
+      if (!ty || node.arms.some((a) => !a.cases || a.label === 'before any case')) return null;
+      // settled by the values passed, not by constants alone
+      live = switchArms(node.test, ty, arms, get);
+      if (live && switchArms(node.test, ty, arms, none)) return null;
+    } else {
+      const t = truthOf(node.test, get);
+      if (t == null || truthOf(node.test, none) != null) return null;
+      live = node.kind === '&&' ? [t] : node.kind === '||' ? [!t] : node.arms.map((a) => (a.label === 'then' ? t : !t));
+    }
+    if (!live) return null;
+    const used = paramsIn(node.test).filter((nm) => vals.has(nm));
+    // a value that differs by platform (-1 made unsigned) is said as written, with the conversion
+    const said = used.map((nm) => { const k = vals.get(nm)!; return `${nm} is ${showValue(k.v, k.type) ?? `${k.text} converted to ${plainType(k.type)}`}`; }).join(', ');
+    const k = vals.get(used[0])!;
+    return { live, why: `${said} here — passed by ${k.call}${k.origin !== k.call ? `, from ${k.origin}` : ''}` };
+  };
 
-  const open = (key: string, caller: number | null, at: Pos | null, frameStack: number[], thread: boolean, extra: Partial<RunRow> = {}): void => {
+  const open = (key: string, caller: number | null, at: Pos | null, frameStack: number[], thread: boolean, extra: Partial<RunRow> = {}, argx?: (Expr | null)[]): void => {
     const info = flows(key);
     const depth = caller == null ? 0 : rows[caller].depth + 1;
     const seen = opened.get(key);
@@ -625,6 +773,7 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     rows.push({ kind: 'step', n: ++n, key, name: info?.name ?? key, file: info?.file ?? '', line: info?.line ?? 0, start: info?.start ?? info?.line ?? 0, caller, at, depth, frames: [...frameStack], thread, last: row, lines: info?.lines ?? 0, ...extra });
     opened.set(key, row);
     if (!info) { missing.add(key); return; }
+    bind(row, argx);
     running.add(key);
     walk(info.flow.body, row, [], thread);
     running.delete(key);
@@ -643,18 +792,22 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   /** stack: the frames open inside the current function, outermost first (the caller's are on its row). */
   const walk = (list: FlowNode[], owner: number, stack: number[], thread: boolean): void => {
     const around = () => [...rows[owner].frames, ...stack];
+    // the if just before: a guard after it runs only when its exiting arm was not taken
+    let prev: { node: FlowNode; s: { live: boolean[]; why: string } | null } | null = null;
     for (const node of list) {
+      const before = prev;
+      prev = null;
       switch (node.t) {
         case 'call': {
           if (!node.to.project) break;
           const info = flows(node.to.key);
-          const extra: Partial<RunRow> = { unsequenced: node.unsequenced, approx: node.approx };
+          const extra: Partial<RunRow> = { unsequenced: node.unsequenced, approx: node.approx, ...(node.args ? { args: node.args } : {}) };
           if (info?.overrides?.length) {
             frame({ kind: 'virtual', text: `${node.to.name} · one of ${info.overrides.length + 1}`, label: '', count: null, owner, line: node.at.line }, stack, () => {
-              open(node.to.key, owner, node.at, around(), thread, extra);
-              for (const o of info.overrides!) open(o.key, owner, node.at, around(), thread, extra);
+              open(node.to.key, owner, node.at, around(), thread, extra, node.argx);
+              for (const o of info.overrides!) open(o.key, owner, node.at, around(), thread, extra, node.argx);
             });
-          } else open(node.to.key, owner, node.at, around(), thread, extra);
+          } else open(node.to.key, owner, node.at, around(), thread, extra, node.argx);
           break;
         }
         case 'value':
@@ -665,16 +818,26 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
           break;
         case 'stmt': walk(node.body, owner, stack, thread); break;
         case 'once': frame({ kind: 'once', text: node.text, label: '', count: null, owner, line: node.line }, stack, () => walk(node.body, owner, stack, thread)); break;
-        case 'guard': frame({ kind: 'guard', text: node.text, label: node.exit, count: null, owner, line: node.line }, stack, () => walk(node.body, owner, stack, thread)); break;
+        case 'guard': {
+          const ex = before?.s ? earlyExit(before.node) : null;
+          const dead = ex && before!.s!.live[ex.arm] ? { dead: before!.s!.why } : {};
+          frame({ kind: 'guard', text: node.text, label: node.exit, count: null, owner, line: node.line, ...dead }, stack, () => walk(node.body, owner, stack, thread));
+          break;
+        }
         case 'deferred': frame({ kind: node.kind, text: node.text, label: '', count: null, owner, line: node.line }, stack, () => walk(node.body, owner, stack, thread || node.kind === 'thread')); break;
-        case 'branch':
+        case 'branch': {
           walk(node.cond, owner, stack, thread);
-          for (const a of node.arms) frame({ kind: 'arm', text: node.text, label: node.kind === '&&' || node.kind === '||' ? `${node.kind} ${a.label}` : a.label, count: null, owner, line: a.line, ...(a.fallsThrough && a !== node.arms[node.arms.length - 1] ? { fallsThrough: true } : {}) }, stack, () => walk(a.body, owner, stack, thread));
+          const s = settle(node, owner, around());
+          node.arms.forEach((a, i) => frame({ kind: 'arm', text: node.text, label: node.kind === '&&' || node.kind === '||' ? `${node.kind} ${a.label}` : a.label, count: null, owner, line: a.line, ...(a.fallsThrough && a !== node.arms[node.arms.length - 1] ? { fallsThrough: true } : {}), ...(s && !s.live[i] ? { dead: s.why } : {}) }, stack, () => walk(a.body, owner, stack, thread)));
+          prev = { node, s };
           break;
-        case 'loop':
+        }
+        case 'loop': {
           walk(node.once, owner, stack, thread);
-          frame({ kind: 'loop', text: node.text, label: node.kind, count: node.count, owner, line: node.line }, stack, () => walk(node.each, owner, stack, thread));
+          const s = settle(node, owner, around());
+          frame({ kind: 'loop', text: node.text, label: node.kind, count: node.count, owner, line: node.line, ...(s && !s.live[0] ? { dead: s.why } : {}) }, stack, () => walk(node.each, owner, stack, thread));
           break;
+        }
       }
     }
   };
@@ -683,5 +846,14 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   // frames with no rows inside say nothing about the run; their ids are kept stable by leaving them in place
   const fx: Record<string, Effects> = {};
   for (const k of opened.keys()) { const e = flows(k)?.effects; if (e) fx[k] = e; }
-  return { rows, frames, missing: [...missing], effects: fx };
+  const ex: Record<string, Exit[]> = {};
+  const pairs: Record<string, Unclosed[]> = {};
+  for (const k of opened.keys()) {
+    const f = flows(k);
+    if (!f) continue;
+    ex[k] = exitsOf(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn);
+    const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn);
+    if (u.length) pairs[k] = u;
+  }
+  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs };
 }

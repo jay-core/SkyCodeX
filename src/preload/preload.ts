@@ -70,6 +70,11 @@ const api = {
     notify: (method: string, params: unknown) => invoke('lsp:notify', method, params),
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),
   },
+  flow: {
+    fingerprint: (root: string) => invoke('flow:fingerprint', root) as Promise<string>,
+    kept: (root: string, key: string) => invoke('flow:kept', root, key) as Promise<string | null>,
+    keep: (root: string, key: string, text: string) => invoke('flow:keep', root, key, text),
+  },
   win: {
     minimize: () => invoke('win:minimize'),
     maximize: () => invoke('win:maximize'),
@@ -81,6 +86,9 @@ const api = {
   smoke: {
     capture: (name: string) => invoke('smoke:capture', name),
     done: (report: unknown) => invoke('smoke:done', report),
+    resize: (w: number, h: number) => invoke('smoke:resize', w, h),
+    /** Starts a CPU profile (no name), or stops it and writes logs/smoke-<name>.cpuprofile. */
+    profile: (name: string | null) => invoke('smoke:profile', name) as Promise<string | null>,
   },
 };
 

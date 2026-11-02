@@ -5,8 +5,10 @@
 // the two; Space plays the run as a marker moving along the lines. The model and layout: src/shared/flowboxes.ts.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import ELK from 'elkjs/lib/elk.bundled.js';
-import { seq, trail, graph, status, runStatus, stepMove, changed } from '../lib/flowstore';
+import ELK from 'elkjs/lib/elk-api.js';
+// @ts-expect-error vite turns the layout engine into a worker of its own (inline, so it loads like the page)
+import ElkWorker from 'elkjs/lib/elk-worker.min.js?worker&inline';
+import { seq, trail, graph, status, runStatus, stepMove, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
 import { root, settings, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import {
@@ -19,7 +21,9 @@ import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { setPalette } from '../lib/actions';
 
-const elk = new ELK() as unknown as { layout: (g: unknown) => Promise<any> };
+// the layout engine runs in a worker, so laying out a large run never holds up the window; it is the same code
+// elk.bundled.js runs on the page, so every layout is the same
+const elk = new ELK({ workerFactory: () => new ElkWorker() }) as unknown as { layout: (g: unknown) => Promise<any> };
 type Zoom = 'all' | 'width' | '100' | '150' | '';
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 /** Metro motion: a quick start and a long, gentle settle. */
@@ -320,9 +324,10 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (key === ' ') { e.preventDefault(); play(); return; }
     if (key === '+' || key === '=') { setSpeed(Math.min(4, speed() * 1.5)); return; }
     if (key === '-') { setSpeed(Math.max(0.25, speed() / 1.5)); return; }
-    if (key === 'Escape') { stop(); if (route() || focus() != null) { setRoute(null); setFocus(null); } return; }
+    if (key === 'Escape') { stop(); setFollowed(null); if (route() || focus() != null) { setRoute(null); setFocus(null); } return; }
     if (key === 'f' || key === 'F') { setRoute(null); setFocus(focus() === selRow() ? null : selRow() >= 0 ? selRow() : null); if (focus() != null) say('F', `focus ${short(R()[focus()!].name)}`, 'and two calls around it · Esc clears'); return; }
     if (key === 'h' || key === 'H') { setHeat(!heat()); return; }
+    if (key === 'e' || key === 'E') { toggleWaysOut(); return; }
     if (key === 'Enter') { const r = route(); if (r) walkRoute(r.only >= 0 ? r.only : 0); else openStep(); e.preventDefault(); return; }
     if (route() && /^[1-9]$/.test(key)) { const r = route()!, i = Number(key) - 1; if (i < r.list.length) setRoute({ ...r, only: r.only === i ? -1 : i }); return; }
     const m = moves[key];
@@ -369,6 +374,19 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const lineByKey = createMemo(() => new Map((lay()?.lines ?? []).map((l) => [`${l.a}>${l.b}`, l])));
   const labelOn = (keys: string[]) => { const a = active(); if (!a) return null; return keys.some((x) => { const l = lineByKey().get(x); return !!l && !!lineOn(l); }); };
   const rowOn = (row: number) => { const a = active(); return !a ? null : a.rows.has(row); };
+  // ways out (E): functions that can leave early keep their strength, with how many ways; the rest fade
+  const outs = (row: number) => (S() ? earlyExits(S()!.run, row) : []);
+  // a value followed (W or V in the sequence view): the functions that touch it stay, saying how; the rest fade
+  const touches = (row: number) => followed()?.hits.filter((h) => h.row === row || (R()[h.row]?.kind === 'ref' && R()[h.row].ref === row)) ?? [];
+  const boxTouched = (node: string) => { const m = model(); return !!m && R().some((r, i) => r.kind === 'step' && nodeOf(m, level(), r.file) === node && touches(i).length > 0); };
+  /** Values settled per call: why this step's call cannot happen (it sits in an arm its caller's values rule out). */
+  const deadOf = (row: number) => { const s = S(), f = s?.run.rows[row]?.frames.find((k) => s.run.frames[k].dead); return f == null ? null : s!.run.frames[f].dead!; };
+  const boxOut = (node: string) => { const m = model(); return !!m && R().some((r, i) => r.kind === 'step' && nodeOf(m, level(), r.file) === node && outs(i).length > 0); };
+  function toggleWaysOut() {
+    const on = !waysOut(), n = S() ? leavingCount(S()!.run) : 0;
+    setWaysOut(on);
+    say('E', on ? `ways out: ${n} function${n === 1 ? '' : 's'} can leave early` : 'the whole run', on ? 'the usual path fades · E again for all' : '');
+  }
   const fileOn = (node: string) => { const a = active(), m = model(); return !a || !m ? null : [...a.files].some((f) => nodeOf(m, level(), f) === node); };
   /** The boxes drawn: files, or (folders level) folders, keyed as the layout keys them. */
   const nodes = createMemo(() => { const m = model(); return !m ? [] : level() === 'folders' ? m.dirs.map((d) => `dir:${d}`) : m.files; });
@@ -396,6 +414,8 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const rel = (f: string) => (f.startsWith(root() + '/') ? f.slice(root().length + 1) : f);
   /** The hovered file or folder box when zoomed out: its functions, drawn at screen size beside it, inside the window. */
   const [hoverAt, setHoverAt] = createSignal<{ rect: DOMRect; fns: number[] } | null>(null);
+  // its rows are numbered in the run it was opened on: another run closes it
+  createEffect(on(seq, () => setHoverAt(null), { defer: true }));
   const hoverStyle = (h: { rect: DOMRect; fns: number[] }) => {
     const below = window.innerHeight - h.rect.bottom, above = h.rect.top, down = below >= above;
     const room = Math.max(120, (down ? below : above) - 16);
@@ -507,7 +527,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
         </div></Portal>
       )}</Show>
       <div class="pane" style={{ flex: 1 }}>
-        <div class="ph" style={{ padding: '0 22px' }}>
+        <div class="ph wrap" style={{ padding: '0 22px' }}>
           <span>{status()}</span>
           <Show when={header()}><span class="seqk" style={{ 'margin-left': '14px' }}>{header()}</span></Show>
           <span class="grow" />
@@ -545,7 +565,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                     const fns = () => filesIn(f).flatMap((x) => model()!.rowsOf.get(x) ?? []);
                     return (
                       <Show when={p()}>
-                        <div class="fbox" classList={{ cur: selNode() === f, fade: fileOn(f) === false, start: filesIn(f).includes(startFile()) }}
+                        <div class="fbox" classList={{ cur: selNode() === f, fade: fileOn(f) === false || (waysOut() && !boxOut(f)) || (!!followed() && !boxTouched(f)), start: filesIn(f).includes(startFile()) }}
                           style={{ left: `${p()!.x}px`, top: `${p()!.y}px`, width: `${p()!.w}px`, height: `${p()!.h}px` }}
                           onMouseEnter={(e) => { setHoverAt({ rect: e.currentTarget.getBoundingClientRect(), fns: fns().sort((a, b) => R()[a].n - R()[b].n) }); }} onMouseLeave={() => setHoverAt(null)}
                           onClick={(e) => { if (lv() !== 'functions') { const first = fns().sort((a, b) => R()[a].n - R()[b].n)[0]; if (first != null) { if (e.shiftKey) routeTo(first); else jumpRow(first); } } }}
@@ -566,11 +586,13 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                           <Show when={lv() === 'functions'}>
                             <For each={boxGeom(model()!, f, 'functions').rows}>{(r) => r.type === 'fn'
                               ? (
-                                <div class="fr" classList={{ sel: r.row === selRow(), chain: r.row !== selRow() && chain().has(r.row), on: rowOn(r.row) === true || hot().has(r.row), dim: rowOn(r.row) === false, hot: hot().has(r.row), chg: ripple().rows.has(r.row), chgc: ripple().chain.has(r.row) && !ripple().rows.has(r.row) }}
+                                <div class="fr" classList={{ sel: r.row === selRow(), chain: r.row !== selRow() && chain().has(r.row), on: rowOn(r.row) === true || hot().has(r.row), dim: rowOn(r.row) === false || (waysOut() && !outs(r.row).length) || (!!followed() && !touches(r.row).length) || (!!deadOf(r.row) && r.row !== selRow()), wx: (waysOut() && outs(r.row).length > 0) || (!!followed() && touches(r.row).length > 0), hot: hot().has(r.row), chg: ripple().rows.has(r.row), chgc: ripple().chain.has(r.row) && !ripple().rows.has(r.row) }}
                                   style={{ top: `${r.y}px`, background: heat() && howOftenLevel(S()!.run, r.row).level ? `rgba(111,158,158,${[0, 0.1, 0.2, 0.32, 0.4][Math.min(4, howOftenLevel(S()!.run, r.row).level)]})` : undefined }}
-                                  onClick={(e) => { e.stopPropagation(); if (e.shiftKey) routeTo(r.row); else jumpRow(r.row); canvasEl.focus(); }} title={`${short(R()[r.row].name)} · ${basename(f)}:${R()[r.row].line + 1}`}>
+                                  onClick={(e) => { e.stopPropagation(); if (e.shiftKey) routeTo(r.row); else jumpRow(r.row); canvasEl.focus(); }} title={`${short(R()[r.row].name)} · ${basename(f)}:${R()[r.row].line + 1}${waysOut() ? outs(r.row).map((x) => `\nline ${x.line + 1}: ${[...x.when, x.kind === 'noreturn' ? `${x.text} (${x.callee} never returns)` : x.text].join(' → ')}`).join('') : ''}${followed() ? touches(r.row).map((h) => `\n${hitWords(h)}`).join('') : ''}${deadOf(r.row) ? `\nnot in this call · ${deadOf(r.row)}` : ''}`}>
                                   <span class="n">{R()[r.row].n}</span><span class="nm">{short(R()[r.row].name)}</span>
-                                  <Show when={heat()}><span class="c">{howOftenLevel(S()!.run, r.row).text}</span></Show>
+                                  <Show when={heat() && !(waysOut() && outs(r.row).length) && !(followed() && touches(r.row).length)}><span class="c">{howOftenLevel(S()!.run, r.row).text}</span></Show>
+                                  <Show when={waysOut() && outs(r.row).length}><span class="c x">{outs(r.row).length} out</span></Show>
+                                  <Show when={!waysOut() && followed() && touches(r.row).length}><span class="c">{[...new Set(touches(r.row).map((h) => (h.how === 'set' ? (h.copy ? 'sets a copy' : 'sets') : h.how === 'read' ? 'reads' : h.how === 'returns' ? 'returns' : '')).filter(Boolean))].join(' · ')}</span></Show>
                                 </div>
                               )
                               : <div class="lpl" classList={{ hot: loopHot(r.frame!), dim: rowOn(r.row) === false }} style={{ top: `${r.y}px` }}>↻ {S()!.run.frames[r.frame!].count != null ? `×${S()!.run.frames[r.frame!].count} · ` : ''}{S()!.run.frames[r.frame!].text}{loopHot(r.frame!) ? ` · pass ${cur()!.passes[r.frame!] ?? 1}` : ''}</div>}
@@ -598,6 +620,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
           <div class="bxctl">
             <span class="lvl">{lv() === 'functions' ? 'functions' : lv() === 'files' ? 'files' : 'folders'}<Show when={unreached()}> · {unreached()} file{unreached() === 1 ? '' : 's'} not reached from this start</Show></span>
             <span class="grow" />
+            <Show when={S() && leavingCount(S()!.run)}><button class="chip" classList={{ on: waysOut() }} aria-pressed={waysOut()} title="ways out: the usual path fades, functions that can leave early stay, with how many ways; hover one for them (E)" onClick={() => { toggleWaysOut(); canvasEl.focus(); }}>ways out</button></Show>
             <For each={[['all', 'fit all'], ['width', 'fit width'], ['100', '100%'], ['150', '150%']] as [Zoom, string][]}>{([z, t]) => <button class="chip" classList={{ on: zoom() === z }} onClick={() => { applyZoom(z); canvasEl.focus(); }}>{t}</button>}</For>
             <button class="chip" title={`zoom out (${ALT} −)`} onClick={() => zoomTo(k() / 1.25, { ms: 260 })}>−</button>
             <span class="ro">{Math.round(k() * 100)}%</span>

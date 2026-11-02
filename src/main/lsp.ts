@@ -41,14 +41,33 @@ export function systemClangd(): string | null {
   }
 }
 
-/** compile_commands.json in the root or a build folder one level down. */
+/** compile_commands.json in the root or a build folder one level down; one written for another place is passed over. */
 export function findCompileCommands(root: string): string | null {
-  if (fs.existsSync(path.join(root, 'compile_commands.json'))) return root;
+  if (fs.existsSync(path.join(root, 'compile_commands.json')) && !staleCompileCommands(root)) return root;
   for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
-    if (e.isDirectory() && /^(build|out|cmake-build-)/i.test(e.name) && fs.existsSync(path.join(root, e.name, 'compile_commands.json')))
+    if (e.isDirectory() && /^(build|out|cmake-build-)/i.test(e.name) && fs.existsSync(path.join(root, e.name, 'compile_commands.json')) && !staleCompileCommands(path.join(root, e.name)))
       return path.join(root, e.name);
   }
   return null;
+}
+
+/**
+ * Whether a compile database was written for another place: its commands run in a folder that doesn't exist (the
+ * project was moved, renamed or copied from another machine since it was built). clangd would index the files at
+ * those paths, not these, so the project is treated as having none and SkyCodeX writes its own. Reads only the
+ * first entry, so a database of any size is checked at once.
+ */
+export function staleCompileCommands(dir: string): boolean {
+  let head = '';
+  try {
+    const fd = fs.openSync(path.join(dir, 'compile_commands.json'), 'r');
+    try { const b = Buffer.alloc(65536); head = b.toString('utf8', 0, fs.readSync(fd, b, 0, b.length, 0)); } finally { fs.closeSync(fd); }
+  } catch { return false; }
+  const m = /"directory"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(head);
+  if (!m) return false;
+  let d = '';
+  try { d = JSON.parse(`"${m[1]}"`); } catch { return false; }
+  return path.isAbsolute(d) && !fs.existsSync(d);
 }
 
 /** Where the project's own compile database is and when it was written ('' when it has none). */

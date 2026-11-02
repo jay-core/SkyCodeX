@@ -5,7 +5,7 @@ import { relPath, basename } from './lib/api';
 import { openSearch, result } from './lib/search';
 import { installedFonts } from './lib/fonts';
 import { levels, focusCard, refreshForCursor, unresolvedCard } from './lib/preview';
-import { lspState } from './lib/lsp';
+import { lspState, indexing } from './lib/lsp';
 import { quickOpen, palette, setPalette, applyWorkspaceEdit, COMMANDS } from './lib/actions';
 import { setMenuOpen } from './components/AppMenu';
 import { files, states, setFiles } from './lib/store';
@@ -14,8 +14,9 @@ import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
 import { buildFlow, buildRun, findEntries, resolveEntry } from './lib/flow';
 import { rankEntries } from '../shared/entries';
-import { setFlowView, changed, seq, entries, lane, entryStart, runStatus } from './lib/flowstore';
+import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail } from './lib/flowstore';
 import { pal } from './lib/lines';
+import { boxModel, layoutBoxes } from '../shared/flowboxes';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -32,10 +33,31 @@ async function frames(run: () => unknown, ms: number) {
   const f = d.slice(1);
   return { frames: f.length, worstMs: +Math.max(...f).toFixed(1), dropped: f.filter((x) => x > 25).length, avgMs: +(f.reduce((a, b) => a + b, 0) / f.length).toFixed(1) };
 }
+/** Frame times while run() and the next ms play out: how many, the slowest 5% (p95), the slowest, and how many missed 60 fps. */
+async function frameStats(run: () => unknown, ms: number) {
+  const d: number[] = [];
+  let last = 0, on = true;
+  const slow: string[] = [];
+  const tick = (t: number) => { if (last) { d.push(t - last); if (t - last > 80) slow.push(`${Math.round(t - last)}:${status().slice(0, 40)}|${runStatus().slice(0, 30)}|${settlingNow() ? 'settle' : ''}|${indexing() ? 'idx' : ''}`); } last = t; if (on) requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  await run(); await sleep(ms); on = false;
+  const f = [...d].sort((a, b) => a - b);
+  return { slow, n: f.length, p95: +(f[Math.floor(f.length * 0.95)] ?? 0).toFixed(1), max: +(f[f.length - 1] ?? 0).toFixed(1), over: f.filter((x) => x > 16.7 * 1.5).length };
+}
 async function until(cond: () => boolean, ms: number, tick?: () => void) {
   const end = Date.now() + ms;
   while (!cond() && Date.now() < end) { tick?.(); await sleep(250); }
   return cond();
+}
+/** Waits until cond has held for `hold` ms without a break (e.g. clangd idle, not merely between two jobs). */
+async function quiet(cond: () => boolean, hold: number, ms: number) {
+  const end = Date.now() + ms;
+  let since = cond() ? Date.now() : 0;
+  while (Date.now() < end) {
+    if (!cond()) since = 0; else if (!since) since = Date.now(); else if (Date.now() - since >= hold) return true;
+    await sleep(100);
+  }
+  return false;
 }
 
 export async function runSmoke() {
@@ -50,6 +72,11 @@ export async function runSmoke() {
   if (info()?.scenario === 'programs') return programsCheck(report);
   if (info()?.scenario === 'folder') return folderCheck(report);
   if (info()?.scenario === 'colors') return colorsCheck(report);
+  if (info()?.scenario === 'revisit') return revisitCheck(report);
+  if (info()?.scenario === 'exits') return exitsCheck(report);
+  if (info()?.scenario === 'findings') return findingsCheck(report);
+  if (info()?.scenario === 'watch') return watchCheck(report);
+  if (info()?.scenario === 'values') return valuesCheck(report);
   if (info()?.scenario === 'hold') return;   // opens the folder and waits: a recorder drives the window (src/concepts/flow/ux)
   try {
     await until(() => lspState() === 'ready', 20000);
@@ -64,7 +91,9 @@ export async function runSmoke() {
     v.focus();
     const pos = offsetToPos(v.state.doc, at);
     report.level1Ready = await until(() => (levels()[0]?.cards.length ?? 0) >= 5, 40000, () => refreshForCursor(file, pos, true));
-    report.level1Resolved = await until(() => !!levels()[0] && !levels()[0].cards.some(unresolvedCard), 40000);
+    // once clangd has finished indexing, every call in the project resolves to its definition (an empty level resolves nothing)
+    report.indexQuiet = await quiet(() => !indexing(), 2000, 180000);
+    report.level1Resolved = await until(() => (levels()[0]?.cards.length ?? 0) > 0 && !levels()[0].cards.some(unresolvedCard), 40000);
     await sleep(900);
     report.level1 = levels()[0]?.cards.map((c) => c.name);
     await api.smoke.capture('1-editor-preview');
@@ -584,11 +613,16 @@ async function bootCheck(report: Record<string, unknown>) {
       report.previewCards = document.querySelectorAll('.pcol .card').length;
       report.definition = !!(await definitionAt(src, { line: at, character: lines[at].indexOf('handle') + 1 }));
     }
+    // the flow is read once clangd has indexed the project (no indexing for 2 s running), as a person would see it
+    await quiet(() => !indexing(), 2000, 180000);
     setPage('flow');
     setFlowView('sequence');
-    await until(() => document.querySelectorAll('.seqv .srow').length > 3, 60000);
+    await until(() => document.querySelectorAll('.seqv .srow').length > 3 && !runStatus(), 60000);
+    await quiet(() => !settlingNow() && !runStatus(), 1000, 60000);
     await sleep(800);
     report.seqRows = document.querySelectorAll('.seqv .srow').length;
+    // the steps the page shows, compared with a fresh trace below (the page must not keep an incomplete graph)
+    report.viewSteps = seq()?.run.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, ''));
     // all code everywhere: the code rows make room and nothing lands on anything else
     const allRows = document.querySelectorAll('.seqv .srow:not(.sfold)').length;
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
@@ -665,6 +699,19 @@ async function bootCheck(report: Record<string, unknown>) {
     rowNamed('split')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
     await sleep(500);
     report.boxRoutes = document.querySelectorAll('.bxr').length;
+    // the layout engine in its worker lays out exactly as the same engine on the page does, at every level
+    {
+      const m = boxModel(seq()!.run, root());
+      const { default: Bundled } = await import('elkjs/lib/elk.bundled.js');
+      const { default: Api } = await import('elkjs/lib/elk-api.js');
+      // @ts-expect-error vite's worker import
+      const { default: W } = await import('elkjs/lib/elk-worker.min.js?worker&inline');
+      const onPage = new Bundled() as any, inWorker = new Api({ workerFactory: () => new W() }) as any;
+      const differ: string[] = [];
+      for (const lv of ['functions', 'files', 'folders'] as const) if (JSON.stringify(await layoutBoxes(m, lv, onPage)) !== JSON.stringify(await layoutBoxes(m, lv, inWorker))) differ.push(lv);
+      report.layoutWorker = { levels: 3, differ };
+      inWorker.terminateWorker?.();
+    }
     await api.smoke.capture('boxes-routes');
     (document.querySelector('.flow.bxv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     setFlowView('sequence');
@@ -739,6 +786,10 @@ export function auditSequence(): string[] {
 /** A large real project (e.g. thorvg): how long each stage takes, and what never arrives. */
 async function largeCheck(report: Record<string, unknown>) {
   const t0 = performance.now(), at = () => Math.round(performance.now() - t0);
+  // every stretch the window's thread was busy for 50 ms or more (it could not answer input or draw)
+  const longTasks: { at: number; ms: number }[] = [];
+  try { new PerformanceObserver((l) => { for (const e of l.getEntries()) longTasks.push({ at: Math.round(e.startTime - t0), ms: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch { /* not supported */ }
+  const busy = (from: number, to: number) => { const xs = longTasks.filter((x) => x.at >= from && x.at < to); return { count: xs.length, maxMs: Math.max(0, ...xs.map((x) => x.ms)), totalMs: xs.reduce((a, x) => a + x.ms, 0) }; };
   const steps: Record<string, unknown> = {};
   report.steps = steps;
   try {
@@ -769,13 +820,17 @@ async function largeCheck(report: Record<string, unknown>) {
     setFlowView('boxes');
     setPage('flow');
     // a project with many mains opens on the list of them: the most likely one is picked, then back and again
+    const tp = performance.now();
     await until(() => document.querySelectorAll('.progs .pr').length > 0, 30000);
+    steps.programsMs = Math.round(performance.now() - tp);
     steps.programs = { rows: document.querySelectorAll('.progs .pr').length, groups: [...document.querySelectorAll('.progs .grp b')].map((b) => b.textContent).slice(0, 10), top: document.querySelector('.progs .pr.top')?.textContent };
     await api.smoke.capture('large-0-programs');
+    steps.programsStatus = status();
     (document.querySelector('.progs .pr.top') as HTMLElement).click();
-    const t5 = performance.now();
+    const t5 = performance.now(), tClick = at();
     const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
     const fl = await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0 && !/tracing/.test(flowStatus()), 240000);
+    steps.busyToFirstPicture = busy(tClick, at());
     steps.entry = { count: entries().length, chosen: entries()[lane()]?.rel, name: entries()[lane()]?.name, start: entryStart() };
     steps.flow = { status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, dead: document.querySelectorAll('.fbox.dead').length, arrows: document.querySelectorAll('.flab').length, ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
     await sleep(1500);
@@ -829,6 +884,26 @@ async function largeCheck(report: Record<string, unknown>) {
     seqBad.push(...auditSequence());
     steps.sequence = { rows: document.querySelectorAll('.seqv .srow').length, moveMsMax: Math.max(...moves), moveMsMedian: moves.sort((a, b) => a - b)[moves.length >> 1], collisions: seqBad.length, first: seqBad.slice(0, 2) };
     await api.smoke.capture('large-6-sequence');
+    // frame times while things move: stepping, playing, the Tab glide between views, zooming and playing the boxes
+    await api.smoke.profile(null);
+    const tProf = performance.timeOrigin + performance.now();
+    const key = (el: Element | null, k: string) => el?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    const motion: Record<string, unknown> = {};
+    motion.seqStep = await frameStats(async () => { for (let i = 0; i < 10; i++) { key(document.querySelector('.seqv'), 'ArrowRight'); await sleep(150); } }, 300);
+    motion.seqPlay = await frameStats(() => key(document.querySelector('.seqv'), ' '), 3000);
+    key(document.querySelector('.seqv'), ' ');
+    await sleep(300);
+    motion.tabGlide = await frameStats(() => key(document.querySelector('.seqv'), 'Tab'), 1500);
+    await until(() => document.querySelectorAll('.fbox').length > 0, 10000);
+    motion.zoomAll = await frameStats(() => chipOf('fit all')?.click(), 1200);
+    motion.zoom100 = await frameStats(() => chipOf('100%')?.click(), 1200);
+    motion.boxPlay = await frameStats(() => key(document.querySelector('.flow.bxv'), ' '), 3000);
+    key(document.querySelector('.flow.bxv'), ' ');
+    await sleep(300);
+    steps.motion = motion;
+    steps.profile = { file: await api.smoke.profile('large-motion'), startedAt: tProf };
+    setFlowView('sequence');
+    await until(() => document.querySelectorAll('.seqv .srow').length > 0, 30000);
     setFlowView('boxes');
     const t8 = performance.now();
     let back = false;
@@ -848,8 +923,12 @@ async function largeCheck(report: Record<string, unknown>) {
     steps.frameAfterIndexMs = Math.round(performance.now() - t6);
     steps.indexing = (document.querySelector('.pcol')?.textContent ?? '').match(/index[^\n]{0,60}/i)?.[0] ?? null;
     await api.smoke.capture('large-3-after');
+    // until the page settles (clangd done, no rebuild pending), when its picture is kept for next time
+    steps.settled = (await quiet(() => !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 3000, 180000)) ? at() : 'not settled';
+    await sleep(2000);
   } catch (e) { errors.push(`large: ${e}`); }
   report.totalMs = at();
+  report.busy = { all: busy(0, Infinity), worst: [...longTasks].sort((a, b) => b.ms - a.ms).slice(0, 5) };
   report.errors = errors;
   await api.smoke.done(report);
 }
@@ -938,6 +1017,200 @@ async function engineCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
+/** `--scenario watch` on samples/tinyhttp: W watches running_ through its rename, V follows req.raw from handle. */
+async function watchCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`watch: ${what}`); };
+  const key = (k: string) => (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  const choose = async (typed: string) => {
+    await until(() => !!document.querySelector('.spick input'), 3000);
+    const inp = document.querySelector('.spick input') as HTMLInputElement;
+    inp.value = typed; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(150);
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(500);
+  };
+  const lit = () => [...document.querySelectorAll('.seqv .srow.fw')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.sw')?.textContent}`);
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    key('w');
+    report.watchOptions = [...document.querySelectorAll('.spickl button')].map((b) => b.textContent).slice(0, 8);
+    await choose('running_');
+    report.watch = lit();
+    report.watchDimmed = document.querySelectorAll('.seqv .srow.fq').length;
+    await api.smoke.capture('watch-1-running');
+    check((report.watch as string[]).join(' | ') === 'start: ▲ sets running_ · ▽ reads running_ | run: → running_ passed on as running · ▽ reads running | stop: ▲ sets running_', `watching running_ shows ${(report.watch as string[]).join(' | ')}`);
+    key('Escape');
+    await sleep(300);
+    check(!document.querySelector('.seqv .srow.fw, .seqv .srow.fq'), 'Esc does not show the whole run again');
+    // to handle, then follow req.raw
+    const it = seq()!.items.findIndex((i) => seq()!.run.rows[i].kind === 'step' && /handle$/.test(seq()!.run.rows[i].name));
+    (document.querySelectorAll('.seqv .srow')[0] as HTMLElement).click();
+    await sleep(200);
+    for (let k = 0; k < 40 && (trail().at(-1)?.at ?? -1) !== it; k++) { key('ArrowRight'); await sleep(60); }
+    key('v');
+    report.journeyOptions = [...document.querySelectorAll('.spickl button')].map((b) => b.textContent);
+    await choose('req.raw');
+    report.journey = lit();
+    await api.smoke.capture('watch-2-journey');
+    check((report.journey as string[]).join(' | ') === 'parse_headers: → req.raw passed on as raw · a copy · ▽ reads raw | split: → raw passed on as s · a copy · ▽ reads s', `following req.raw shows ${(report.journey as string[]).join(' | ')}`);
+    // the boxes view shows the same functions, saying how
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    await sleep(800);
+    report.journeyBoxes = [...document.querySelectorAll('.fbox .fr.wx')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.c')?.textContent}`);
+    await api.smoke.capture('watch-3-boxes');
+    check((report.journeyBoxes as string[]).join(' | ') === 'parse_headers: reads | split: reads', `the boxes view lights ${(report.journeyBoxes as string[]).join(' | ')}`);
+    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+  } catch (e) { errors.push(`watch: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario values` on samples/values: arms a call's values rule out fade, the first row of each saying why. */
+async function valuesCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`values: ${what}`); };
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    const run = seq()!.run;
+    report.dead = run.frames.filter((f) => f.dead).map((f) => `${run.rows[f.owner].name}: ${f.label} | ${f.dead}`);
+    check((report.dead as string[]).length === 13, `the run rules out ${(report.dead as string[]).length} arms, not 13`);
+    await sleep(500);
+    report.said = [...document.querySelectorAll('.seqv .srow .sd')].map((s) => s.textContent);
+    report.faded = document.querySelectorAll('.seqv .srow.sdead').length;
+    await api.smoke.capture('values-1-sequence');
+    check((report.said as string[]).includes('not in this call · clear is true here — passed by draw(true)'), `draw's else does not say why: ${(report.said as string[]).slice(0, 3).join(' | ')}`);
+    check((report.faded as number) >= (report.said as string[]).length && (report.said as string[]).length > 0, 'no row fades');
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    await sleep(800);
+    report.boxesDim = [...document.querySelectorAll('.fbox .fr.dim')].map((r) => r.querySelector('.nm')?.textContent);
+    await api.smoke.capture('values-2-boxes');
+    check((report.boxesDim as string[]).includes('inner'), `inner, called only where it cannot happen, is not faded in the boxes view: ${(report.boxesDim as string[]).join(', ')}`);
+    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+  } catch (e) { errors.push(`values: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario findings` on any folder: the findings the sequence view lists for the chosen program, as shown. */
+async function findingsCheck(report: Record<string, unknown>) {
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    (document.querySelector('.sfnd .chip') as HTMLElement | null)?.click();
+    await sleep(400);
+    report.findings = [...document.querySelectorAll('.sfndl button')].map((b) => b.textContent);
+    // the run's ways out too (E), each with where it is, so they can be checked against the source
+    const run = seq()!.run;
+    report.program = entries()[lane()]?.rel;
+    report.steps = run.rows.filter((r) => r.kind === 'step').length;
+    report.waysOut = run.rows.flatMap((r) => (r.kind === 'step' ? (run.exits?.[r.key] ?? []).filter((x) => x.early).map((x) => `${relPath(root(), r.file)}:${x.line + 1} ${r.name}: ${x.kind}${x.callee ? ` ${x.callee}` : ''} | ${x.text} | ${x.when.join(' / ')}`) : []));
+    report.pairs = Object.entries(run.pairs ?? {}).flatMap(([k, us]) => us.map((u) => `${run.rows.find((r) => r.key === k)?.name}: ${u.what} ${u.name} line ${u.opened.line + 1} → ${u.exit.kind} ${u.exit.line + 1} | ${u.path.join(' / ')}`));
+    const box = document.querySelector('.sfndl')?.getBoundingClientRect();
+    if (box && (box.left < 0 || box.right > innerWidth)) errors.push(`findings: the list runs off the window (${Math.round(box.left)}–${Math.round(box.right)} of ${innerWidth})`);
+    await api.smoke.capture(`findings-${basename(root())}`);
+  } catch (e) { errors.push(`findings: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario exits` on samples/exits: E dims the usual path and lights every way out, with what leads there. */
+async function exitsCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`exits: ${what}`); };
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    const sv = document.querySelector('.seqv') as HTMLElement;
+    sv.focus();
+    sv.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+    await sleep(500);
+    const rows = [...document.querySelectorAll('.seqv .srow:not(.sfold)')] as HTMLElement[];
+    const lit = rows.filter((r) => r.classList.contains('wx')).map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.sx')?.textContent}`);
+    report.lit = lit;
+    report.dimmed = rows.filter((r) => r.classList.contains('wq')).map((r) => r.querySelector('.nm')?.textContent);
+    report.caption = document.querySelector('.scap')?.textContent ?? '';
+    await api.smoke.capture('exits-1-ways-out');
+    check(lit.some((l) => /^main: if \(setjmp\(restart\)\) → return 9 · 54 · \+1 more$/.test(l)), 'main does not show its two early ways out');
+    check(lit.some((l) => /^parse: if \(!s\) → return -1 · 17 · \+3 more$/.test(l)), 'parse does not show its four early ways out');
+    check(lit.some((l) => /^command: switch \(cmd\) · case 0 → return 0 · 30 · \+3 more$/.test(l)), 'command does not show its ways out');
+    check(lit.some((l) => /^die: std::exit\(3\)/.test(l) || /^die: exit — never returns/.test(l)), 'die does not show exit');
+    check(!lit.some((l) => /return v|return n|return rc|twice/.test(l)), 'a normal end is shown as a way out');
+    sv.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+    await sleep(300);
+    check(!document.querySelector('.seqv .srow.wq, .seqv .srow.wx'), 'E again does not show the whole run');
+    // the boxes view: the same functions stay, each with how many ways out; the rest fade
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    await sleep(800);
+    (document.querySelector('.flow.bxv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'E', bubbles: true }));
+    await sleep(500);
+    report.boxes = [...document.querySelectorAll('.fbox .fr.wx')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.c.x')?.textContent}`);
+    report.boxesFaded = document.querySelectorAll('.fbox .fr.dim').length;
+    await api.smoke.capture('exits-2-boxes');
+    check((report.boxes as string[]).join() === 'main: 2 out,parse: 4 out,command: 4 out,die: 1 out,halt: 1 out,open_all: 2 out', `the boxes view lights ${(report.boxes as string[]).join(', ')}`);
+    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+  } catch (e) { errors.push(`exits: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/**
+ * `--scenario revisit` on samples/tinyhttp: a folder opened again shows the picture it settled on last time at once,
+ * and the live build underneath ends on the same picture as a fresh trace; once a file changes, nothing is kept.
+ */
+async function revisitCheck(report: Record<string, unknown>) {
+  const stepsOf = () => seq()?.run.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, '')) ?? [];
+  const settled = () => quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 2000, 180000);
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`revisit: ${what}`); };
+  try {
+    const home = root(), other = home.replace(/[\\/][^\\/]+$/, '/engine');
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await settled();
+    await sleep(1500);   // the settled picture is written in the background
+    report.first = { steps: stepsOf(), status: status() };
+    const reopen = async () => {
+      await openFolder(other);
+      await until(() => lspState() === 'ready' && root() === other, 60000);
+      await sleep(1000);
+      const t0 = performance.now();
+      await openFolder(home);
+      await until(() => !!seq() && root() === home, 60000);
+      return { ms: Math.round(performance.now() - t0), status: status(), steps: stepsOf() };
+    };
+    const kept = await reopen();
+    report.kept = kept;
+    await api.smoke.capture('revisit-1-kept');
+    await settled();
+    const g = graph(), run = g ? await buildRun(g.lanes[0].start) : null;
+    report.live = { steps: stepsOf(), status: status(), fresh: run?.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, '')) };
+    check(/as last time/.test(kept.status), `the folder opened again without its last picture (${kept.status})`);
+    check(kept.steps.join() === (report.first as any).steps.join(), 'the kept picture differs from the one last shown');
+    check(!/checking/.test(status()), 'the kept picture was never confirmed');
+    check(stepsOf().join() === (report.live as any).fresh?.join(), 'after the live build, the page differs from a fresh trace');
+    // a file touched since (same text, new time): the picture is not kept, the live build draws it
+    const file = `${home}/src/server.cpp`;
+    await api.fs.write(file, (await api.fs.read(file)) as string);
+    const touched = await reopen();
+    report.touched = touched;
+    check(!/as last time/.test(touched.status), 'a picture was kept for a folder whose files changed');
+    await settled();
+  } catch (e) { errors.push(`revisit: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
 /** `--scenario programs` on samples/programs: the list of programs, which starts which, and the code they share. */
 async function programsCheck(report: Record<string, unknown>) {
   try {
@@ -952,6 +1225,24 @@ async function programsCheck(report: Record<string, unknown>) {
     await api.smoke.capture('programs-connect');
     (document.querySelector('.progs .pr.top') as HTMLElement).click();
     report.flowAfter = await until(() => (seq()?.run.rows.length ?? 0) > 1, 30000);
+    // from a program's flow, the other programs are one click away: the back link and a chip per program
+    const back = document.querySelector('.backp') as HTMLElement | null, br = back?.getBoundingClientRect();
+    report.switcher = { back: !!back && !!br && br.width > 0 && br.right <= innerWidth, chips: [...document.querySelectorAll('.lanes .chip')].map((c) => c.textContent) };
+    await api.smoke.capture('programs-flow');
+    await sleep(2500);
+    report.later = { list: programs(), back: !!document.querySelector('.backp'), lane: lane() };
+    await api.smoke.capture('programs-flow-later');
+    // the same in the boxes view, and in a narrow window: the way back must stay visible
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox').length > 0, 15000);
+    // every control of the header wholly visible: not cut off by the pane edge, not under another pane
+    const shown = (e: Element) => { const r = e.getBoundingClientRect(), pane = e.closest('.pane')!.getBoundingClientRect(); return r.width > 0 && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.bottom <= pane.bottom && [[r.left + 2, r.top + r.height / 2], [r.right - 2, r.top + r.height / 2]].every(([x, y]) => e.contains(document.elementFromPoint(x, y))); };
+    const vis = () => { const ctl = [...document.querySelectorAll('.ph.wrap .backp, .ph.wrap .lanes .chip, .ph.wrap > .chip, .ph.wrap .mgchips .chip')]; return ctl.length > 0 && ctl.every(shown) ? true : ctl.filter((e) => !shown(e)).map((e) => e.textContent); };
+    report.boxesBack = vis();
+    await api.smoke.capture('programs-boxes');
+    await api.smoke.resize(900, 700); await sleep(600);
+    report.narrowBack = vis();
+    await api.smoke.capture('programs-boxes-narrow');
   } catch (e) { errors.push(`programs: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);

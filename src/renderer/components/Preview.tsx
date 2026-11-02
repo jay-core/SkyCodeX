@@ -1,5 +1,5 @@
 import { For, Index, Show, createEffect, createMemo, on, onMount, onCleanup, createSignal } from 'solid-js';
-import { levels, setLevels, win, setWin, setMainFn, focusCard, prepareShiftRight, shiftHome, canShift, busy, mainFn, Level, rebuildLevels, measureDepth, clearDepths } from '../lib/preview';
+import { levels, setLevels, win, setWin, setMainFn, focusCard, prepareShiftRight, shiftHome, canShift, busy, mainFn, Level, rebuildLevels, measureDepth, clearDepths, remeasureDepths, unresolvedCard } from '../lib/preview';
 import { afterPaint, onScreen } from '../lib/motion';
 import Card, { cardViews, cardCursor } from './Card';
 import { pal, Link, linkSvg } from '../lib/lines';
@@ -8,7 +8,7 @@ import { EditorView } from '@codemirror/view';
 import { getMainView, settings, cursorPos, root, files } from '../lib/store';
 import { api } from '../lib/api';
 import { posToOffset } from '../lib/cm';
-import { lspState, lspMessage, indexing } from '../lib/lsp';
+import { lspState, lspMessage, indexing, indexEpoch } from '../lib/lsp';
 import { t } from '../lib/i18n';
 
 const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)', IN = 'cubic-bezier(0.55, 0, 1, 0.45)';
@@ -156,6 +156,13 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   createEffect(on(() => ['preview.include_std', 'preview.include_other', 'preview.max_cards'].map((k) => String(settings()[k])).join('|'), () => {
     const p = cursorPos();
     if (files.active && levels().length) rebuildLevels(files.active, { line: p.line - 1, character: p.col - 1 });
+  }, { defer: true }));
+  // clangd finished indexing: a call it could name only by its header declaration resolves to its definition now
+  // (the retries while it loaded stop after 30 s), and depths measured meanwhile may have been short
+  createEffect(on(indexEpoch, () => {
+    const p = cursorPos();
+    if (files.active && levels().some((l) => l.cards.some(unresolvedCard))) rebuildLevels(files.active, { line: p.line - 1, character: p.col - 1 });
+    void remeasureDepths();
   }, { defer: true }));
   // a new folder starts with empty previews
   createEffect(on(root, () => { setLevels([]); setMainFn(null); setWin(0); }, { defer: true }));

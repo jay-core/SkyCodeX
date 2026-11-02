@@ -60,7 +60,7 @@ export default function Programs(props: { switcher: unknown }) {
   return (
     <div class="body" style={{ height: '100%' }}>
       <div class="pane" style={{ flex: 1 }}>
-        <div class="ph" style={{ padding: '0 22px' }}>
+        <div class="ph wrap" style={{ padding: '0 22px' }}>
           <span style={{ color: 'var(--bright)' }}>all programs · {entries().length} entry points</span>
           <span class="sub" style={{ 'margin-left': '14px' }}>{status()}</span>
           <span class="grow" />

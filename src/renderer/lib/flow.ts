@@ -9,7 +9,7 @@
 import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename } from './api';
 import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols, ensureOpen } from './lsp';
 import { states } from './store';
-import { parseCpp, loopsAt, functionDefs, definedNames, addressTaken, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
+import { parseCpp, loopsAt, functionDefs, definedNames, addressCandidates, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
 import { analyseFunction, walkRun, fnExtent, functionNode, AstNode, FnInfo, Run, Target } from '../../shared/flowrun';
 import { effects } from '../../shared/flowfacts';
 import type { Tree } from '@lezer/common';
@@ -187,7 +187,7 @@ function nameIndex(root: string): Promise<Map<string, string[]>> {
   return p;
 }
 
-function textDefinitions(root: string) {
+function textDefinitions(root: string, entry: string) {
   const names = () => nameIndex(root);
   const found = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem): Promise<CallItem | null> => {
@@ -198,7 +198,7 @@ function textDefinitions(root: string) {
         const { text, tree } = await src(file);
         for (const d of functionDefs(tree, text)) if (d.name === it.name || d.name.endsWith(`::${it.name}`)) hits.push({ file, d, text });
       }
-      const best = nearest(hits, uriToFile(it.uri));
+      const best = ownDefinition(hits, it.name, entry) ?? nearest(hits, uriToFile(it.uri));
       if (!best) return null;
       const { file, d, text } = best, ch = Math.max(0, (text.split('\n')[d.line] ?? '').search(new RegExp(`\\b${it.name}\\s*\\(`)));
       return callItemAt(file, { line: d.line, character: ch });
@@ -206,6 +206,15 @@ function textDefinitions(root: string) {
     return p;
   };
 }
+/**
+ * The definition in the entry point's own file, when it has one that other files can call (not static): a program
+ * links one definition of each function, and the entry's file is surely in it — so where every port or example
+ * defines tx_application_define, the program running is the one whose main is shown.
+ */
+function ownDefinition<T extends { file: string; d: FnDef; text: string }>(hits: T[], name: string, entry: string): T | null {
+  return (entry && hits.find((h) => h.file === entry && h.d.name === name && !isStatic(h))) || null;
+}
+const isStatic = (h: { d: FnDef; text: string }) => /\bstatic\b/.test(h.text.slice(h.d.from, offsetOf(h.text, h.d.line, 0)) + (h.text.split('\n')[h.d.line] ?? ''));
 /**
  * Of several definitions, the one sharing the most folders with the header that declares it (common/inc/tx_api.h →
  * common/src, not common_smp/src); null when none does, or two do equally (one per port: the index decides).
@@ -219,11 +228,12 @@ function nearest<T extends { file: string }>(hits: T[], decl: string): T | null 
 }
 /**
  * A plain C function defined more than once in the project (one per port or board): clangd's index keeps whichever it
- * read last, so the run could differ between sessions. The pick is made stable instead: the definition sharing the
- * most folders with the caller, then the first by path. Methods, overloads and static (file-local) functions are
+ * read last, so the run could differ between sessions. The pick is made stable instead: the one in the entry point's
+ * own file (ownDefinition), else the definition sharing the most folders with the caller, then the first by path.
+ * Methods, overloads and static (file-local) functions are
  * left to clangd. Null when clangd's own target stands.
  */
-function stableDefinitions(root: string) {
+function stableDefinitions(root: string, entry: string) {
   const picked = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem, caller: string): Promise<CallItem | null> => {
     const k = `${it.name}@${caller.replace(/[\\/][^\\/]*$/, '')}`;
@@ -234,12 +244,12 @@ function stableDefinitions(root: string) {
       const hits: { file: string; d: FnDef; text: string }[] = [];
       for (const file of files) {
         const { text, tree } = await src(file);
-        for (const d of functionDefs(tree, text)) if (d.name === it.name && !/\bstatic\b/.test(text.slice(d.from, offsetOf(text, d.line, 0)) + (text.split('\n')[d.line] ?? ''))) hits.push({ file, d, text });
+        for (const d of functionDefs(tree, text)) if (d.name === it.name && !isStatic({ d, text })) hits.push({ file, d, text });
       }
       if (hits.length < 2) return null;
       const dirs = (f: string) => f.split(/[\\/]/).slice(0, -1), c = dirs(caller);
       const shared = (f: string) => { const a = dirs(f); let i = 0; while (i < a.length && i < c.length && a[i] === c[i]) i++; return i; };
-      const best = hits.sort((a, b) => shared(b.file) - shared(a.file) || a.file.localeCompare(b.file))[0];
+      const best = ownDefinition(hits, it.name, entry) ?? hits.sort((a, b) => shared(b.file) - shared(a.file) || a.file.localeCompare(b.file))[0];
       if (best.file === uriToFile(it.uri)) return null;
       const ch = Math.max(0, (best.text.split('\n')[best.d.line] ?? '').search(new RegExp(`\\b${it.name}\\s*\\(`)));
       return callItemAt(best.file, { line: best.d.line, character: ch });
@@ -259,7 +269,9 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   const bases = await classBases(root);
   const overridden = new Map<string, Promise<CallItem[]>>();   // method key → its overrides
   nameIdx = null; taken = null;   // a new crawl reads the text again
-  const fromText = textDefinitions(root), stable = stableDefinitions(root);
+  // one program traced (one start): its entry's file decides between definitions every port or example repeats
+  const entry = starts.length === 1 ? uriToFile(starts[0].uri) : '';
+  const fromText = textDefinitions(root, entry), stable = stableDefinitions(root, entry);
 
   /** Overrides of a method, if its class has derived classes that define a method of that name. */
   const overridesOf = (it: CallItem): Promise<CallItem[]> => {
@@ -499,7 +511,7 @@ let lastCrawl: { root: string; nodes: Map<string, Node> } | null = null;
 /** A function's facts, kept while its file's text and the calls clangd reports for it (the index still loading names declarations; once loaded, definitions) stay the same. */
 const flowCache = new Map<string, { text: string; calls: string; info: FnInfo }>();
 /** Forgets every file text, parse tree and analysed function, so the next build reads everything again. */
-export function clearFlowCaches() { texts.clear(); flowCache.clear(); }
+export function clearFlowCaches() { texts.clear(); flowCache.clear(); candidates.clear(); }
 
 /**
  * Every step from one entry point (a lane's start key), numbered in execution order, with loops, conditions,
@@ -538,25 +550,39 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
     onProgress?.(done, reach.size);
   });
   const run = walkRun(start, (k) => flows.get(k));
+  // calls the bodies make to the project's own functions that the graph doesn't list: the graph isn't complete yet
+  const defined = await nameIndex(lastCrawl.root), unlisted = new Set<string>();
+  for (const f of flows.values()) for (const n of f.flow.unlisted ?? []) if (defined.has(n)) unlisted.add(n);
+  run.unlisted = [...unlisted];
   // a call through a pointer: the functions whose address the code takes are what it may reach (probable)
   const ind = run.rows.filter((r) => r.kind === 'indirect');
   if (ind.length) {
     const t = await addressTakenIn(lastCrawl.root);
     for (const r of ind) {
       const from = r.caller != null ? run.rows[r.caller].file : '', dir = from.replace(/[\\/][^\\/]*$/, '');
-      r.could = [...t].sort((a, b) => +!a[1].some((f) => f.startsWith(dir)) - +!b[1].some((f) => f.startsWith(dir)) || a[0].localeCompare(b[0])).map(([n]) => n).slice(0, 12);
+      // those defined beside the caller first, then by name (each one's place worked out once, not per comparison)
+      r.could = t.map(([n, files]) => ({ n, far: +!files.some((f) => f.startsWith(dir)) })).sort((a, b) => a.far - b.far || byName.compare(a.n, b.n)).map((x) => x.n).slice(0, 12);
     }
   }
   return run;
 }
 
+/** The order String.prototype.localeCompare gives, without making a collator per comparison. */
+const byName = new Intl.Collator();
 /** Functions of the project whose address some source file takes, with the files that define them; once per crawl. */
 let taken: { root: string; p: Promise<[string, string[]][]> } | null = null;
+/** Each file's candidate names (addressCandidates), kept while its text is the same: a crawl only checks them against its names. */
+const candidates = new Map<string, { text: string; names: string[] }>();
 function addressTakenIn(root: string): Promise<[string, string[]][]> {
   if (taken?.root === root) return taken.p;
   const p = (async () => {
     const idx = await nameIndex(root), names = new Set(idx.keys()), out = new Set<string>();
-    for (const f of ((await api.fs.sources(root)) as string[]).filter((x) => SOURCE.test(x) || HEADER.test(x))) for (const n of addressTaken((await readText(f)).text, names)) out.add(n);
+    for (const f of ((await api.fs.sources(root)) as string[]).filter((x) => SOURCE.test(x) || HEADER.test(x))) {
+      const { text } = await readText(f);
+      let c = candidates.get(f);
+      if (c?.text !== text) candidates.set(f, c = { text, names: addressCandidates(text) });
+      for (const n of c.names) if (names.has(n)) out.add(n);
+    }
     return [...out].map((n): [string, string[]] => [n, idx.get(n) ?? []]);
   })();
   taken = { root, p };

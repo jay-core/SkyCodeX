@@ -6,7 +6,7 @@ import { files, getMainView, flash } from './store';
 import { lspState, clearDefinitionCache } from './lsp';
 import { refreshForCursor, clearTextCache, clearDepths } from './preview';
 import { clearFlowCaches } from './flow';
-import { rebuild, graph } from './flowstore';
+import { rebuild, graph, dropKept } from './flowstore';
 import { refreshTree } from '../components/FilesPane';
 import { clearSeqTexts } from './seqtext';
 import { offsetToPos } from './cm';
@@ -17,7 +17,7 @@ export async function refreshAll(): Promise<{ ok: boolean; message: string }> {
   if (refreshing()) return { ok: false, message: 'a refresh is already running' };
   setRefreshing(true);
   try {
-    clearFlowCaches(); clearTextCache(); clearDefinitionCache(); clearDepths(); clearSeqTexts();
+    clearFlowCaches(); clearTextCache(); clearDefinitionCache(); clearDepths(); clearSeqTexts(); dropKept();
     refreshTree();
     if (lspState() !== 'ready') { const m = 'files re-read · clangd is not ready yet, so calls are traced when it is'; flash(m); return { ok: true, message: m }; }
     const v = getMainView();

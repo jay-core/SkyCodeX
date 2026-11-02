@@ -1,7 +1,7 @@
 // The flow page: the sequence (the default) or the boxes view of the same run, with the entry point chosen above.
 // Tab switches between the two and keeps the selected step.
 import { For, Show, createEffect, on, onMount } from 'solid-js';
-import { flowView, setFlowView, entries, lane, setLane, rebuild, ensureBuilt, seq, refreshChanged, magnify, toggleMagnify, stepMagnify, setMagnify, programs, setPrograms } from '../lib/flowstore';
+import { flowView, setFlowView, entries, lane, setLane, rebuild, rebuildSettled, ensureBuilt, seq, refreshChanged, magnify, toggleMagnify, stepMagnify, setMagnify, programs, setPrograms } from '../lib/flowstore';
 import Programs from './Programs';
 import { root, files, flash, restartLsp } from '../lib/store';
 import { api } from '../lib/api';
@@ -12,7 +12,9 @@ import FlowBoxes from './FlowBoxes';
 
 export default function Flow() {
   onMount(ensureBuilt);
-  createEffect(on([indexEpoch, lspState, root], () => rebuild(), { defer: true }));
+  createEffect(on([lspState, root], () => rebuild(), { defer: true }));
+  // clangd finished indexing: calls into other files resolve now; rebuild until the graph stops changing
+  createEffect(on(indexEpoch, () => rebuildSettled(), { defer: true }));
   // the change ripple: which functions of the run have unsaved edits
   createEffect(on([seq, () => files.list.map((f) => `${f.path}:${f.dirty}`).join('|')], () => refreshChanged()));
   // a build may have written (or rewritten) the project's compile_commands.json: clangd reads it from the start

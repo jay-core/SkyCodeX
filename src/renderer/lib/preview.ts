@@ -283,11 +283,32 @@ export async function measureDepth(card: Card): Promise<void> {
   const hit = depthCache.get(k);
   if (hit) { setDepths({ ...depths(), [k]: hit }); return; }
   setDepths({ ...depths(), [k]: 'busy' });
+  depthItems.set(k, card.item);
+  const d = await depthOf(card.item);
+  depthCache.set(k, d);
+  setDepths({ ...depths(), [k]: d });
+}
+/** The function each measured depth belongs to, so it can be measured again once clangd's index is complete. */
+const depthItems = new Map<string, CallItem>();
+/**
+ * Measures every depth again (clangd finished indexing: calls into other files resolve only now, so a depth measured
+ * while it loaded may be short). Nothing shows as busy meanwhile; a depth changes on screen only if it differs.
+ */
+export async function remeasureDepths(): Promise<void> {
+  for (const [k, item] of [...depthItems]) {
+    const d = await depthOf(item);
+    if (!depthItems.has(k)) continue;   // cleared meanwhile (refresh, new folder)
+    const old = depthCache.get(k);
+    depthCache.set(k, d);
+    if (!old || old.depth !== d.depth || old.fns !== d.fns || old.capped !== d.capped) setDepths({ ...depths(), [k]: d });
+  }
+}
+async function depthOf(root: CallItem): Promise<Depth> {
   const keyOf = (it: CallItem) => `${it.uri}#${it.selectionRange.start.line}`;
   const edges = new Map<string, string[]>();
   let capped = false;
-  let frontier: CallItem[] = [card.item];
-  const seen = new Set<string>([keyOf(card.item)]);
+  let frontier: CallItem[] = [root];
+  const seen = new Set<string>([keyOf(root)]);
   while (frontier.length) {
     const next: CallItem[] = [];
     await pool(frontier, 16, async (it) => {
@@ -306,8 +327,8 @@ export async function measureDepth(card: Card): Promise<void> {
     frontier = next;
   }
   // depth first, in call order, each function opened once (an explicit stack: chains can be thousands long)
-  const opened = new Set<string>([keyOf(card.item)]);
-  const stack: [string, number, number][] = [[keyOf(card.item), 0, 0]];
+  const opened = new Set<string>([keyOf(root)]);
+  const stack: [string, number, number][] = [[keyOf(root), 0, 0]];
   let depth = 0;
   while (stack.length) {
     const top = stack[stack.length - 1], kids = edges.get(top[0]) ?? [];
@@ -318,11 +339,9 @@ export async function measureDepth(card: Card): Promise<void> {
     depth = Math.max(depth, top[1] + 1);
     stack.push([c, top[1] + 1, 0]);
   }
-  const d: Depth = { depth, fns: opened.size - 1, capped };
-  depthCache.set(k, d);
-  setDepths({ ...depths(), [k]: d });
+  return { depth, fns: opened.size - 1, capped };
 }
-export const clearDepths = () => { depthCache.clear(); setDepths({}); };
+export const clearDepths = () => { depthCache.clear(); depthItems.clear(); setDepths({}); };
 
 async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<unknown>) {
   let i = 0;

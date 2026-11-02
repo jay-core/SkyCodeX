@@ -13,6 +13,7 @@ import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, Compiler, ReadAs } from './compilers';
 import { openTerminal } from './terminal';
 
@@ -42,12 +43,16 @@ const scenario = scenarioIdx > 0 ? process.argv[scenarioIdx + 1] ?? null : null;
 // a smoke run keeps its session and unsaved buffers apart, so it never replaces the user's own
 const STATE = smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
 if (smoke) {
-  fs.rmSync(STATE, { recursive: true, force: true }); fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true });
+  // SKYCODEX_SMOKE_KEEP=1 keeps clangd's index, the kept flow pictures and the window's own storage (the entry point chosen) from the last smoke run: a second visit
+  const keep = process.env.SKYCODEX_SMOKE_KEEP === '1' ? new Set(['compile-db', 'flow-kept', 'chromium']) : new Set<string>();
+  for (const e of fs.existsSync(STATE) ? fs.readdirSync(STATE) : []) if (!keep.has(e)) fs.rmSync(path.join(STATE, e), { recursive: true, force: true });
+  fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true });
   // files a smoke run saves (exports) start fresh, so a check never sees an earlier run's file
   try { for (const f of fs.readdirSync(path.join(data.dir, 'logs'))) if (/^smoke-.*-(functions|files|folders)\.(svg|png)$/.test(f)) fs.rmSync(path.join(data.dir, 'logs', f), { force: true }); } catch { /* no logs yet */ }
 }
 
-const SETTINGS_FILE = path.join(data.dir, 'settings.toml');
+// a smoke run reads default settings (state/smoke starts empty), so the user's own fonts and choices never change its results
+const SETTINGS_FILE = smoke ? path.join(STATE, 'settings.toml') : path.join(data.dir, 'settings.toml');
 const BUFFERS = path.join(STATE, 'buffers');
 const SESSION = path.join(STATE, 'session.json');
 // the inbuilt clangd: inside the app (Resources/tools) when packaged, else tools/ beside it (or in the project while developing)
@@ -175,9 +180,9 @@ ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stri
 // ---------- clangd ----------
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
 lsp.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
-let lspRoot = '';
+let lspRoot = '', lspClangd = '';
 ipcMain.handle('lsp:start', async (_e, root: string) => {
-  lspRoot = root;
+  lspRoot = root; lspClangd = '';
   for (const c of langServers.values()) c.stop();   // a new folder: other languages' servers start again when one of their files opens
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
   if (!clangd) return { ok: false, message: 'clangd not found. Install it (Xcode Command Line Tools, LLVM, or your package manager) or set clangd.path in settings.toml.' };
@@ -188,11 +193,40 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
     await lsp.start(clangd, root, settings['clangd.args'] as string[], STATE, c.compiler,
       c.compiler?.kind === 'msvc' && c.compiler.include?.length ? { INCLUDE: c.compiler.include.join(';') } : undefined,
       (cc) => projectDrivers(cc, root));
+    lspClangd = clangd;
     return { ok: true, clangd, capabilities: lsp.capabilities };
   } catch (e) { return { ok: false, message: String(e) }; }
 });
 ipcMain.handle('lsp:stale', () => !!lspRoot && lsp.ccChanged(lspRoot));
 ipcMain.handle('lsp:request', (_e, method: string, params: unknown) => lsp.request(method, params));
+
+// ---------- the flow picture kept from last time (state/flow-kept) ----------
+// A folder opened again shows its last settled picture at once while the live build checks it; the live result
+// always replaces it. Kept only for a folder whose code, compile database, clangd and analyser are all unchanged.
+const KEPT = path.join(STATE, 'flow-kept');
+const sha1 = (s: string) => createHash('sha1').update(s).digest('hex');
+const keptFile = (root: string, key: string) => path.join(KEPT, sha1(root).slice(0, 12), `${sha1(key).slice(0, 16)}.json`);
+/** Everything the picture is built from, short of the code's meaning: each source file's size and time, the compile database, clangd and the app. */
+ipcMain.handle('flow:fingerprint', async (_e, root: string) => {
+  if (!root || root !== lspRoot || !lspClangd) return '';
+  const h = createHash('sha1').update(`${app.getVersion()}\n${lspClangd}\n${await clangdVersion(lspClangd)}\n${lsp.ccDir ?? ''}\n`);
+  if (lsp.ccDir) { try { h.update(fs.readFileSync(path.join(lsp.ccDir, 'compile_commands.json'))); } catch { return ''; } }
+  for (const f of listSources(root)) {
+    try { const st = await fs.promises.stat(f); h.update(`${f}\t${st.size}\t${st.mtimeMs}\n`); } catch { h.update(`${f}\t-\n`); }
+  }
+  return h.digest('hex');
+});
+ipcMain.handle('flow:kept', (_e, root: string, key: string) => { try { return fs.readFileSync(keptFile(root, key), 'utf8'); } catch { return null; } });
+ipcMain.handle('flow:keep', (_e, root: string, key: string, text: string) => {
+  const f = keptFile(root, key), dir = path.dirname(f);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    atomicWrite(f, text);
+    // the 40 most recent pictures per folder are kept
+    const all = fs.readdirSync(dir).filter((n) => n.endsWith('.json')).map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const o of all.slice(40)) fs.rmSync(path.join(dir, o.n), { force: true });
+  } catch (e) { log(`flow-kept: ${e}`); }
+});
 
 // ---------- language servers of other packs (Rust, Python, Go), started when a file of that language opens ----------
 const langServers = new Map<Lang, LspClient>();
@@ -216,8 +250,10 @@ ipcMain.handle('lang:request', (_e, lang: Lang, method: string, params: unknown)
 ipcMain.handle('lang:notify', (_e, lang: Lang, method: string, params: unknown) => { const c = langServers.get(lang); if (c?.running) c.notify(method, params); });
 
 // ---------- power: calmer on battery ----------
-const sendPower = () => send('power:battery', powerMonitor.isOnBatteryPower());
-ipcMain.handle('power:battery', () => powerMonitor.isOnBatteryPower());
+// smoke runs see a fixed power source, so their results don't depend on the charger: SKYCODEX_BATTERY=1 tests battery saver
+const onBattery = () => (smoke ? process.env.SKYCODEX_BATTERY === '1' : powerMonitor.isOnBatteryPower());
+const sendPower = () => send('power:battery', onBattery());
+ipcMain.handle('power:battery', () => onBattery());
 
 // ---------- interface errors, written to the log ----------
 ipcMain.handle('log', (_e, line: string) => log(`interface: ${String(line).slice(0, 4000)}`));
@@ -361,6 +397,23 @@ ipcMain.handle('smoke:capture', async (_e, name: string) => {
   fs.writeFileSync(out, img.toPNG());
   return out;
 });
+ipcMain.handle('smoke:resize', (_e, w: number, h: number) => { if (smoke) win?.setContentSize(w, h); });
+// a CPU profile of the window's thread (DevTools protocol), written beside the screenshots: what each slow frame spent its time on
+ipcMain.handle('smoke:profile', async (_e, name: string | null) => {
+  if (!smoke || !win) return null;
+  const dbg = win.webContents.debugger;
+  if (name == null) {
+    if (!dbg.isAttached()) dbg.attach('1.3');
+    await dbg.sendCommand('Profiler.enable');
+    await dbg.sendCommand('Profiler.setSamplingInterval', { interval: 500 });
+    await dbg.sendCommand('Profiler.start');
+    return null;
+  }
+  const { profile } = await dbg.sendCommand('Profiler.stop');
+  const out = path.join(data.dir, 'logs', `smoke-${name}.cpuprofile`);
+  fs.writeFileSync(out, JSON.stringify(profile));
+  return out;
+});
 ipcMain.handle('smoke:done', (_e, report: unknown) => {
   // the file the smoke run creates to test new files is removed, so the sample project is left as it was
   if (smoke) fs.rmSync(path.join(smoke, 'smoke_new.cpp'), { force: true });
@@ -400,4 +453,6 @@ app.on('window-all-closed', () => app.quit());
 // every way out (closing the window, Quit, a smoke run ending) stops the language engines; on Windows they would outlive the app otherwise
 app.on('will-quit', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); });
 // a smoke run that stalls ends itself, so a build machine is never left waiting
-if (smoke) setTimeout(() => { log('smoke: timed out after 5 minutes'); app.exit(2); }, 300_000).unref();
+// (the large scenario indexes a big project from nothing and waits for it to settle: 15 minutes)
+const smokeLimit = scenario === 'large' ? 15 : 5;
+if (smoke) setTimeout(() => { log(`smoke: timed out after ${smokeLimit} minutes`); app.exit(2); }, smokeLimit * 60_000).unref();

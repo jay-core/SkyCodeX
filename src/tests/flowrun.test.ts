@@ -3,6 +3,7 @@
 // Every expectation here was worked out by hand from the source, not copied from the analyser's output.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
+import fs from 'node:fs';
 import { loadFixture, describeRun } from './flowrun.fixture';
 import { forCount, matchParen, analyseFunction, fnExtent, functionNode } from '../shared/flowrun';
 
@@ -182,5 +183,22 @@ describe('helpers', () => {
     expect(matchParen('f(a, ")", \')\') x', 1)).toBe(13);
     expect(matchParen('f(/* ) */ a // )\n)', 1)).toBe(17);
     expect(matchParen('f(R"x()")x")', 1)).toBe(11);
+  });
+});
+
+describe('calls clangd does not list yet', () => {
+  // while clangd is still updating its index, a call to another file can be missing from its call list: the body
+  // shows the call, so the caller knows the graph is not complete (src/renderer/lib/flowstore.ts settles on it)
+  const { fns } = JSON.parse(fs.readFileSync(path.join(FIX, 'tinyhttp-flow.json'), 'utf8')) as { fns: any[] };
+  const root = path.resolve(__dirname, '../../samples/tinyhttp');
+  const ph = fns.find((f) => f.name === 'parse_headers'), text = fs.readFileSync(path.join(root, ph.file), 'utf8');
+  const calls = (keep: (c: any) => boolean) => ph.calls.filter(keep).map((c: any) => ({ to: { key: c.to.key, name: c.to.name, project: true, ctor: false, container: '' }, fromRanges: c.fromRanges }));
+  it('every call listed: nothing unlisted', () => {
+    expect(analyseFunction(ph.ast, text, calls(() => true)).unlisted ?? []).not.toContain('split');
+  });
+  it('split left out of the list: the body still names it', () => {
+    const f = analyseFunction(ph.ast, text, calls((c) => !/split$/.test(c.to.name)));
+    expect(f.unlisted).toContain('split');
+    expect(f.body.some((n: any) => n.t === 'call' && /split$/.test(n.to.name))).toBe(false);
   });
 });

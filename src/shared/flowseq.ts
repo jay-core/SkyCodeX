@@ -549,7 +549,7 @@ export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file:
 }
 
 // ---------- findings: what the run shows without running it (src/shared/flowfacts.ts gives the facts) ----------
-export interface Finding { kind: 'race' | 'dropped'; text: string; grade: 'proved' | 'possible'; rows: number[] }
+export interface Finding { kind: 'race' | 'dropped' | 'pair'; text: string; grade: 'proved' | 'possible'; rows: number[] }
 
 /** The thread a row runs on: the step that started it (its first row on that thread), or -1 for the entry's own. */
 export function threadOf(run: Run, row: number): number {
@@ -610,5 +610,19 @@ function findingsIn(run: Run): Finding[] {
     const where = (u: typeof w) => `${R[u.row].n} ${short(R[u.row].name)} (${u.thread < 0 ? 'the main thread' : `the thread ${R[u.thread].n} ${short(R[u.thread].name)} starts`})`;
     out.push({ kind: 'race', grade: 'possible', rows: [w.row, o.row], text: `${name}: changed by ${where(w)}, ${o.write ? 'changed' : 'used'} by ${where(o)} — no lock on either side` });
   }
+  // something a function opens and leaves open at a way out (src/shared/flowpairs.ts): possible, the path's
+  // conditions decide whether it runs
+  R.forEach((r, i) => {
+    if (r.kind !== 'step') return;
+    for (const u of run.pairs?.[r.key] ?? []) {
+      const [took, kept] = u.what === 'lock' ? ['taken', 'released'] : u.what === 'memory' ? ['allocated', 'freed'] : ['opened', 'closed'];
+      const how = u.exit.kind === 'end' ? 'by its end' : `if it ${u.exit.kind === 'throw' ? 'throws' : 'returns'} at line ${u.exit.line + 1}`;
+      // the same condition tested twice on the path: the path may never run
+      const conds = u.path.map((p) => p.replace(/ · (?:not taken|then|else|pass)$/, ''));
+      const twice = conds.find((c, j) => conds.indexOf(c) !== j);
+      const path = u.path.length ? ` (${u.path.join(', then ')})` : '';
+      out.push({ kind: 'pair', grade: 'possible', rows: [i], text: `${short(r.name)}: ${u.what} ${u.name} ${took} on line ${u.opened.line + 1} · not ${kept} ${how}${path}${twice ? ` — the path tests ${twice} twice, so it may never run` : ''}` });
+    }
+  });
   return out;
 }

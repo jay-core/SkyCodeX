@@ -92,9 +92,13 @@ export function definedNames(text: string): Set<string> {
  */
 export function addressTaken(text: string, names: Set<string>): Set<string> {
   const out = new Set<string>();
-  const clean = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ' ').replace(/"(?:\\.|[^"\\])*"/g, '""');
-  for (const m of clean.matchAll(/(?:[=,({]|\breturn)\s*&?\s*(?:\w+::)*([A-Za-z_]\w*)\s*(?=[,;)}])/g)) if (names.has(m[1])) out.add(m[1]);
+  for (const n of addressCandidates(text)) if (names.has(n)) out.add(n);
   return out;
+}
+/** Every name in a position where its address may be taken, in order (addressTaken keeps those that are functions). */
+export function addressCandidates(text: string): string[] {
+  const clean = text.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ' ').replace(/"(?:\\.|[^"\\])*"/g, '""');
+  return [...clean.matchAll(/(?:[=,({]|\breturn)\s*&?\s*(?:\w+::)*([A-Za-z_]\w*)\s*(?=[,;)}])/g)].map((m) => m[1]);
 }
 
 function findDeep(n: SyntaxNode, name: string): SyntaxNode | null {
@@ -107,7 +111,15 @@ function findDeep(n: SyntaxNode, name: string): SyntaxNode | null {
   return null;
 }
 
-export const lineOf = (text: string, off: number) => { let n = 0; for (let i = 0; i < off && i < text.length; i++) if (text.charCodeAt(i) === 10) n++; return n; };
+/** The 0-based line of an offset: the newlines before it (binary search over the text's newline offsets, kept for the last text asked about). */
+export const lineOf = (text: string, off: number) => {
+  if (text !== nlText) { nlText = text; nl = []; for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) nl.push(i); }
+  const end = Math.min(off, text.length);
+  let lo = 0, hi = nl.length;   // the count of newlines at offsets < end
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (nl[mid] < end) lo = mid + 1; else hi = mid; }
+  return lo;
+};
+let nlText = '', nl: number[] = [];
 export const offsetOf = (text: string, line: number, ch: number) => { let off = 0; for (let l = 0; l < line; l++) { const i = text.indexOf('\n', off); if (i < 0) return text.length; off = i + 1; } return off + ch; };
 
 /** Calls that start a thread rather than running inline. */

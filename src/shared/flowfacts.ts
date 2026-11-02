@@ -23,7 +23,21 @@ export interface Effects {
   throws: string[];
   /** Calls whose result the statement throws away (where the callee's name is): checked against the callee's returnsValue. */
   dropped: Range[];
+  /** Members (and globals) it both changes and reads: writes and globalWrites list them, reads and globalReads don't. */
+  readsToo?: string[];
+  globalReadsToo?: string[];
+  /** Its parameters in order, with their types as clang wrote them (`const std::atomic<bool> &`). */
+  params?: { name: string; type: string }[];
+  /** Parameters it assigns to, and those it reads (a parameter a local of the same name hides is not counted). */
+  paramWrites?: string[];
+  paramReads?: string[];
+  /** Parameters only ever read for their value (so the value passed holds throughout), with their canonical types. */
+  paramValues?: Record<string, string>;
+  /** Declared never to return ([[noreturn]], _Noreturn, __attribute__((noreturn)), __declspec(noreturn)) where it is defined. */
+  noreturn?: true;
 }
+/** A never-returns marking, as any of C, C++, GCC/clang or MSVC write it. */
+const NORETURN_MARK = /\[\[\s*(?:gnu::|std::)?noreturn\s*\]\]|\b_Noreturn\b|__attribute__\s*\(\(\s*(?:__)?noreturn(?:__)?\s*\)\)|__declspec\s*\(\s*noreturn\s*\)/;
 
 const LOCK_TYPE = /\b(?:lock_guard|unique_lock|scoped_lock|shared_lock)\b/;
 const LOCK_CALL = /^(?:pthread_mutex_(?:timed)?lock|pthread_rwlock_(?:rd|wr)lock|EnterCriticalSection|AcquireSRWLock\w+|WaitForSingleObject|xSemaphoreTake\w*|semTake|_*txe?_mutex_get|k_mutex_lock|osMutexAcquire|mtx_lock|OSMutexPend|rt_mutex_take)$/;
@@ -47,6 +61,13 @@ export function effects(fn: AstNode, text: string): Effects {
   // `record 'void (const std::string &, int)'`: the part before the parameter list is the return type
   const sig = /'([^'(]*)\(/.exec(arc(fn))?.[1]?.trim() ?? '';
   out.returnsValue = !!sig && sig !== 'void' && !/^(CXXConstructor|CXXDestructor)$/.test(fn.kind);
+  // the head of the definition, up to its body, with the [[…]] attribute groups written just before it (clang's range
+  // for `[[noreturn]] void f()` starts after them): where a never-returns marking is written
+  const body = (fn.children ?? []).find((c) => c.kind === 'Compound');
+  if (fn.range && body?.range) {
+    const head = sliceRange(text, { start: fn.range.start, end: body.range.start });
+    if (NORETURN_MARK.test(head) || NORETURN_MARK.test(attributesBefore(text, offsetIn(text, fn.range.start)))) out.noreturn = true;
+  }
   const locals = new Set<string>();
   const parent = new Map<AstNode, AstNode>();
   const all: AstNode[] = [];
@@ -93,6 +114,40 @@ export function effects(fn: AstNode, text: string): Effects {
       if (p && p.kind === 'Compound' && kids(p).includes(s) && at) out.dropped.push(at);
     }
   }
+  // parameters, in order, from the function's type (ParmVarDecl), and how the body uses them
+  // (its own prototype's only: a lambda inside has parameters of its own)
+  const proto = kids(fn).find((c) => c.kind === 'FunctionProto');
+  const parm = (n: AstNode) => /ParmVarDecl .* (?:used |referenced )?(\w+) '([^']*)'/.exec(arc(n));
+  const params: { name: string; type: string }[] = [];
+  for (const n of proto ? kids(proto) : []) { const m = n.kind === 'ParmVar' ? parm(n) : null; if (m && !params.some((p) => p.name === m[1])) params.push({ name: m[1], type: m[2] }); }
+  if (params.length) {
+    out.params = params;
+    const names = new Set(params.map((p) => p.name)), own = new Set(proto ? kids(proto) : []);
+    // a local, or a lambda's parameter, of the same name hides it: none of its uses are counted
+    const hidden = new Set(all.filter((n) => (n.kind === 'Var' || (n.kind === 'ParmVar' && !own.has(n))) && (n.detail ?? parm(n)?.[1]) && names.has((n.detail ?? parm(n)?.[1])!)).map((n) => (n.detail ?? parm(n)?.[1])!));
+    const pw: string[] = [], pr: string[] = [];
+    for (const n of all) if (n.kind === 'DeclRef' && / ParmVar /.test(arc(n)) && n.detail && names.has(n.detail) && !hidden.has(n.detail)) add(written(n) ? pw : pr, n.detail);
+    if (pw.length) out.paramWrites = pw;
+    const reads = pr.filter((r) => !pw.includes(r));
+    if (reads.length) out.paramReads = reads;
+    // parameters whose every use reads the value (clang's lvalue-to-rvalue conversion on it): never assigned, never
+    // bound to a reference, pointed to or captured by reference, so the value a call passes holds throughout
+    const canon = new Map<string, string>();
+    for (const n of proto ? kids(proto) : []) { const m = n.kind === 'ParmVar' ? /ParmVarDecl .* (?:used |referenced )?(\w+) '([^']*)'(?::'([^']*)')?/.exec(arc(n)) : null; if (m) canon.set(m[1], m[3] ?? m[2]); }
+    const uses = new Map<string, boolean>();
+    for (const n of all) {
+      if (n.kind !== 'DeclRef' || !/ ParmVar /.test(arc(n)) || !n.detail || !names.has(n.detail)) continue;
+      let p = parent.get(n);
+      while (p && p.kind === 'Paren') p = parent.get(p);
+      uses.set(n.detail, (uses.get(n.detail) ?? true) && !!p && p.kind === 'ImplicitCast' && p.detail === 'LValueToRValue');
+    }
+    const values: Record<string, string> = {};
+    for (const [name, ok] of uses) { const t = canon.get(name); if (ok && t && !hidden.has(name) && !/[&]|\bvolatile\b/.test(t)) values[name] = t; }
+    if (Object.keys(values).length) out.paramValues = values;
+  }
+  const both = out.reads.filter((r) => out.writes.includes(r)), gboth = out.globalReads.filter((r) => out.globalWrites.includes(r));
+  if (both.length) out.readsToo = both;
+  if (gboth.length) out.globalReadsToo = gboth;
   for (const w of out.writes) out.reads = out.reads.filter((r) => r !== w);
   for (const w of out.globalWrites) out.globalReads = out.globalReads.filter((r) => r !== w);
   return out;
@@ -118,6 +173,19 @@ function firstArg(call: AstNode, src: (r?: Range) => string): string {
   const a = kids(call)[1];
   return a ? src(a.range).replace(/^&/, '') : '';
 }
+/** The C++ attribute groups ([[…]]) written directly before an offset, separated only by whitespace. */
+function attributesBefore(text: string, off: number): string {
+  let i = off;
+  for (;;) {
+    let j = i;
+    while (j > 0 && /\s/.test(text[j - 1])) j--;
+    if (j < 2 || text.slice(j - 2, j) !== ']]') return text.slice(i, off);
+    const open = text.lastIndexOf('[[', j - 2);
+    if (open < 0) return text.slice(i, off);
+    i = open;
+  }
+}
+const offsetIn = (text: string, p: Pos) => { let off = 0; for (let l = 0; l < p.line; l++) { const k = text.indexOf('\n', off); if (k < 0) return text.length; off = k + 1; } return off + p.character; };
 function sliceRange(text: string, r: Range): string {
   const off = (p: Pos) => { let o = 0; for (let l = 0; l < p.line; l++) { const i = text.indexOf('\n', o); if (i < 0) return text.length; o = i + 1; } return o + p.character; };
   return text.slice(off(r.start), off(r.end)).replace(/\s+/g, ' ').trim();

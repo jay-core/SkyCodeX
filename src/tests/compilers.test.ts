@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isGcc, gccVersion, findGcc, msvcLayout, msvcFlag, commandFor, projectDrivers, Compiler } from '../main/compilers';
-import { ensureCompileCommands, LspClient, findClangd } from '../main/lsp';
+import { ensureCompileCommands, findCompileCommands, staleCompileCommands, LspClient, findClangd } from '../main/lsp';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-cc-'));
 const touch = (p: string, text = '') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); return p; };
@@ -90,6 +90,31 @@ describe('the commands written for each compiler', () => {
     expect(m.slice(0, 4)).toEqual([msvc.cxx, '/nologo', '/TP', '/EHsc']);
     expect(m).toContain(`/I${path.join(proj, 'include')}`);
     expect(db(null).find((e) => e.file.endsWith('main.cpp'))!.arguments[0]).toBe('clang++');
+  });
+});
+
+describe('a compile database written for another place', () => {
+  it('is passed over when its folder no longer exists, so SkyCodeX writes its own', () => {
+    const d = tmp(); made.push(d);
+    const proj = path.join(d, 'proj'), cpp = touch(path.join(proj, 'src', 'a.cpp'), 'int main() {}\n');
+    const write = (dir: string, where: string) => touch(path.join(dir, 'compile_commands.json'), JSON.stringify([{ directory: where, file: 'src/a.cpp', arguments: ['clang++', '-c', 'src/a.cpp'] }]));
+    // built here: used as it is
+    write(proj, proj);
+    expect(staleCompileCommands(proj)).toBe(false);
+    expect(findCompileCommands(proj)).toBe(proj);
+    expect(ensureCompileCommands(proj, path.join(d, 'state'))).toBeNull();
+    // built before the folder was moved (the old folder is gone): treated as none
+    write(proj, path.join(d, 'old place', 'proj'));
+    expect(staleCompileCommands(proj)).toBe(true);
+    expect(findCompileCommands(proj)).toBeNull();
+    const own = ensureCompileCommands(proj, path.join(d, 'state'))!;
+    expect(JSON.parse(fs.readFileSync(path.join(own, 'compile_commands.json'), 'utf8')).map((e: { file: string }) => e.file)).toEqual([cpp]);
+    // a build folder's database is checked the same way; a relative folder is never called stale
+    fs.rmSync(path.join(proj, 'compile_commands.json'));
+    write(path.join(proj, 'build'), path.join(d, 'gone'));
+    expect(findCompileCommands(proj)).toBeNull();
+    write(path.join(proj, 'build'), '..');
+    expect(findCompileCommands(proj)).toBe(path.join(proj, 'build'));
   });
 });
 
