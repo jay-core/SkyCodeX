@@ -60,9 +60,9 @@ Get the file for your system from [Releases](https://github.com/jay-core/SkyCode
 
 | System | File |
 |---|---|
-| macOS 13+, Apple silicon | `SkyCodeX-1.0.1-mac-arm64.zip` |
-| Windows 10/11, x64 | `SkyCodeX-1.0.1-win-x64.zip` |
-| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.0.1-linux-x64.tar.gz` |
+| macOS 13+, Apple silicon | `SkyCodeX-1.0.0-mac-arm64.zip` |
+| Windows 10/11, x64 | `SkyCodeX-1.0.0-win-x64.zip` |
+| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.0.0-linux-x64.tar.gz` |
 
 Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
