@@ -9,6 +9,7 @@ import { root, files, states } from './store';
 import { api } from './api';
 import { lspState, indexEpoch, indexing, projectRoot } from './lsp';
 import { buildSeq, startState, move, Move, Seq, StepState } from '../../shared/flowseq';
+import { alignRuns, alignChange, functionTexts, Side } from '../../shared/flowalign';
 import { t } from './i18n';
 
 export type FlowView = 'sequence' | 'boxes';
@@ -71,7 +72,7 @@ export async function rebuild(): Promise<void> {
     if (builtFor !== root()) {
       firstBuild = Date.now(); setPrograms(true); setLaneRaw(0); setSeq(null); setTrail([]); setEntries([]); setGraph(null);
       try { chosen = localStorage.getItem(chosenKey()) ?? ''; } catch { chosen = ''; }
-      dropKept(); live = null;
+      dropKept(); live = null; clearSetting(); clearCompare();
       await showKept();
     }
     builtFor = root();
@@ -221,7 +222,113 @@ async function buildLaneRun(g: FlowGraph) {
   if (!held) showRun(run);
   setRunStatus('');
 }
-function showRun(run: Run) {
+// ---------- another build setting (configurations, FLOW-DESIGN §8b) ----------
+/**
+ * The setting shown instead of as built: its label, the -D / -U flags (or another build folder), and its run once a
+ * hidden window has read the code with it (src/renderer/settingworker.ts). The run shown is then that setting's,
+ * lined up with as built: what only it has says so, what only as built has stands in place as a ghost.
+ */
+export interface Setting { label: string; flags: string[]; folder?: string; state: 'reading' | 'ready' | 'failed'; note: string; run?: Run; base?: string }
+export const [setting, setSettingRaw] = createSignal<Setting | null>(null);
+let settingFor = '';
+api.setting.onDone((r: { ok: boolean; run?: Run; errors?: { file: string; line: number; message: string }[]; message?: string }) => {
+  const s = setting();
+  if (!s || s.state !== 'reading') return;
+  if (!r.ok || !r.run) { setSettingRaw({ ...s, state: 'failed', note: r.message ?? 'could not read the code with this setting' }); return; }
+  // an #error the setting runs into: the code doesn't build with it, so no picture of it is shown
+  const stop = (r.errors ?? []).find((x) => /^#error\b|^"?#error/.test(x.message) || /\berror directive\b/i.test(x.message));
+  if (stop) { setSettingRaw({ ...s, state: 'failed', note: `doesn't build with ${s.label}: ${stop.message} · ${stop.file.replace(/^.*[\\/]/, '')}:${stop.line + 1}` }); return; }
+  const n = (r.errors ?? []).length;
+  setSettingRaw({ ...s, state: 'ready', run: r.run, base: JSON.stringify(live?.run ?? null), note: n ? `${n} error${n > 1 ? 's' : ''} in these files with ${s.label} (clang read past them)` : '' });
+  if (live?.run) showRun(live.run);
+});
+/** Reads the code with another setting (null: as built again). The entry point on screen is traced with it. */
+export async function chooseSetting(c: { label: string; flags: string[]; folder?: string } | null) {
+  if (!c) { clearSetting(); if (live?.run) showRun(live.run); return; }
+  clearCompare();
+  if (unsaved()) { setSettingRaw({ ...c, state: 'failed', note: 'save your edits first: another setting reads the files on disk' }); return; }
+  const start = entryStart();
+  setSettingRaw({ ...c, state: 'reading', note: `reading the code with ${c.label}…` });
+  settingFor = `${root()}|${start}`;
+  const r = await api.setting.start({ root: root(), entry: start, flags: c.flags, folder: c.folder, label: c.label });
+  if (!r.ok && setting()?.label === c.label) setSettingRaw({ ...c, state: 'failed', note: r.message ?? 'could not start' });
+}
+function clearSetting() { if (setting()) { setSettingRaw(null); void api.setting.stop(); } settingFor = ''; }
+
+// ---------- what a change does (FLOW-DESIGN §8b): the run compared with an older version from git ----------
+/**
+ * The comparison shown: the older version (a commit) and the newer (the files on disk, 'work', or another commit),
+ * each read the way a setting is (src/main/main.ts change:start). Its summary says the change in one line.
+ */
+export interface Compare { older: string; newer: string; olderLabel: string; newerLabel: string; state: 'reading' | 'ready' | 'failed'; note: string; summary?: string; old?: Side; new?: Side; work?: { base: string; texts: Record<string, string[]> } }
+export const [comparing, setComparingRaw] = createSignal<Compare | null>(null);
+let compareFor = '', workReading = false;
+api.change.onDone((r: { ok: boolean; message?: string; older?: { run: Run; root: string; texts: Record<string, string[]> }; newer?: { run: Run; root: string; texts: Record<string, string[]> } | null }) => {
+  const c = comparing();
+  if (!c || c.state !== 'reading') return;
+  if (!r.ok || !r.older) { setComparingRaw({ ...c, state: 'failed', note: r.message ?? 'could not read the older version' }); return; }
+  setComparingRaw({ ...c, state: 'ready', note: '', old: r.older, new: r.newer ?? undefined });
+  if (live?.run) showRun(live.run);
+});
+/** Compares the run with an older version (null: no comparison). The entry point on screen is traced in each. */
+export async function chooseCompare(c: { older: string; newer: string; olderLabel: string; newerLabel: string } | null) {
+  clearCompare();
+  if (!c) { if (live?.run) showRun(live.run); return; }
+  clearSetting();
+  const e = entries()[lane()];
+  if (unsaved()) { setComparingRaw({ ...c, state: 'failed', note: 'save your edits first: a comparison reads the files on disk' }); return; }
+  if (!e) { setComparingRaw({ ...c, state: 'failed', note: 'no entry point to compare' }); return; }
+  setComparingRaw({ ...c, state: 'reading', note: `reading ${c.olderLabel}${c.newer === 'work' ? '' : ` and ${c.newerLabel}`}…` });
+  compareFor = `${root()}|${entryStart()}`;
+  if (live?.run) showRun(live.run);
+  const r = await api.change.start({ root: root(), entryRel: e.rel.replace(/\\/g, '/'), entryName: e.name, ...c });
+  if (!r.ok && comparing()?.state === 'reading') setComparingRaw({ ...comparing()!, state: 'failed', note: r.message ?? 'could not start' });
+}
+function clearCompare() { if (comparing()) { setComparingRaw(null); void api.setting.stop(); } compareFor = ''; }
+/** The files on disk's side of a comparison: each function's lines, read once per run. */
+async function readWork(run: Run) {
+  if (workReading) return;
+  workReading = true;
+  try {
+    const text = new Map<string, string>();
+    for (const f of new Set(run.rows.filter((r) => r.kind === 'step').map((r) => r.file))) text.set(f, (await api.fs.read(f).catch(() => '')) as string);
+    const c = comparing();
+    if (!c || c.state !== 'ready') return;
+    setComparingRaw({ ...c, work: { base: JSON.stringify(run), texts: functionTexts(run, (f) => text.get(f) ?? null) } });
+  } finally { workReading = false; }
+  if (live?.run) showRun(live.run);
+}
+/** The run as shown with a comparison: the newer version's, with what changed since the older. */
+function comparedRun(run: Run): Run {
+  const c = comparing();
+  if (!c || c.state !== 'ready' || !c.old) return run;
+  if (compareFor !== `${root()}|${entryStart()}`) { setComparingRaw({ ...c, state: 'failed', note: 'the entry point changed · choose the comparison again' }); return run; }
+  let newer: Side;
+  if (c.newer === 'work') {
+    if (unsaved()) return run;   // edits not on disk yet: shown as they are, until saved
+    if (c.work?.base !== JSON.stringify(run)) { void readWork(run); return run; }
+    newer = { run, root: root(), texts: c.work.texts };
+  } else if (c.new) newer = c.new; else return run;
+  const m = alignChange(newer, c.old, c.olderLabel);
+  if (m.summary !== c.summary) setComparingRaw({ ...c, summary: m.summary });
+  return m.run;
+}
+
+/** The run as shown: as built, or the setting's lined up with it, while both are of the same code and entry point. */
+function shownRun(run: Run): Run {
+  if (comparing()) return comparedRun(run);
+  const s = setting();
+  if (!s || s.state !== 'ready' || !s.run) return run;
+  if (settingFor !== `${root()}|${entryStart()}` || s.base !== JSON.stringify(run) || unsaved()) {
+    // the code (or the entry point) changed since the setting was read: as built, until it is read again
+    setSettingRaw({ ...s, state: 'failed', run: undefined, note: 'the code changed since this setting was read · choose it again' });
+    return run;
+  }
+  return alignRuns(s.run, run, `only with ${s.label}`, 'only as built').run;
+}
+
+function showRun(run0: Run) {
+  const run = shownRun(run0);
   if (sameJson(run, seq()?.run)) return;   // the same run as on screen: nothing to draw again, the place in it stays
   setFollowed(null);   // its hits are numbered in the run it was followed on
   const s = buildSeq(run);
@@ -236,6 +343,7 @@ export async function setLane(i: number) {
   chosen = entryKey(e);
   try { localStorage.setItem(chosenKey(), chosen); } catch { /* kept for this run */ }
   dropKept();
+  clearSetting(); clearCompare();
   setLaneRaw(i);
   setSeq(null);
   setTrail([]);

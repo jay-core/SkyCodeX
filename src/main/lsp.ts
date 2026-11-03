@@ -128,6 +128,36 @@ export function ensureCompileCommands(root: string, stateDir: string, compiler?:
   return dir;
 }
 
+/**
+ * Another build setting: the commands in use (the project's own, or the ones SkyCodeX wrote) with macros defined or
+ * undefined (`-DDEBUG`, `-UNDEBUG`, `-DBOARD=2`), written into dir. Each flag goes in before a `--` that ends the
+ * options, so the file names stay last; a later -D or -U wins, as with clang. clangd keeps this setting's index
+ * beside it, apart from the one as built. Returns dir.
+ */
+export function writeSettingDb(inUse: string, flags: string[], dir: string): string {
+  const db = JSON.parse(fs.readFileSync(path.join(inUse, 'compile_commands.json'), 'utf8')) as { directory: string; file: string; arguments?: string[]; command?: string; output?: string }[];
+  const q = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+  const out = db.map((e) => {
+    if (e.arguments) { const a = [...e.arguments], k = a.indexOf('--'); a.splice(k < 0 ? a.length : k, 0, ...flags); return { ...e, arguments: a }; }
+    const c = e.command ?? '', k = c.indexOf(' -- ');
+    const add = flags.map(q).join(' ');
+    return { ...e, command: k < 0 ? `${c} ${add}` : `${c.slice(0, k)} ${add}${c.slice(k)}` };
+  });
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, 'compile_commands.json'), text = JSON.stringify(out, null, 1);
+  if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== text) fs.writeFileSync(f, text);
+  return dir;
+}
+/** The project's other build folders with their own compile_commands.json (build-release/, out/debug …), one level down. */
+export function otherCompileDbs(root: string, inUse: string | null): string[] {
+  const out: string[] = [];
+  for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
+    const d = path.join(root, e.name);
+    if (e.isDirectory() && /^(build|out|cmake-build-)/i.test(e.name) && d !== inUse && fs.existsSync(path.join(d, 'compile_commands.json')) && !staleCompileCommands(d)) out.push(d);
+  }
+  return out.sort();
+}
+
 export class LspClient {
   private proc: ChildProcess | null = null;
   private buf = Buffer.alloc(0);
@@ -154,9 +184,16 @@ export class LspClient {
   /** Whether a build has since written or rewritten the project's own compile_commands.json, so clangd should start again. */
   ccChanged(root: string): boolean { return ccStamp(root) !== this.ccSeen; }
 
-  start(clangd: string, root: string, extraArgs: string[], stateDir?: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null, env?: Record<string, string>, drivers: (ccDir: string) => string[] = () => []): Promise<unknown> {
-    const args = ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
-    let cc = findCompileCommands(root);
+  /**
+   * ccOverride: read the code with these commands instead (another build setting, src/main/main.ts setting:start).
+   * check: the repair engine's clangd (main.ts repair:check), which only reads the files it is given: no index, and
+   * each diagnostic comes with clang's fix-its and the version of the text it was found in.
+   */
+  start(clangd: string, root: string, extraArgs: string[], stateDir?: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null, env?: Record<string, string>, drivers: (ccDir: string) => string[] = () => [], ccOverride?: string, check = false): Promise<unknown> {
+    const args = check ? ['--background-index=false', '--header-insertion=never', '--log=error', '--pch-storage=memory']
+      : ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
+    if (check) extraArgs = extraArgs.filter((a) => !/^--background-index/.test(a));
+    let cc = ccOverride ?? findCompileCommands(root);
     const own = !!cc;
     if (!cc && stateDir) { try { cc = ensureCompileCommands(root, stateDir, compiler); } catch (e) { this.onLog(`compile database: ${e}`); } }
     this.ccDir = cc;
@@ -167,10 +204,10 @@ export class LspClient {
     const q = [...(compiler && compiler.kind !== 'msvc' ? [compiler.cxx, compiler.cc] : []), ...(own && cc ? drivers(cc) : [])];
     if (q.length) args.push(`--query-driver=${[...new Set(q)].join(',')}`);
     args.push(...extraArgs);
-    return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true }, env });
+    return this.startServer(clangd, args, root, { initializationOptions: { clangdFileStatus: true }, env, diagnostics: check ? { codeActionsInline: true, versionSupport: true } : undefined });
   }
 
-  startServer(cmd: string, args: string[], root: string, opts: { env?: Record<string, string>; name?: string; initializationOptions?: unknown; settings?: Record<string, unknown> } = {}): Promise<unknown> {
+  startServer(cmd: string, args: string[], root: string, opts: { env?: Record<string, string>; name?: string; initializationOptions?: unknown; settings?: Record<string, unknown>; diagnostics?: Record<string, unknown> } = {}): Promise<unknown> {
     this.stop();
     if (opts.name) this.name = opts.name;
     this.settings = opts.settings ?? {};
@@ -197,7 +234,7 @@ export class LspClient {
           synchronization: { didSave: true },
           completion: { completionItem: { snippetSupport: false, documentationFormat: ['plaintext', 'markdown'] } },
           hover: { contentFormat: ['plaintext', 'markdown'] },
-          publishDiagnostics: { relatedInformation: true },
+          publishDiagnostics: { relatedInformation: true, ...opts.diagnostics },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           definition: {},
           callHierarchy: {},

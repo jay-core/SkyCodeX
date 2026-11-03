@@ -49,7 +49,9 @@ export type FlowNode =
   /** a static local's initializer: the first time only */
   | { t: 'once'; text: string; line: number; body: FlowNode[] }
   /** what follows an early exit (`if (x) return …;`): runs only when that exit was not taken */
-  | { t: 'guard'; text: string; exit: StmtKind; line: number; body: FlowNode[] };
+  | { t: 'guard'; text: string; exit: StmtKind; line: number; body: FlowNode[] }
+  /** the side of an if constexpr the compiler discarded: not in this build, never runs; the project calls it names */
+  | { t: 'unbuilt'; text: string; line: number; calls: Target[] };
 export type Via = 'pointer' | 'member pointer' | 'std::function' | 'dependent' | 'unresolved';
 /** cases: a switch arm's case values, one per label (null for default, or a label not understood) */
 export interface Arm { label: string; line: number; body: FlowNode[]; fallsThrough?: boolean; cases?: (Expr | null)[] }
@@ -80,6 +82,16 @@ const LEFT_FIRST = /^(?:<<|>>|\[\]|->\*|,)$/;
 const before = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
 const within = (r: Range, outer: Range) => before(outer.start, r.start) && before(r.end, outer.end);
 const kids = (n: AstNode) => n.children ?? [];
+/**
+ * A position as one number that orders exactly like before(): line·2²² + character. Exact while the character is a
+ * whole number below 2²² and the line a whole number (far past any real file); keyed() says when that holds.
+ */
+const KEY = 4194304;
+const key = (p: Pos) => p.line * KEY + p.character;
+const keyed = (p: Pos) => Number.isInteger(p.line) && p.line >= 0 && Number.isInteger(p.character) && p.character >= 0 && p.character < KEY;
+/** Line starts of the last file read: the functions of one file share it, so it is worked out once per file. */
+let lastText: string | null = null;
+let lastStarts: number[] = [0];
 /** Statements read from their source text (header, keyword, declaration), which need a range to be read. */
 const SHAPED = new Set(['If', 'Switch', 'While', 'Do', 'For', 'CXXForRange', 'CXXTry', 'Return', 'Break', 'Continue', 'Goto', 'IndirectGoto', 'CoreturnStmt', 'Coreturn', 'Decl']);
 
@@ -103,12 +115,33 @@ class Analyser {
   private dropped: { name: string; at: Pos }[] = [];
   private unlisted = new Set<string>();
   private all: AstNode[] = [];
+  /** Per node of this.all, in the same order: its range as keys and its length in characters (null when a position can't be keyed). */
+  private spans: { s: Float64Array; e: Float64Array; len: Float64Array; has: Uint8Array } | null = null;
 
   constructor(private ast: AstNode, private text: string, calls: OutCall[]) {
-    for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) this.starts.push(i + 1);
+    if (text !== lastText) {
+      const starts = [0];
+      for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+      lastText = text;
+      lastStarts = starts;
+    }
+    this.starts = lastStarts;   // only read, never changed
     const index = (n: AstNode) => { this.all.push(n); for (const c of kids(n)) { this.parent.set(c, n); index(c); } };
     index(ast);
+    this.spans = this.keySpans();
     for (const c of calls) for (const r of c.fromRanges) this.place(c.to, r);
+  }
+
+  private keySpans() {
+    const n = this.all.length;
+    const s = new Float64Array(n), e = new Float64Array(n), len = new Float64Array(n), has = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const r = this.all[i].range;
+      if (!r) continue;
+      if (!keyed(r.start) || !keyed(r.end)) return null;
+      s[i] = key(r.start); e[i] = key(r.end); len[i] = this.off(r.end) - this.off(r.start); has[i] = 1;
+    }
+    return { s, e, len, has };
   }
 
   private off(p: Pos) { return (this.starts[p.line] ?? this.text.length) + p.character; }
@@ -121,6 +154,16 @@ class Analyser {
    */
   private deepest(r: Range): AstNode | null {
     let best: AstNode | null = null, size = Infinity;
+    const k = this.spans;
+    if (k && keyed(r.start) && keyed(r.end)) {
+      // the same walk and the same tests as below, on numbers worked out once per node
+      const rs = key(r.start), re = key(r.end);
+      for (let i = 0; i < this.all.length; i++) {
+        if (!k.has[i] || k.s[i] > rs || re > k.e[i]) continue;
+        if (k.len[i] <= size) { best = this.all[i]; size = k.len[i]; }
+      }
+      return best;
+    }
     for (const n of this.all) {
       if (!n.range || !within(r, n.range)) continue;
       const len = this.off(n.range.end) - this.off(n.range.start);
@@ -190,7 +233,8 @@ class Analyser {
     for (let i = 0; i < flat.length; i++) {
       const nodes = this.stmt(flat[i]);
       out.push(...nodes);
-      const last = nodes[nodes.length - 1];
+      // a ghost (an if constexpr's discarded side) runs nothing: whether the block goes on is the kept side's
+      const last = nodes.filter((x) => x.t !== 'unbuilt').pop();
       if (!last) continue;
       if (exits(last)) break;   // the rest of the block is unreachable
       const early = earlyExit(last);
@@ -212,7 +256,7 @@ class Analyser {
       case 'Compound': return this.stmts([s]);
       case 'Null': return [];
       case 'Label': case 'Attributed': return this.stmts(kids(s).filter((k) => k.role === 'statement' || k.role === 'expression'));
-      case 'If': return [this.ifStmt(s)];
+      case 'If': return this.ifNodes(s);
       case 'Switch': return [this.switchStmt(s)];
       case 'While': case 'Do': case 'For': case 'CXXForRange': return [this.loop(s)];
       case 'CXXTry': return [this.tryStmt(s)];
@@ -264,6 +308,31 @@ class Analyser {
       if (h.kind === 'Decl' || h.role === 'declaration') out.push(...this.stmt(h.kind === 'Decl' ? h : { kind: 'Decl', role: 'statement', range: h.range, children: [h] }));
       else this.expr(h, out, false);
     }
+  }
+
+  /**
+   * An if constexpr the compiler has decided (its condition's value is in the tree) is not a branch: the side it
+   * keeps runs unconditionally, the other is not in this build at all (shown as a ghost, never walked). One whose
+   * condition depends on a template's arguments is decided per instantiation, so it stays a branch.
+   */
+  private ifNodes(s: AstNode): FlowNode[] {
+    const h = this.header(s);
+    const v = /\bconstexpr\b/.test(arcOf(s)) && h.head.length === 1 && h.head[0].kind === 'Constant' ? /Int (-?\d+)/.exec(arcOf(h.head[0]))?.[1] : undefined;
+    if (v == null) return [this.ifStmt(s)];
+    const keep = v !== '0' ? h.rest[0] : h.rest[1], drop = v !== '0' ? h.rest[1] : h.rest[0];
+    const out = keep ? this.stmts([keep]) : [];
+    const gone = drop ? this.stmts([drop]) : [];
+    const calls: Target[] = [];
+    const collect = (l: FlowNode[]) => l.forEach((n) => {
+      if (n.t === 'call') { if (n.to.project && !calls.some((c) => c.key === n.to.key)) calls.push(n.to); return; }
+      for (const k of childLists(n)) collect(k);
+    });
+    collect(gone);
+    const cond = h.text.replace(/^if\s+constexpr\s*\(/, '').replace(/\)$/, '');
+    if (!calls.length) return out;
+    // in source order: a discarded then stands before the kept else, a discarded else after the kept then
+    const ghost: FlowNode = { t: 'unbuilt', text: `not in this build · ${cond} is ${v !== '0'}`, line: drop?.range?.start.line ?? s.range!.start.line, calls };
+    return v !== '0' ? [...out, ghost] : [ghost, ...out];
   }
 
   private ifStmt(s: AstNode): FlowNode {
@@ -450,6 +519,15 @@ class Analyser {
 
 const last = <T>(a: T[]) => a[a.length - 1];
 const arcOf = (n: AstNode) => ((n as { arcana?: string }).arcana ?? '');
+/** The lists of nodes a node holds, in order. */
+function childLists(n: FlowNode): FlowNode[][] {
+  switch (n.t) {
+    case 'stmt': case 'deferred': case 'once': case 'guard': return [n.body];
+    case 'branch': return [n.cond, ...n.arms.map((a) => a.body)];
+    case 'loop': return [n.once, n.each];
+    default: return [];
+  }
+}
 /** A condition that reads a parameter, as the syntax tree has it: the header's one expression (no declaration or init-statement). */
 function test(head: AstNode[]): { test?: Expr } {
   if (head.length !== 1 || head[0].role !== 'expression') return {};
@@ -499,6 +577,7 @@ function hasCall(n: FlowNode): boolean {
     case 'stmt': case 'deferred': case 'once': case 'guard': return n.body.some(hasCall);
     case 'branch': return n.cond.some(hasCall) || n.arms.some((a) => a.body.some(hasCall));
     case 'loop': return n.once.some(hasCall) || n.each.some(hasCall);
+    case 'unbuilt': return false;
   }
 }
 function markUnsequenced(list: FlowNode[]) {
@@ -635,6 +714,9 @@ export interface RunRow {
   could?: string[];          // indirect: functions it may reach — those whose address the code takes (probable, not proved)
   text?: string;
   lines: number;             // the function's length in lines (0 when unknown)
+  only?: string;             // in this build only, not the one compared with (src/shared/flowalign.ts)
+  change?: 'added' | 'changed';   // what a change does: new in this version, or its function's lines differ
+  changeNote?: string;       // what changed, in words: `added`, `changed · 2 lines`, `now inside if (ok)`
 }
 export interface RunFrame {
   kind: 'loop' | 'arm' | 'guard' | 'lambda' | 'thread' | 'once' | 'virtual';
@@ -653,7 +735,10 @@ export interface RunFrame {
 /** unlisted: project functions the bodies call that the graph doesn't list yet (set by the caller, which knows the project's names). */
 /** exits: every way out of each function of the run (exitsOf), by its key. */
 /** pairs: what each function opens and leaves open at a way out (src/shared/flowpairs.ts), by its key. */
-export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]> }
+/** ghosts: calls that are not in this build (another configuration's, or an if constexpr's discarded side), shown in place, never walked. */
+export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]>; ghosts?: Ghost[] }
+/** A ghost: after which row it stands, in which step, the functions it names, and why it is not in this build. */
+export interface Ghost { after: number; owner: number; names: string[]; why: string; kind?: 'removed' }
 
 /**
  * A way out of a function, or of a loop: a return, throw, break, continue, goto or co_return as written, or a call
@@ -711,6 +796,7 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   const running = new Set<string>();
   const missing = new Set<string>();
   let n = 0;
+  const ghosts: Ghost[] = [];
   // values settled per call: for a step, each parameter whose value its call settles (src/shared/flowvalues.ts)
   const known = new Map<number, Map<string, { v: Vals; type: string; text: string; call: string; origin: string }>>();
   const deadIn = (fs: number[]) => fs.some((f) => frames[f].dead);
@@ -832,6 +918,10 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
           prev = { node, s };
           break;
         }
+        case 'unbuilt':
+          // nothing runs: a ghost in place, after the row before it
+          ghosts.push({ after: rows.length - 1, owner, names: node.calls.map((c) => c.name), why: node.text });
+          break;
         case 'loop': {
           walk(node.once, owner, stack, thread);
           const s = settle(node, owner, around());
@@ -855,5 +945,5 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn);
     if (u.length) pairs[k] = u;
   }
-  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs };
+  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs, ...(ghosts.length ? { ghosts } : {}) };
 }

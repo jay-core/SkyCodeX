@@ -21,6 +21,8 @@ import { hlLine } from '../lib/hlcode';
 import StepPreview, { openStep } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
+import SettingChip from './SettingChip';
+import CompareChip from './CompareChip';
 
 const ROW = 23, SLOT = 15, TOP = 30, SPINE = 16, SKY = 50;
 const HINT = 'asdfjklghqwertyuiop';
@@ -179,7 +181,20 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     say({ key: 'E', what: on ? `ways out: ${leaving()} function${leaving() === 1 ? '' : 's'} can leave early` : 'the whole run', why: on ? 'the usual path is dimmed · E again for all' : '' });
   }
   const CODE_H = 18;
-  const code = createMemo(() => { const s = S(); return s ? codeBlocks(s, detailOf, (f) => lines(f)) : new Map(); });
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /** Ghosts (not in this build): a faint dotted line in place, below the row before them, with why. */
+  const code = createMemo(() => {
+    const s = S();
+    if (!s) return new Map();
+    const m = codeBlocks(s, detailOf, (f) => lines(f));
+    for (const g of s.run.ghosts ?? []) {
+      const it = s.itemOf[g.after], owner = s.itemOf[g.owner];
+      if (it == null || it < 0 || owner == null || owner < 0) continue;
+      const b = { owner, lines: [{ n: -1, depth: 0, text: `<span class="gh${g.kind === 'removed' ? ' gone' : ''}">${esc(g.names.map((n) => n.replace(/^.*::(?=[^:]+$)/, '')).join(' · '))}</span><span class="ghw">${esc(g.why)}</span>` }] };
+      m.set(it, [...(m.get(it) ?? []), b]);
+    }
+    return m;
+  });
   const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n: number, b: { lines: unknown[] }) => n + b.lines.length, 0) * CODE_H + 4])));
   // around the step (A, on by itself for very long runs): its callers and two levels of callees in full, every other
   // call folded to its own row; a call opened by hand stays open
@@ -260,11 +275,20 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       const fr = s.run.frames[f];
       if (fr.kind !== 'loop') out.push(rowNote(fr));
     }
+    if (markOf(r)) out.push(markOf(r));
     if (r.unsequenced) out.push('order: compiler’s choice');
     if (r.approx) out.push('~ in a macro');
     return out.join('   ');
   };
   const uses = (it: number) => (S()!.uses.get(S()!.items[it]) ?? []).map((i) => { const r = R()[i]; return `${short(r.name)} ${r.kind === 'step' ? r.n : R()[r.ref!].n}`; }).join(' · ');
+  /** What a row says about itself when compared: another setting's (`only with DEBUG`), or a change's (`added`, `◆ changed · 2 lines`). */
+  const markOf = (r: { only?: string; change?: string; changeNote?: string }) => r.only ?? (r.changeNote ? (r.change === 'changed' ? `◆ ${r.changeNote}` : r.changeNote) : '');
+  /** The same for the calls folded into a row's "uses", grouped: `only with DEBUG: log_line`, `added: validate, check_size`. */
+  const usesMarks = (it: number) => {
+    const by = new Map<string, string[]>();
+    for (const i of S()!.uses.get(S()!.items[it]) ?? []) { const w = markOf(R()[i]); if (w) by.set(w, [...(by.get(w) ?? []), short(R()[i].name)]); }
+    return [...by].map(([w, ns]) => ({ text: `${w}: ${ns.join(', ')}`, added: w === 'added' }));
+  };
 
   // ---- moves ----
   let capTimer: ReturnType<typeof setTimeout> | undefined;
@@ -692,6 +716,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </span>
           </Show>
           <Show when={leaving()}><button class="chip" classList={{ on: waysOut() }} aria-pressed={waysOut()} title="ways out: the usual path dims, every early return, throw, break, goto and call that never returns lights, with what leads there (E)" onClick={() => { toggleWaysOut(); canvas.focus(); }}>ways out</button></Show>
+          <SettingChip />
+          <CompareChip />
           <Show when={aroundOn() || N() > 150}><button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button></Show>
           <button class="chip" classList={{ on: detailAll() !== 'calls' || detailFn().size > 0 }} title="how much code to show between calls: calls only, with decisions, or all code (⇧D everywhere, D for the current function)" onClick={() => { cycleDetail(true); canvas.focus(); }}>{detailAll() === 'calls' ? 'calls' : detailAll() === 'decisions' ? 'decisions' : 'all code'}</button>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
@@ -755,7 +781,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const sel = () => cur()?.at === it;
                 const tag = () => (sel() ? '' : it === prevAt() ? '← back' : it === nextAt() ? (nextIsReturn() ? `next → · back in ${short(nextIsReturn())}` : 'next →') : '');
                 return (
-                  <div class={`srow k-${r().kind}`} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel() }}
+                  <div class={`srow k-${r().kind}`} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel(), cadd: r().change === 'added', cchg: r().change === 'changed' }}
                     style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.y[it]}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
                     onClick={() => { setPeek(null); go({ jump: it }); canvas.focus(); }}
                     onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; peekTimer = setTimeout(() => setPeek({ it, up }), 450); }}
@@ -776,6 +802,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <Show when={deadAt(it)?.first}><span class="sd" title={`cannot happen in this call: ${deadAt(it)!.why}`}>not in this call · {deadAt(it)!.why}</span></Show>
                     <Show when={followed() && hitsAt(it).length}><span class="sw">{hitsAt(it).map(hitWords).join(' · ')}</span></Show>
                     <Show when={!sel() && uses(it)}><span class="u">uses {uses(it)}</span></Show>
+                    <For each={usesMarks(it)}>{(m) => <span class="nt sonly" classList={{ cadd: m.added }}>{m.text}</span>}</For>
                     <Show when={tag()}><span class="tag">{tag()}</span></Show>
                     <Show when={notesByItem()[it]}><span class="snote" title={notesByItem()[it]}>✎ {notesByItem()[it]}</span></Show>
                   </div>

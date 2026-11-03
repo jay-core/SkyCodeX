@@ -69,6 +69,7 @@ IDs: **F** for foundations (the toolkit), **D** for discovery threads. Sub-ideas
 | D3 | Verified improvement suggestions (repair engine), incl. D3.6 AI-free engine, D3.7 growth ledger, D3.8 feedback and deduction, D3.9 deep re-read R-1…R-29 | Adapted / Candidates | D1, D2, A-batches | SkyCodeX UI |
 | T | Uniform atomic treatment of D1–D4 (atoms, injection, dominance, repair), new results N-1…N-8 | Mixed per item | A.0 | D3.7 |
 | D4 | Sheaf gluing for C/C++: partial-information fold (Helly), units over abelian groups, tractability by coefficient group, proof gluing over covers (correction), Mayer–Vietoris, lockset gluing | Candidate / Known per item | F1, D2.2, D3.6.3 | D3 repair, A10, R-1, R-21 |
+| U | Unified SkyFlowX: the 64 concepts where Frama-C is below LDRA, Frama-C's methods rebuilt clean-room, the common core on every OS, the Frama-C add-on on Linux and macOS, ARINC 653 checks, "more capable" measured per axis | Decided / Known / Candidates | A.2, F5, D1–D4 | D3.7, ROADMAP |
 
 ## Prior-art and novelty register (2026-10-31)
 **Honest position:** so far this document is mostly a **careful synthesis of known mathematics**, applied to our design. No entry has been shown to be new to the literature. Novelty is claimed only after a prior-art search and a measured improvement over existing tools.
@@ -85,6 +86,8 @@ IDs: **F** for foundations (the toolkit), **D** for discovery threads. Sub-ideas
 | D2.4 (lifting guided by the failing cycle) | CEGAR (Clarke et al. 2000), interpolation (McMillan), ESP path-sensitive typestate (Das et al. 2002) | **Candidate, weak:** probably the same idea with a different counterexample shape (a cycle pair rather than a path). |
 | D3.11 (interacting fixes) | Bernstein conditions (1966); Newman's lemma (1942); graph-transformation critical pairs for refactorings (Mens, Taentzer and Runge 2007); patch theory and operational transformation | **Known**, applied. Candidates: certificate footprints, the status pass, O2′ |
 | D4 (sheaves) | Čech cohomology of a semantic presheaf unifying type checking, bug finding and equivalence (Young, arXiv 2603.27015, 2026); sheaves for differential testing (arXiv 2003.00976) | **Known (recent).** D4 builds on it. Our candidates: D4.5 (tractability by coefficient group). **Revised by T4:** D4.3 is a Refinement (GCC `-Wlto-type-mismatch` exists); D4.4 is a Refinement (Osprey, ICSE 2006; Phriky Units 2017). D4.6 is Known, applied as a correction. |
+
+| U (unified SkyFlowX) | Every method in U.3 is published (Frama-C papers and manuals, Cousot, Dijkstra, Weiser, Bardin et al.) | **Known**, rebuilt clean-room. Candidates: one contract used three ways in one product (Refinement at most); a C++ One Definition Rule violation read as a gluing failure |
 
 **Rule from now on:** each new entry gets a "Prior art" line and one of these positions: Known · Refinement · Candidate (unverified) · Novel (verified by search and measurement).
 
@@ -2782,3 +2785,169 @@ The foundation decides the integrity of everything above it, so it comes first. 
 5. ~~Batch 6~~ done (A.4f).
 6. ~~Batch 7~~ done (A.4g).
 7. ~~Batch 8~~ done (A.4h). **All 52 atoms covered** (A21/A22 via D2/D1).
+
+---
+
+## U. Unified SkyFlowX: Frama-C's gaps, LDRA parity and the common core on every OS (2026-11-03)
+
+### U.0 Decisions (2026-11-03)
+1. **Languages:** C and C++ only in 1.x.
+2. **Common core, the first target, on every OS (Windows, Linux, macOS):**
+   - the clang (libclang) front end;
+   - SkyFlowX (Rust);
+   - built-in compliance rules: MISRA C, MISRA C++, CERT C/C++ with the CWE mapping, AUTOSAR C++14, JSF AV C++, and ARINC 653 partitioning and APEX use.
+3. **Add-on on Linux and macOS, after the core:**
+   - Frama-C, installed by the user from its public release, called by SkyFlowX as a separate program;
+   - for C++, Frama-Clang where it measures well on our own samples (the project calls it experimental).
+   - No WSL route on Windows.
+4. **Clean-room rule.**
+   - **Allowed:** Frama-C's *published methods* may be rebuilt in SkyFlowX, from the papers and public manuals only.
+   - **Never:** Frama-C source, tests, library contract files or manual text are not copied, ported or translated.
+   - **Result:** no LGPL duty arises for our code. "Frama-C" is never used as a product name; the app at most says "works with Frama-C if installed".
+   - **Still required:** the licence notices of tools we bundle (clangd, the SMT solver).
+5. **UI:** results are shown natively in SkyCodeX, interactive, in its own look. Mock-ups come first.
+6. **Licensed texts** (MISRA, ARINC 653, DO-178C) are read locally from the user's copies and never put into the repo or the app. Rules are referenced by number and described in our own words.
+7. **Platform rule (P7):** a check that needs the add-on shows *can't tell: needs Frama-C (Linux, macOS)* on Windows, never a pass.
+
+**Source:** the user's comparison document *Frama-C, Polyspace and LDRA: exhaustive concept-by-concept and component-by-component comparison* (2 November 2026; public information only; claims marked "verify" there stay unconfirmed here). The concept IDs A1–M5 below are that document's, not our atom IDs A01–A52.
+
+### U.1 Architecture
+
+| Layer | Contents | Atoms | Platforms | Phase |
+|---|---|---|---|---|
+| L0 Front end | clang/libclang, compile database, target model, preprocessing record, location mapping; continuity checks C1–C4 on every lowering | A01–A05 | All | Core |
+| L1 Graphs and facts | CFG, call graph, SSA, read and write sets per function, dependence of outputs on inputs | A14–A18 | All | Core |
+| L2 Rules | Lexical to system levels T0–T5, the standards catalogue, deviations | A06–A11 | All | Core |
+| L3 Metrics and quality | Size, cyclomatic, essential, knots, Halstead per function, LCSAJ counts, HIS profile, quality model, trends | A12, A13, A52 | All | Core |
+| L4 Sound semantics | Our own value analysis (S7). Add-on: Eva, WP and E-ACSL on C; Frama-Clang on C++ where measured. Combined by P2 only under the same machine model | A20–A22 | Own: all, later. Add-on: Linux, macOS | Later |
+| L5 Dynamic | Instrumentation, target run-time library, coverage, harnesses, stubs, test generation | A23–A43 | All | Later |
+| L6 Evidence | Requirements, trace links, objectives, certificates and the small checker, reports, qualification kit | A44–A51 | All | Later |
+| UI | SkyCodeX views: findings on the flow, coverage as light, compliance board | A48–A50 | All | Core |
+
+### U.2 Where Frama-C is below LDRA, and how SkyFlowX closes it
+Counted from the document's ratings, **64 concepts** rate LDRA higher than Frama-C. Our 52 atoms already cover each one; this table adds the mathematics and the phase.
+
+| # | Group | Document concepts | Atoms | Our mathematics | Certainty | Phase |
+|---|---|---|---|---|---|---|
+| 1 | Front end | A1, A3, A4 | A01–A05 | Continuity C1–C4 on clang → CFG → SSA; a C++ One Definition Rule violation read as a gluing failure across files (D4) | E | Core |
+| 2 | Concurrency, stack, timing | A8, B10, B11 | A22, S12 | D1 directed topology, D1.a′ interrupts, D1.h′ cutoff, Petri invariants; stack depth as a max-plus longest path over the call graph (recursion → *can't tell*); loop bounds by ranking functions, response-time analysis. Static WCET needs a processor model, so timing is measured (B) | S / B | Later |
+| 3 | Defect finding | B6 | A20, A21 | The fast unsound mode and the sound mode share one engine; a finding says which mode made it | S / B | Later |
+| 4 | Flow structure | D2, D3, D8, D9 | A14, A16, A19 | I5 reducibility gives structuredness and essential complexity; reaching definitions give UR, DD and DU, each with its witness path; coupling is the read and write sets projected onto component boundaries | E | Core |
+| 5 | Coding standards | E1–E9 | A06–A11 | Decidable rules exact; undecidable rules take their evidence from the sound side only (A10 sandwich); deviations by fingerprint (A11) | E / S | Core (first slice) |
+| 6 | Metrics and quality | F3–F8 | A12, A13, A52 | Halstead per function; knots as crossing pairs of jumps, O(n log n); LCSAJ from the CFG; trends from P4/P5 fingerprints | E | Core |
+| 7 | Instrumentation and execution | G1–G4, G6 | A23, A24, A32 | Probes only on edges outside a spanning tree, with every other count recovered from B·x = 0 (Δ1); instrumentation must be a subdivision (C4); target data checked by CRC over GF(2); runs merged as a join keyed by build identity (P→E) | E | Later |
+| 8 | Structural coverage | H1–H12 | A25–A31 | MC/DC independence pairs, unique-cause and masking; object-code coverage as continuity through the line tables; gaps justified only by *sound* unreachability | E | Later |
+| 9 | Unit and integration testing | I1–I8 | A33–A43 | Interfaces from the read and write sets; one contract used three ways (proved, used as the test stub, checked at run time); boundaries and classes from the interval edges of the value analysis; inputs by SMT | E / B | Later |
+| 10 | Requirements and objectives | J1–J4 | A44–A47 | Trace links as a bipartite graph: gaps are unmatched nodes, impact is reachability; statement-level impact joined with artefact-level impact | E | Later |
+| 11 | UI, certification, platform | K2–K4, L1–L3, M3–M5 | SkyCodeX, A50–A52 | SkyCodeX is the IDE (K2); P1 certificates, so qualification rests on a small checker; proofs as DO-333 evidence; scale by modular proofs, P4 and P5 | E | Core (UI), later (rest) |
+
+### U.3 Methods taken from Frama-C's published work (clean-room)
+
+| Method | Published source | Lands in | Position |
+|---|---|---|---|
+| ACSL as the contract language SkyFlowX reads | The public ACSL reference manual; Kirchner, Kosmatov, Prevosto, Signoles and Yakobowski, *Formal Aspects of Computing* 27(3), 2015 | S7, S11 stubs, D3 | Known |
+| Value analysis by abstract interpretation: intervals, congruences, base and offset pointers, state partitioning | Cousot and Cousot, POPL 1977; Kirchner et al. 2015; Kosmatov, Prevosto and Signoles (eds.), *Guide to Software Verification with Frama-C*, Springer 2024 | S7 | Known |
+| One obligation per run-time-error site | Kirchner et al. 2015 | S7, rules E10 | Known |
+| Weakest preconditions for contract proofs | Dijkstra, CACM 1975; Kirchner et al. 2015 | Proofs (add-on first, own later) | Known |
+| Run-time checking of contracts and memory with shadow memory | Kosmatov, Prevosto and Signoles 2024 | S9, S11, fuzzing oracle | Known |
+| Temporal properties as automata over calls and returns | F5 (Büchi automata) | S12 | Known |
+| Meta-properties ("only M writes x") | Kosmatov, Prevosto and Signoles 2024 | A10, S6 | Known |
+| Slicing on a program dependence graph | Weiser, ICSE 1981; Ferrante, Ottenstein and Warren, TOPLAS 1987 | S6, D3.11 footprints | Known |
+| One status per property: valid, invalid, unknown, or valid under hypotheses, with dependencies tracked | Kirchner et al. 2015 | §1.4 finding states | Known |
+| Infeasible coverage objectives detected by static analysis | Bardin, Kosmatov and Cheynier, ICST 2014 | H11 gap justification | Known |
+| Termination by variants and ranking functions | Podelski and Rybalchenko 2004 (F5) | S7 | Known |
+
+### U.4 What neither tool offers (claims hold only after measurement)
+- **P1 certificates** for every verdict, checked by a small separate checker.
+- **P5 incremental results** that equal from-scratch results.
+- **D1 concurrency proofs**, **D2 resource algebra**, **D4 gluing across files**.
+- **The checked repair engine (D3).**
+- **Probe minimisation by spanning tree** (Knuth and Stevenson 1973; Ball and Larus 1994). The document describes no such minimisation for LDRA. Any claimed gain must be measured.
+- **ARINC 653 checks.** The document compares no ARINC 653 support for any of the three tools.
+
+### U.5 ARINC 653 (to confirm against the user's licensed copy)
+| Check | Mathematics | Certainty |
+|---|---|---|
+| Time partitioning: the partition windows in the major frame fit their processes' demand | Response-time analysis (F5) | S |
+| Space partitioning: no data flow between partitions except through declared ports | Noninterference on information flow (Denning's lattice, F5; A18) | S |
+| APEX ports: sampling and queuing ports created and used in matched pairs | D2 monoid labels | E / S |
+| Health monitoring: every declared error handler is reachable and covered | I1 reachability; coverage (A25) | E |
+| Processes inside a partition | D1, within the partition's windows | S |
+
+The configuration tables are an input. Their exact form is taken from the licensed text.
+
+### U.6 What "more capable" means: measured per axis
+| Axis | Measure | Benchmarks | A win means |
+|---|---|---|---|
+| Findings | True findings caught; false alarms | NIST Juliet (CWE), Toyota ITC suite, SV-COMP | Caught ≥ theirs and false alarms ≤ theirs, on the same set |
+| Rules | Per-rule agreement with hand-worked answers | MISRA example suite (licensed), our known-answer tests | Every rule passes its tests |
+| Soundness | Missed errors in the sound mode | Juliet and SV-COMP with known answers | Zero misses within the stated scope |
+| Coverage | Counts against ground truth | gcov, llvm-cov | Identical counts |
+| Speed | Time to results, first and incremental | ThreadX, RTEMS, LLVM | ≤ theirs at equal certainty |
+
+**Limits stated up front:**
+1. No single analysis is both fully sound and as fast as a rule checker on every program (undecidability). Each mode must beat its own counterpart.
+2. Matching Eva's precision on every program takes measured iterations.
+3. Ready-made compiler/processor packages, a field and certification track record, and vendor support aren't design outcomes. They're earned over time.
+
+### U.7 First target: the common core (about two weeks, after SkyCodeX is finished, on "Skyflow execute!")
+- `skyflowx` in Rust on libclang, over JSON-RPC, inside SkyCodeX, for C and C++.
+- L1 graphs and the flow-integrity invariants I1–I8.
+- L3 metrics, exact.
+- Data-flow anomalies UR, DD and DU; cross-reference.
+- **A first slice of decidable rules** from MISRA C, MISRA C++ and CERT, each with a written spec and known-answer tests (the process rule in ROADMAP.md). The full catalogues follow later.
+- Findings shown natively in SkyCodeX, after mock-ups.
+
+**Not in the first target:** the Frama-C add-on, our own sound engine, coverage, testing, traceability, the qualification kit, D1, the Lean proofs and the benchmark campaigns.
+
+### U.8 Repair contributions (D3.7)
+| Item | Fix classes added | Confirmation added | Reduction added |
+|---|---|---|---|
+| U.3 contracts | Fixes that keep a function's contract | Add-on: WP proves the patched function still meets its contract | A contract acts as the stub, so only callers whose assumptions changed are rechecked |
+| U.3 value analysis | Guard fixes at an alarmed operation | The alarm is gone and no new alarm appears, under the same machine model | — |
+| U.3 run-time checking | — | The fix is re-run on the tests with contract and memory checks on | — |
+| U.3 slicing | — | — | A fix's footprint is its backward slice; only checks that meet the slice are rerun (D3.11) |
+| U.5 APEX ports | Port pairing fixes | The D2 pass certificate | — |
+| U.2 group 5 | — | An undecidable rule's fix is confirmed only by the sound side (A10) | — |
+
+### U.9 Open, and to verify
+1. The exact licences of the Frama-C plug-ins and of the Alt-Ergo prover. This matters only to users of the add-on, who install them.
+2. A freedom-to-operate (patent) check before a commercial release, by a lawyer.
+3. How much of C++ Frama-Clang handles, measured on our own samples before it is relied on.
+4. Frama-C's report formats, read from a real run before the reader is written.
+5. MISRA and ARINC 653 checks to be confirmed against the user's licensed copies.
+6. Every claim marked "verify" in the comparison document.
+
+### U.10 Open-source checks we reuse, and the full use of clang (2026-11-03)
+**Decision:** where an open-source check already exists, we take it. Our own mathematics (U.2, D1–D4, P1–P8) is added on top.
+
+**Licence rule, per source:**
+- **Apache 2.0 with the LLVM exception** (clang, clang-tidy, the Clang Static Analyzer, CodeChecker): the code may be built into SkyFlowX. Its licence notice goes into the third-party notices file. That notice is a licence condition, not credit for anyone's work.
+- **GPL** (cppcheck and its MISRA add-on): never built in, because that would make SkyFlowX GPL. It may only be run as a separate program installed by the user, like the Frama-C add-on.
+- **Licensed standards** (MISRA, ARINC 653): checks are confirmed against the user's copies. The texts never ship.
+
+| Source | Licence | What it gives | How we use it |
+|---|---|---|---|
+| clang diagnostics (all warnings) with fix-its | Apache 2.0 + LLVM exception | Many decidable rules at T1–T2; exact locations; fixes | Mapped to rules one by one; fix-its feed the repair engine (as in SkyCodeX today) |
+| clang-tidy (cert, bugprone, cppcoreguidelines, hicpp, misc, readability, performance) | Apache 2.0 + LLVM exception | CERT C/C++ subset; many checks overlapping MISRA C++ and AUTOSAR | Built in as a library; each check mapped to the rules it implements exactly, or to the rules it only relates to |
+| Clang Static Analyzer | Apache 2.0 + LLVM exception | Path-sensitive defect finding: null, leaks, use after free, division, uninitialised values | The fast unsound mode (U.2 group 3); every finding carries its path as a witness (P1) |
+| clang dataflow framework and `clang::CFG` | Apache 2.0 + LLVM exception | CFG, dominators, lattice-based dataflow | The base for L1; our certificates are stated over this CFG |
+| `-Wthread-safety` capability analysis | Apache 2.0 + LLVM exception | Lock discipline from annotations | A cross-check for D1 and D2 where the code is annotated |
+| LLVM source-based coverage, with MC/DC from LLVM 18 | Apache 2.0 + LLVM exception | Statement, branch and MC/DC on the host | The ground truth our own instrumentation must equal (U.6), and a first coverage source |
+| Sanitizers (address, undefined, memory, thread) | Apache 2.0 + LLVM exception | Run-time detection of the same error classes | The dynamic confirmation of static findings; the thread sanitizer confirms D1 races |
+| CodeChecker guideline maps | Apache 2.0 | Which clang and clang-tidy checks relate to which MISRA, CERT and AUTOSAR rules | A starting map only: "relates to" is not "implements"; each rule still needs our known-answer tests |
+
+**What open source doesn't cover:**
+- **MISRA C and MISRA C++:** no complete open-source checker under a licence we can build in. Most rules are our own work, using clang's AST and CFG.
+- **AUTOSAR C++14:** only partly covered, through clang-tidy checks that overlap it.
+- **ARINC 653:** no open checker. The checks in U.5 are our own.
+
+**Full use of clang:**
+- libclang's C interface doesn't expose the CFG, the dataflow framework, the Static Analyzer or clang-tidy.
+- So SkyFlowX links clang's C++ libraries through a small C++ layer that Rust calls. This replaces "libclang" in ROADMAP.md.
+- **Cost:** a larger binary, and one pinned LLVM version per release.
+- **Gain:** every check above, and one parser shared by everything.
+
+**Exactness rule:** a reused check counts toward a rule only after it passes that rule's known-answer tests. Until then, it is shown as *relates to* the rule, not as checking it.
+
+**Prior art:** all methods in U.3 are Known. Candidates: one contract used three ways in one product (Refinement at most; the Frama-C ecosystem already shares ACSL between WP and E-ACSL); reading a C++ One Definition Rule violation as a gluing failure (Candidate, unverified).

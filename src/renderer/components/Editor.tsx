@@ -8,6 +8,10 @@ import { sender, flush as flushOther } from '../lib/langlsp';
 import { saver } from '../lib/power';
 import { files, states, settings, setStateFactory, setMainView, onDocChanged, openFile, save, setCrumb, setCursorPos } from '../lib/store';
 import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
+import { repairFor } from '../lib/repair';
+
+/** C and C++ sources and headers the repair engine checks (not fragments such as .inc tables). */
+const REPAIRABLE = /\.(c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|tcc)$/i;
 
 // ---- decorations: focus dimming, ⌘/Ctrl-hover link (call outlines come from the preview: lib/callmarks.ts) ----
 interface Marks { dim: [number, number] | null; link: [number, number] | null }
@@ -85,8 +89,8 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
           : serverLang(file) ? [completionFor(() => file, sender(file), flushOther), hoverFor(() => file, sender(file))] : [],
         lintSupport, marksField, dimPlugin,
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
-        // standard-library and SDK headers open read-only
-        SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : [],
+        // standard-library and SDK headers open read-only; the project's own C and C++ get checked fixes for their errors
+        SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : langOf(file) === 'cpp' && REPAIRABLE.test(file) ? repairFor(file) : [],
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onDocChanged(file, u.state);
           else states.set(file, u.state);

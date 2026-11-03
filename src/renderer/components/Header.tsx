@@ -5,6 +5,7 @@ import { lspState, indexing } from '../lib/lsp';
 import { serverLang } from '../lib/langs';
 import { saver } from '../lib/power';
 import { langStatus } from '../lib/langlsp';
+import { repairNote } from '../lib/repair';
 
 // the long "install one from the compiler window" message stays in the tooltip
 const shortStatus = (s?: string) => (!s ? '' : s === 'starting' ? t('starting…') : s.endsWith(' ready') ? s : t('no language engine'));
@@ -41,6 +42,7 @@ export default function Header() {
       </div>
       <div class="status" role="status" aria-live="polite">
         <Show when={saver()}><span title={t('on battery: animations off, background work spaced out (settings → interface → power)')}>{t('battery saver')}</span></Show>
+        <Show when={page() === 'editor' && files.active && repairNote().file === files.active && repairNote().text}><span class="rnote">{repairNote().text}</span></Show>
         <Show when={page() === 'editor' && files.active}><span>{cursorPos().line}:{cursorPos().col}</span></Show>
         <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>
       </div>

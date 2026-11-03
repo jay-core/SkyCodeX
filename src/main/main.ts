@@ -1,5 +1,5 @@
 // SkyCodeX main process: window, portable data, settings, files, clangd and the language packs.
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, powerMonitor, crashReporter } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItemConstructorOptions, powerMonitor, crashReporter, IpcMainInvokeEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,14 +8,15 @@ import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, listFiles, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
 import { searchFolder, cancelSearch } from './search';
-import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, Compiler, ReadAs } from './compilers';
 import { openTerminal } from './terminal';
+import { candidatesFor, verdict, reason as repairReason, cleanMessage, lineStarts, applyEdit, RDiag, Lang as RLang } from '../shared/repair';
 
 // ---------- portable data dir: decided before anything else touches the disk ----------
 const appRoot = path.resolve(__dirname, '..', '..');
@@ -96,6 +97,8 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.on('maximize', () => send('win:maximized', true));
   win.on('unmaximize', () => send('win:maximized', false));
+  // the hidden window reading another build setting goes with it (and never keeps the app open)
+  win.on('closed', () => { stopSetting(); stopCheck(); });
 }
 
 // ---------- settings ----------
@@ -181,7 +184,138 @@ ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stri
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
 lsp.onApplyEdit = (edit) => send('lsp:notify', '$/applyEdit', edit);
 let lspRoot = '', lspClangd = '';
-ipcMain.handle('lsp:start', async (_e, root: string) => {
+
+// ---------- another build setting (configurations): a hidden window of the same interface, with its own clangd ----------
+// It builds the same entry point's run with the very code the window uses, reading the code with the setting's
+// commands, and hands the run back. The window's own clangd, index and state are never touched.
+/** What the hidden window reads: a folder (the project, or an older version of it), with these commands, from this entry point. */
+interface WorkerJob { id: string; root: string; entry?: string; entryRel?: string; entryName?: string; flags: string[]; folder?: string; label: string; ccDir: string; texts?: boolean }
+type WorkerResult = { ok: boolean; message?: string; run?: unknown; errors?: unknown[]; texts?: Record<string, string[]> };
+let settingWin: BrowserWindow | null = null, settingJob: WorkerJob | null = null, workerDone: ((r: WorkerResult) => void) | null = null;
+const lspSetting = new LspClient((m, p) => { if (settingWin && !settingWin.isDestroyed()) settingWin.webContents.send('lsp:notify', m, p); }, (line) => log(`clangd (setting): ${line}`));
+const fromWorker = (e: IpcMainInvokeEvent) => !!settingWin && !settingWin.isDestroyed() && e.sender === settingWin.webContents;
+const clangdOf = (e: IpcMainInvokeEvent) => (fromWorker(e) ? lspSetting : lsp);
+function stopSetting() {
+  lspSetting.stop();
+  const w = settingWin, done = workerDone;
+  settingWin = null; settingJob = null; workerDone = null;
+  if (w && !w.isDestroyed()) setImmediate(() => { if (!w.isDestroyed()) w.destroy(); });
+  done?.({ ok: false, message: 'stopped' });
+}
+/** Starts the hidden window on a job (one at a time: a new one stops the last); resolves with what it hands back. */
+function runWorker(job: WorkerJob): Promise<WorkerResult> {
+  stopSetting();
+  settingJob = job;
+  const p = new Promise<WorkerResult>((res) => { workerDone = res; });
+  settingWin = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false } });
+  settingWin.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame) e.preventDefault(); });
+  settingWin.loadFile(path.join(appRoot, 'dist', 'renderer', 'index.html'), { hash: 'setting' });
+  return p;
+}
+ipcMain.handle('setting:options', (_e, root: string) => ({ folders: root === lspRoot ? otherCompileDbs(root, lsp.ccDir) : [], commands: !!lsp.ccDir }));
+ipcMain.handle('setting:start', (_e, j: Omit<WorkerJob, 'id' | 'ccDir'>) => {
+  if (j.root !== lspRoot || !lspClangd) return { ok: false, message: 'clangd is not reading this folder yet' };
+  if (!j.folder && !lsp.ccDir) return { ok: false, message: 'no build commands to change' };
+  const id = sha1(`${j.root}\n${j.folder ?? ''}\n${j.flags.join('\u0001')}`).slice(0, 12);
+  let ccDir: string;
+  try { ccDir = j.folder ?? writeSettingDb(lsp.ccDir!, j.flags, path.join(STATE, 'settings', id)); } catch (e) { return { ok: false, message: String(e) }; }
+  void runWorker({ ...j, id, ccDir }).then((r) => { if (r.message !== 'stopped') send('setting:done', { id, ...r }); });
+  return { ok: true, id };
+});
+ipcMain.handle('setting:job', (e) => (fromWorker(e) ? settingJob : null));
+ipcMain.handle('setting:done', (e, result: WorkerResult) => {
+  if (!fromWorker(e)) return;
+  const done = workerDone;
+  workerDone = null;
+  stopSetting();
+  done?.(result);
+});
+ipcMain.handle('setting:stop', () => stopSetting());
+
+// ---------- what a change does: an older version of the project, from git, read the same way ----------
+// git is only asked to read: the history, and a commit's files (git archive) into SkyCodeX's state folder. Nothing in
+// the repository is written, checked out or switched.
+const gitOut = (root: string, args: string[]) => new Promise<string>((res, rej) => execFile('git', ['-C', root, ...args], { maxBuffer: 64 << 20 }, (err, out) => (err ? rej(err) : res(String(out)))));
+ipcMain.handle('change:history', async (_e, root: string) => {
+  try {
+    const out = await gitOut(root, ['log', '-n', '40', '--format=%H%x1f%h%x1f%s%x1f%cr']);
+    return { ok: true, commits: out.split('\n').filter(Boolean).map((l) => { const [sha, short, subject, when] = l.split('\x1f'); return { sha, short, subject, when }; }) };
+  } catch (e) {
+    const m = String((e as Error).message ?? e);
+    return { ok: false, message: /ENOENT/.test(m) ? 'git is not installed: what a change does reads the history with it' : /not a git repository/i.test(m) ? 'this folder is not in a git repository' : m.split('\n')[0] };
+  }
+});
+const CHANGES = path.join(STATE, 'changes');
+/** A commit's files under the state folder (once; the last 4 are kept), and where the project's root is inside them. */
+async function exportCommit(root: string, sha: string): Promise<string> {
+  const top = (await gitOut(root, ['rev-parse', '--show-toplevel'])).trim();
+  const rel = path.relative(fs.realpathSync(top), fs.realpathSync(root));
+  const dir = path.join(CHANGES, sha.slice(0, 12)), tree = path.join(dir, 'tree');
+  if (!fs.existsSync(path.join(dir, 'done'))) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(tree, { recursive: true });
+    await new Promise<void>((res, rej) => {
+      const g = spawn('git', ['-C', top, 'archive', '--format=tar', sha, ...(rel ? ['--', rel] : [])]);
+      const t = spawn('tar', ['-x', '-C', tree]);
+      g.stdout.pipe(t.stdin);
+      let err = '';
+      g.stderr.on('data', (d) => { err += d; });
+      g.on('error', rej); t.on('error', rej);
+      t.on('close', (code) => (code === 0 ? res() : rej(new Error(err || `tar exited ${code}`))));
+    });
+    fs.writeFileSync(path.join(dir, 'done'), sha);
+  }
+  const now = new Date();
+  fs.utimesSync(dir, now, now);
+  const all = fs.readdirSync(CHANGES).map((n) => ({ n, t: fs.statSync(path.join(CHANGES, n)).mtimeMs })).sort((a, b) => b.t - a.t);
+  for (const o of all.slice(4)) fs.rmSync(path.join(CHANGES, o.n), { recursive: true, force: true });
+  return path.join(tree, rel);
+}
+/** The commands in use, pointed at another copy of the project (every path under root moved to there). */
+function movedDb(inUse: string, root: string, there: string, dir: string): string {
+  // on the parsed commands (a Windows path is escaped in the file's text), and only where root ends a path's part
+  const at = new RegExp(`${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\\\/"'\\s]|$)`, 'g');
+  const mv = (s: unknown) => (typeof s === 'string' ? s.replace(at, () => there) : s);
+  const db = (JSON.parse(fs.readFileSync(path.join(inUse, 'compile_commands.json'), 'utf8')) as Record<string, unknown>[])
+    .map((e) => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, Array.isArray(v) ? v.map(mv) : mv(v)])));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'compile_commands.json'), JSON.stringify(db, null, 1));
+  return dir;
+}
+/** One version's run: 'work' is the files on disk (the window's own run, so nothing to read here), else a commit. */
+async function versionRun(root: string, rev: string, entry: { rel: string; name: string }, label: string): Promise<WorkerResult & { root?: string }> {
+  const there = await exportCommit(root, rev);
+  const ccDir = movedDb(lsp.ccDir!, root, there, path.join(CHANGES, rev.slice(0, 12), 'db'));
+  const r = await runWorker({ id: rev, root: there, entryRel: entry.rel, entryName: entry.name, flags: [], label, ccDir, texts: true });
+  return { ...r, root: there };
+}
+ipcMain.handle('change:start', async (_e, j: { root: string; entryRel: string; entryName: string; older: string; newer: string; olderLabel: string; newerLabel: string }) => {
+  if (j.root !== lspRoot || !lspClangd || !lsp.ccDir) return { ok: false, message: 'clangd is not reading this folder yet' };
+  void (async () => {
+    try {
+      const older = await versionRun(j.root, j.older, { rel: j.entryRel, name: j.entryName }, j.olderLabel);
+      if (!older.ok) { if (older.message !== 'stopped') send('change:done', { ok: false, message: `${j.olderLabel}: ${older.message}` }); return; }
+      const newer = j.newer === 'work' ? null : await versionRun(j.root, j.newer, { rel: j.entryRel, name: j.entryName }, j.newerLabel);
+      if (newer && !newer.ok) { if (newer.message !== 'stopped') send('change:done', { ok: false, message: `${j.newerLabel}: ${newer.message}` }); return; }
+      send('change:done', { ok: true, older, newer });
+    } catch (e) { send('change:done', { ok: false, message: String((e as Error).message ?? e).split('\n')[0] }); }
+  })();
+  return { ok: true };
+});
+
+ipcMain.handle('lsp:start', async (e, root: string) => {
+  if (fromWorker(e)) {
+    // the setting's clangd: the same clangd and compilers, the setting's commands
+    const j = settingJob!, c = readingAs();
+    try {
+      await lspSetting.start(lspClangd, root, settings['clangd.args'] as string[], STATE, c.compiler,
+        c.compiler?.kind === 'msvc' && c.compiler.include?.length ? { INCLUDE: c.compiler.include.join(';') } : undefined,
+        (cc) => projectDrivers(cc, root), j.ccDir);
+      return { ok: true, clangd: lspClangd, capabilities: lspSetting.capabilities };
+    } catch (err) { return { ok: false, message: String(err) }; }
+  }
+  stopSetting();   // a folder opened (or opened again): a setting read for the last one is no longer asked for
+  stopCheck();
   lspRoot = root; lspClangd = '';
   for (const c of langServers.values()) c.stop();   // a new folder: other languages' servers start again when one of their files opens
   const clangd = findClangd(String(settings['clangd.path']), TOOLS, PACKS.dir);
@@ -198,7 +332,103 @@ ipcMain.handle('lsp:start', async (_e, root: string) => {
   } catch (e) { return { ok: false, message: String(e) }; }
 });
 ipcMain.handle('lsp:stale', () => !!lspRoot && lsp.ccChanged(lspRoot));
-ipcMain.handle('lsp:request', (_e, method: string, params: unknown) => lsp.request(method, params));
+ipcMain.handle('lsp:request', (e, method: string, params: unknown) => clangdOf(e).request(method, params));
+
+// ---------- the error repair engine: every candidate fix is read by clangd before it is shown ----------
+// A clangd of its own, with no index, reads the file being checked: first as it is, then with one candidate edit at a
+// time (src/shared/repair.ts). The window's clangd, its index and the editor's text are never touched. It reads the
+// code with the same commands as the window's clangd, and stops when no check has come for a while.
+const lspCheck = new LspClient((m, p) => checkNotify(m, p), (line) => log(`clangd (repair): ${line}`));
+let checkRoot = '', checkCc: string | null = null, checkIdle: NodeJS.Timeout | undefined, checkGen = 0, checkChain: Promise<unknown> = Promise.resolve();
+/** Per file: the version sent, and the last text with what clangd found in it (a text sent again is not read again). */
+const checkDocs = new Map<string, { version: number; text: string; diags: RDiag[] | null }>();
+const checkWait = new Map<string, { version: number; done: (d: RDiag[] | null) => void }>();
+const pathOfUri = (uri: string) => { try { return path.resolve(fileURLToPath(uri)); } catch { return uri; } };
+function checkNotify(method: string, params: any) {
+  if (method === '$/exit') { checkDocs.clear(); for (const w of checkWait.values()) w.done(null); checkWait.clear(); return; }
+  if (method !== 'textDocument/publishDiagnostics') return;
+  const f = pathOfUri(params.uri), w = checkWait.get(f);
+  if (w && params.version === w.version) { checkWait.delete(f); w.done(params.diagnostics ?? []); }
+}
+/** Stops the check clangd (idle, a new folder, the window closed); a check under way ends with what it has. */
+function stopCheck() {
+  clearTimeout(checkIdle);
+  lspCheck.stop();
+  checkDocs.clear();
+  for (const w of checkWait.values()) w.done(null);
+  checkWait.clear();
+  checkRoot = ''; checkCc = null;
+}
+/** What the check clangd finds in the file with this text (null when it doesn't answer in ms). */
+function readWith(file: string, uri: string, text: string, langId: string, ms: number): Promise<RDiag[] | null> {
+  const doc = checkDocs.get(file);
+  if (doc && doc.text === text && doc.diags) return Promise.resolve(doc.diags);
+  const version = (doc?.version ?? 0) + 1;
+  const p = new Promise<RDiag[] | null>((res) => {
+    const t = setTimeout(() => { if (checkWait.get(file)?.version === version) checkWait.delete(file); res(null); }, ms);
+    checkWait.set(file, { version, done: (d) => { clearTimeout(t); res(d); } });
+  }).then((d) => { const now = checkDocs.get(file); if (now?.version === version) now.diags = d; return d; });
+  if (!doc) {
+    // a header clang can't recognise by its name gets the same command of its own as in the window's clangd
+    const cmd = headerCommand(file, lspRoot, lspCheck.ccDir);
+    if (cmd) lspCheck.notify('workspace/didChangeConfiguration', { settings: { compilationDatabaseChanges: { [file]: cmd } } });
+    lspCheck.notify('textDocument/didOpen', { textDocument: { uri, languageId: langId, version, text } });
+  } else lspCheck.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [{ text }] });
+  checkDocs.set(file, { version, text, diags: null });
+  return p;
+}
+interface Suggestion { error: { range: RDiag['range']; message: string }; edit: { from: number; to: number; insert: string }; src: string; why: string; clang: boolean; cleared: number }
+/** Each edit tried and what clangd found with it (asked for by the coverage check). */
+interface Tried { error: string; src: string; insert: string; cleared: number; after: string[] | null }
+/**
+ * The checked fixes for the errors in a file with this text: the first 12 errors, about 25 s in all. Of the fixes for
+ * one error, only those that clear the most errors are kept (at most 3): a fix that leaves an error clang made up for
+ * its own guess behind (cout read as count) gives way to one that clears both.
+ */
+async function repairCheck(file: string, uri: string, text: string, gen: number, detail: boolean): Promise<{ ok: boolean; message?: string; errors?: number; suggestions?: Suggestion[]; tries?: number; ms?: number; base?: string[]; tried?: Tried[] }> {
+  const stale = { ok: false, message: 'stale' };
+  if (gen !== checkGen) return stale;
+  if (!lspCheck.running || checkRoot !== lspRoot || checkCc !== lsp.ccDir) {
+    stopCheck();
+    const c = readingAs();
+    await lspCheck.start(lspClangd, lspRoot, settings['clangd.args'] as string[], undefined, c.compiler,
+      c.compiler?.kind === 'msvc' && c.compiler.include?.length ? { INCLUDE: c.compiler.include.join(';') } : undefined,
+      // the compilers the window's clangd may ask: the project's own database's only when it has one (ccSeen)
+      (cc) => (lsp.ccSeen ? projectDrivers(cc, lspRoot) : []), lsp.ccDir ?? undefined, true);
+    checkRoot = lspRoot; checkCc = lsp.ccDir;
+  }
+  const t0 = Date.now(), lang: RLang = /\.c$/i.test(file) ? 'c' : 'cpp';
+  const base = await readWith(file, uri, text, lang, 45000);
+  if (gen !== checkGen) return stale;
+  if (!base) return { ok: false, message: 'clangd did not answer' };
+  const errors = base.filter((d) => (d.severity ?? 1) === 1).slice(0, 12), starts = lineStarts(text);
+  const out: Suggestion[] = [], tried: Tried[] = [];
+  let tries = 0;
+  for (const d of errors) {
+    const ok: Suggestion[] = [];
+    for (const c of candidatesFor(text, d, lang, starts)) {
+      if (tries >= 40 || Date.now() - t0 > 25000) break;
+      const after = await readWith(file, uri, applyEdit(text, c.edit), lang, 8000);
+      tries++;
+      if (gen !== checkGen) return stale;
+      const v = after ? verdict(base, after, d, c.edit, text, starts) : { cleared: 0, revealed: [] };
+      if (detail) tried.push({ error: d.message, src: c.src, insert: c.edit.insert, cleared: v.cleared, after: after && after.filter((x) => (x.severity ?? 1) <= 2).map((x) => `${x.range.start.line + 1}: ${x.message}`) });
+      if (v.cleared) ok.push({ error: { range: d.range, message: cleanMessage(d.message) }, edit: c.edit, src: c.src, why: repairReason(c, v), clang: !!c.clang, cleared: v.cleared });
+    }
+    const best = Math.max(0, ...ok.map((s) => s.cleared));
+    out.push(...ok.filter((s) => s.cleared === best).slice(0, 3));
+  }
+  return { ok: true, errors: errors.length, suggestions: out, tries, ms: Date.now() - t0, ...(detail ? { base: base.map((x) => `${x.range.start.line + 1}: ${x.message}`), tried } : {}) };
+}
+ipcMain.handle('repair:check', (e, file: string, uri: string, text: string, detail = false) => {
+  if (fromWorker(e) || !lspRoot || !lspClangd) return { ok: false, message: 'clangd is not reading a folder' };
+  clearTimeout(checkIdle);
+  const gen = ++checkGen;   // a newer check makes an older one stop at its next step
+  const run = checkChain.then(() => repairCheck(path.resolve(file), uri, text, gen, detail)).catch((err) => ({ ok: false, message: String((err as Error).message ?? err) }))
+    .finally(() => { if (gen === checkGen) { clearTimeout(checkIdle); checkIdle = setTimeout(stopCheck, 90000); } });
+  checkChain = run;
+  return run;
+});
 
 // ---------- the flow picture kept from last time (state/flow-kept) ----------
 // A folder opened again shows its last settled picture at once while the live build checks it; the live result
@@ -258,16 +488,17 @@ ipcMain.handle('power:battery', () => onBattery());
 // ---------- interface errors, written to the log ----------
 ipcMain.handle('log', (_e, line: string) => log(`interface: ${String(line).slice(0, 4000)}`));
 
-ipcMain.handle('lsp:notify', (_e, method: string, params: any) => {
-  if (!lsp.running) return;
+ipcMain.handle('lsp:notify', (e, method: string, params: any) => {
+  const c = clangdOf(e);
+  if (!c.running) return;
   // a header clang can't recognise by its name gets a command of its own before clangd reads it
   if (method === 'textDocument/didOpen') {
     try {
-      const file = fileURLToPath(params.textDocument.uri), cmd = headerCommand(file, lspRoot, lsp.ccDir);
-      if (cmd) lsp.notify('workspace/didChangeConfiguration', { settings: { compilationDatabaseChanges: { [file]: cmd } } });
-    } catch (e) { log(`header command: ${e}`); }
+      const file = fileURLToPath(params.textDocument.uri), cmd = headerCommand(file, fromWorker(e) ? settingJob?.root ?? lspRoot : lspRoot, c.ccDir);
+      if (cmd) c.notify('workspace/didChangeConfiguration', { settings: { compilationDatabaseChanges: { [file]: cmd } } });
+    } catch (err) { log(`header command: ${err}`); }
   }
-  lsp.notify(method, params);
+  c.notify(method, params);
 });
 
 // ---------- compiler window: engines and language packs ----------

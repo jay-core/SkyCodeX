@@ -10,7 +10,7 @@ Copyright (c) 2026 Jatin Aggarwal. All rights reserved except as granted in [LIC
 
 ## Status
 
-**Version 1.0** for macOS (Apple silicon), Windows (x64) and Linux (x64): portable apps, downloadable from the repository's [Releases](https://github.com/jay-core/lithograph-editor/releases) page. Each build is checked by opening the packaged app on its own system before it is published. Since 1.0 the editor extras have been removed so the project can focus on the flow view, and the interface and the flow view are being reworked next. The full design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
+The **first SkyCodeX release** is being prepared, for macOS (Apple silicon), Windows (x64) and Linux (x64): portable apps, published on the repository's [Releases](https://github.com/jay-core/SkyCodeX/releases) page. Each build is checked by opening the packaged app on its own system before it is published. Lithograph 1.0.0, the release before the rename, has been withdrawn. Since 1.0 the editor extras have been removed so the project can focus on the flow view. The flow view's design is in [docs/FLOW-DESIGN.md](docs/FLOW-DESIGN.md), the confirmed plan in [docs/ROADMAP.md](docs/ROADMAP.md) and the earlier history in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Concept images and animations are in [`docs/concepts/`](docs/concepts/).
 
 Working now:
 - **Flow view:** how the program runs, from one entry point at a time — the `main` picked last time in that folder, else the most likely one (a sample, demo or the project's own `main` before tests, tools and ports); others from a chip, or a searchable list when there are more than six (a library without `main` starts from its public API, `inc/`, `include/`) — as two views of the same run (Tab switches, keeping the step). A project with several opens on the list of them (most likely first, then by folder, searchable); "← all programs" or Backspace returns to it. Restart, play/pause, one step and speed buttons in both views:
@@ -20,6 +20,15 @@ Working now:
   - what the engine follows: calls through virtual methods to each override (`area · one of 3`), threads and RTOS tasks (std::thread, pthread, FreeRTOS, ThreadX, Zephyr, CMSIS…), calls through pointers with the functions they could reach, interrupt handlers as entry points
   - more code when wanted: calls only, with decisions, or all code, everywhere (⇧D) or per function (D); around the step (A): its callers and two levels of calls, the rest folded (on by itself for very long runs)
   - findings, without running anything: a result thrown away (proved), state two threads touch with no lock (possible); each step's box says what it changes, locks, allocates and throws
+  - analyses on the run, each graded as in the design (proved, possible, can't tell), never guessed:
+    - **ways out:** every early `return`, `throw`, `break`/`continue` and call that never returns, with what leads to it (`? headers.empty() → return 400`)
+    - **pairs that don't close:** `lock`/`unlock`, `malloc`/`free`, `open`/`close`, `new`/`delete` … with a way out between them that leaves one open (`lock taken on line 12 · not released if returns at line 15`)
+    - **watch a variable:** every step that sets or reads it, in order, through renames (`running_` passed as `running`)
+    - **a value's journey:** a value followed across calls, renamed at each argument and parameter, written or only read, returned or thrown away
+    - **values settled per call:** a constant passed in settles a condition for that call only (`draw(true)` makes `if (clear)` true there); the branch that cannot happen fades, with why
+    - **configurations:** the same program read with another build setting (macros defined, undefined or given a value, or another build folder's commands) in a hidden window with its own clangd; steps that run only with it are marked (`only with DEBUG`), and `if constexpr` arms that are not built show as ghosts
+    - **what a change does:** the files on disk, or a commit, against an older commit (read from git, never written): added steps in green, removed ones as faded red ghosts, changed steps marked, calls that moved inside a new condition, and a one-line summary (`+ 2 steps in handle · − log_request from start · route now inside if (…)`)
+  - a folder opened again shows its last settled picture at once while the live build checks it (ThreadX: 0.3–0.5 s)
   - programs: "how they connect" shows which program starts which and the files they share
   - in both: a magnifier that follows the pointer at any zoom (M), what-if (fold away what a condition would skip and compare), a depth skyline to scrub, jump letters, what you've read, notes on steps, and the functions you have edited and not saved marked with every call that reaches them
   - the call graph comes from clangd's index, many requests at a time, and only the program shown is traced, so large projects build in seconds (thorvg: about 1,000 calls in under a second; Eclipse ThreadX, 3,400 files and 278 `main`s: about 70 functions on screen in 11 s, before clangd has finished indexing — calls the index cannot place yet are followed to their only definition in the source text — and the full run once it has)
@@ -35,6 +44,7 @@ Working now:
 - **Reading and editing with the inbuilt clangd:**
   - ⌘/Ctrl-click to the definition, into any header, standard ones included
   - errors, completion, hover, rename (F2), fixes and refactorings (⌘/Ctrl .), references (⇧F12)
+  - **checked fixes for C/C++ errors:** under each error, the fixes a second clangd has confirmed — with the fix in, that error is gone and nothing new appears in the file. clang's own fix-its come first, then missing or stray brackets and `;`, a missing `std::` or `#include`, and `*` or `&` where a pointer and a value are mixed up. One edit each and never a cast; each has its own ✓ and ✗, nothing changes until ✓, and hovering shows why it is suggested. A syntax fix that lets clang read code it had skipped names the errors found there. On `samples/repair`, all 18 one-edit breaks that make an error get a confirmed fix, 17 of them giving back the code exactly
   - atomic saves; unsaved edits survive crashes
 - **Other languages:** syntax colouring for Rust, Python, Go, CMake, JSON, YAML and Markdown, and language engines for Rust (rust-analyzer), Python (Pyright) and Go (gopls) from language packs or the system.
 - **Compiler window and language packs:** choose the clangd in use; install, update or remove LLVM / llvm-mingw (whose standard headers are then indexed with the project), Rust, rust-analyzer, Python, Pyright and Go.
@@ -42,25 +52,24 @@ Working now:
 - **Access:** keyboard focus rings and screen-reader labels; high contrast, interface scale, reduced motion, battery saver, touch and pen.
 
 Next:
-- the flow view and its interface, reworked for any size of codebase
-- one view per program when a project has several `main`s, with what connects them (today the flow shows one program at a time)
-- calls through virtual methods followed to their overrides
-- more entry points: threads and RTOS tasks, interrupt handlers, callbacks
-- flow for more languages
+- before the first release: a line-by-line optimisation pass that keeps every behaviour identical, measured on Eclipse ThreadX before and after; then very large codebases (LLVM, RTEMS)
+- the first SkyCodeX release, after a real run on Windows and Linux
+- SkyFlowX, SkyCodeX's own static and dynamic analyser ([docs/ROADMAP.md](docs/ROADMAP.md))
+- SkyCodeX 1.5: flow for Rust, Ada and other languages
 
 Removed since 1.0: the memory view, run with checks and the profiler, the terminal, project templates, the C++ reference, the to-do list, spell-check, code style and formatting, problem reports, interface translations, help pages and the tour.
 
 ## Using the release
 
-Download the file for your system from [Releases](https://github.com/jay-core/lithograph-editor/releases). Version 1.0.0 was published before the rename, so its files, app and program carry the name Lithograph (`Lithograph.app`, `Lithograph.exe`, `./lithograph`).
+Once the first SkyCodeX release is published, download the file for your system from [Releases](https://github.com/jay-core/SkyCodeX/releases):
 
-| System | File | Download |
-|---|---|---|
-| macOS 13+, Apple silicon | `Lithograph-1.0.0-mac-arm64.zip` | 224 MB |
-| Windows 10/11, x64 | `Lithograph-1.0.0-win-x64.zip` | 191 MB |
-| Linux x64 (built on Ubuntu 22.04; needs a distribution of that age or newer) | `Lithograph-1.0.0-linux-x64.tar.gz` | 244 MB |
+| System | File |
+|---|---|
+| macOS 13+, Apple silicon | `SkyCodeX-<version>-mac-arm64.zip` |
+| Windows 10/11, x64 | `SkyCodeX-<version>-win-x64.zip` |
+| Linux x64 (built on Ubuntu 22.04; needs a distribution of that age or newer) | `SkyCodeX-<version>-linux-x64.tar.gz` |
 
-Unpack it and move the folder wherever you like: a projects folder, or a USB drive. Nothing is installed anywhere else. SkyCodeX creates `data/` (settings, session, logs) and `language_packs/` beside the app on first run, and sends nothing over the network. Unpacked, the macOS app is 630 MB, most of it Electron plus the inbuilt clangd.
+Unpack it and move the folder wherever you like: a projects folder, or a USB drive. Nothing is installed anywhere else. SkyCodeX creates `data/` (settings, session, logs) and `language_packs/` beside the app on first run, and sends nothing over the network. Most of the app's size is Electron plus the inbuilt clangd.
 
 - **macOS**: open `SkyCodeX.app`. While macOS still has the folder quarantined, don't run it from Downloads; it would run as a read-only copy. For the C/C++ standard headers, install the Xcode Command Line Tools (`xcode-select --install`).
 - **Windows**: open `SkyCodeX.exe`. For the C/C++ standard headers, install the llvm-mingw pack from the compiler window, or use Visual Studio's.
@@ -106,7 +115,7 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 - the standard C/C++ headers come from the system (Xcode Command Line Tools on macOS, the distribution's development packages on Linux); an installed toolchain pack's headers are used instead, and on Windows the llvm-mingw pack brings its own.
 - **read the code as** clang, **gcc** or **MSVC**: the same analysis and views, with that compiler's headers, macros and language rules. gcc is the real g++ found on the PATH (or `compiler.path`), asked for its headers and macros; MSVC is Visual Studio's or the Build Tools' `cl.exe` (Windows), which puts clangd into its MSVC-compatible mode. A project's own `compile_commands.json` keeps the compilers it names.
 
-`npm test` runs the unit and integration tests in `src/tests/`. `npm run smoke` drives the real app against `samples/tinyhttp` (build it first with `samples/tinyhttp/build.sh`) and writes screenshots to `data/logs/`. Add `-- --scenario compiler|fonts|defs|boot|large` after the folder for one part only (`large` times each stage on a big project, such as thorvg).
+`npm test` runs the unit and integration tests in `src/tests/`. `npm run smoke` drives the real app against `samples/tinyhttp` (build it first with `samples/tinyhttp/build.sh`) and writes screenshots and a report to `data/logs/`. Add `-- --scenario <name>` after the folder for one part only, on the sample it is written for: for example `boot`, `large` (times each stage on a big project, such as ThreadX), `values` (`samples/values`), `configs` (`samples/configs`), `change` (a git repository of `samples/change`) or `repair` (`samples/repair`); every scenario is listed in `src/renderer/smoke.ts`.
 
 ## What it is
 
@@ -115,6 +124,7 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 - **Flow** — a bird's-eye view of how the program runs, numbered in execution order, for any size of codebase.
 - **Previews** — the bodies of every function called from where your cursor is, two levels deep, shiftable further.
 - **Exact** — the compiler's own index (clangd) behind every name, so ⌘/Ctrl-click reaches any definition and any header.
+- **Checked fixes** — under each C/C++ error, one-edit fixes clangd has confirmed, applied only on ✓.
 
 ## Repository layout
 
@@ -124,13 +134,13 @@ The **compiler** button (bottom left) opens a window to choose the clangd in use
 | `src/main/` | Electron main process: files, settings, clangd and other language servers, the generated compile database, build targets, language packs |
 | `src/preload/` | The bridge between the interface and the main process |
 | `src/renderer/` | The interface (Solid + CodeMirror): flow, previews, editor, windows |
-| `src/shared/` | Code used by both sides: settings schema, C++ parsing helpers |
+| `src/shared/` | Code used by both sides: the flow engine and its analyses, the repair engine, settings schema, C++ parsing helpers |
 | `src/build/` | Build scripts: main process and preload, the release package, the icon |
 | `src/tests/` | Unit and integration tests (vitest) |
 | `src/concepts/` | The pages and scripts the concept images were rendered from |
 | `assets/fonts/` | ArX F1 (code) and Selawik (interface), each with its licence |
 | `assets/icon/` | The app icon: its source drawing and the 1024 px image the platform icons are made from |
-| `docs/` | `ARCHITECTURE.md` (the complete design) and `concepts/` (images and videos) |
+| `docs/` | `FLOW-DESIGN.md` (the flow view's design), `ROADMAP.md` (confirmed decisions), `ARCHITECTURE.md` (the earlier design and history) and `concepts/` (images and videos) |
 | `samples/` | Sample C++ projects used by the tests and the smoke run |
 | `LICENSE`, `THIRD_PARTY.md` | The SkyCodeX License, and third-party notices |
 

@@ -36,6 +36,7 @@ api.lsp.onNotify((method, params) => {
     diags.set(file, params.diagnostics);
     const v = views.get(file);
     if (v) pushDiagnostics(v, file);
+    for (const cb of diagWatchers) cb(file);
   } else if (method === '$/progress') {
     const v = params.value ?? {};
     if (v.kind === 'begin') setIndexing(v.title ?? 'indexing');
@@ -96,6 +97,9 @@ function pushDiagnostics(view: EditorView, file: string) {
   view.dispatch(setDiagnostics(view.state, out));
 }
 export const diagnosticsFor = (file: string) => diags.get(file) ?? [];
+/** Told the file each time clangd publishes its diagnostics (the repair engine checks fixes then); returns a stop. */
+const diagWatchers = new Set<(file: string) => void>();
+export const onDiagnostics = (cb: (file: string) => void) => { diagWatchers.add(cb); return () => { diagWatchers.delete(cb); }; };
 export const lintSupport = linter(null, { delay: 0 });
 
 // clangd answers call-hierarchy and symbol requests only for open documents; files explored by the

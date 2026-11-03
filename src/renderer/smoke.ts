@@ -14,8 +14,12 @@ import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
 import { buildFlow, buildRun, findEntries, resolveEntry } from './lib/flow';
 import { rankEntries } from '../shared/entries';
-import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail } from './lib/flowstore';
+import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail, setting, comparing } from './lib/flowstore';
 import { pal } from './lib/lines';
+import { fileToUri } from './lib/api';
+import { fixesIn } from './lib/repair';
+import { applyEdit, isCast } from '../shared/repair';
+import { undo, undoDepth } from '@codemirror/commands';
 import { boxModel, layoutBoxes } from '../shared/flowboxes';
 
 const errors: string[] = [];
@@ -77,6 +81,9 @@ export async function runSmoke() {
   if (info()?.scenario === 'findings') return findingsCheck(report);
   if (info()?.scenario === 'watch') return watchCheck(report);
   if (info()?.scenario === 'values') return valuesCheck(report);
+  if (info()?.scenario === 'configs') return configsCheck(report);
+  if (info()?.scenario === 'change') return changeCheck(report);
+  if (info()?.scenario === 'repair') return repairCheck(report);
   if (info()?.scenario === 'hold') return;   // opens the folder and waits: a recorder drives the window (src/concepts/flow/ux)
   try {
     await until(() => lspState() === 'ready', 20000);
@@ -1094,6 +1101,242 @@ async function valuesCheck(report: Record<string, unknown>) {
     check((report.boxesDim as string[]).includes('inner'), `inner, called only where it cannot happen, is not faded in the boxes view: ${(report.boxesDim as string[]).join(', ')}`);
     check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
   } catch (e) { errors.push(`values: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario configs` on samples/configs: if constexpr ghosts, then the code read again with DEBUG and BOARD=2. */
+async function configsCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`configs: ${what}`); };
+  const ghosts = () => [...document.querySelectorAll('.seqv .sline .gh')].map((g) => `${g.textContent} | ${g.nextElementSibling?.textContent ?? ''}`);
+  // what only the setting runs: on its own row, or (a call that calls nothing, folded into its caller's "uses") on the caller's
+  const only = () => [...document.querySelectorAll('.seqv .srow')].flatMap((r) => [...r.querySelectorAll('.nt')].filter((n) => /only with/.test(n.textContent ?? '')).map((n) => `${r.querySelector('.nm')?.textContent}: ${n.textContent}`));
+  const click = (sel: string, text?: string) => { const el = [...document.querySelectorAll(sel)].find((x) => text == null || x.textContent?.trim() === text) as HTMLElement | undefined; el?.click(); return !!el; };
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    await sleep(400);
+    report.asBuilt = ghosts();
+    check((report.asBuilt as string[]).join(' ; ') === 'narrow | not in this build · sizeof(void *) == 8 is true ; narrow | not in this build · sizeof(char) == 2 is false', `if constexpr ghosts as built: ${(report.asBuilt as string[]).join(' ; ')}`);
+    await api.smoke.capture('configs-1-as-built');
+    check(click('.setc .chip'), 'no settings chip');
+    await until(() => document.querySelectorAll('.setm .mr').length > 0, 10000);
+    report.macros = [...document.querySelectorAll('.setm .mr .k')].map((k) => k.textContent);
+    check((report.macros as string[]).join(',') === 'BOARD,DEBUG,NO_CHECKS', `the menu lists ${(report.macros as string[]).join(',')}`);
+    await api.smoke.capture('configs-2-menu');
+    const row = (k: string) => [...document.querySelectorAll('.setm .mr')].find((r) => r.querySelector('.k')?.textContent === k)!;
+    ([...row('DEBUG').querySelectorAll('button')].find((b) => b.textContent === 'define') as HTMLElement).click();
+    ([...row('BOARD').querySelectorAll('button')].find((b) => b.textContent === '2') as HTMLElement).click();
+    await sleep(100);
+    check(click('.setm .go'), 'no button to read the code with the setting');
+    const t0 = Date.now();
+    await until(() => setting()?.state !== 'reading', 180000);
+    report.settingMs = Date.now() - t0;
+    report.setting = { label: setting()?.label, state: setting()?.state, note: setting()?.note };
+    check(setting()?.state === 'ready', `the setting did not read: ${setting()?.state} ${setting()?.note}`);
+    await sleep(600);
+    report.withSetting = ghosts();
+    report.onlyInRun = seq()!.run.rows.filter((r) => r.only).map((r) => r.name);
+    check((report.onlyInRun as string[]).join(',') === 'log_line,init_board_b', `the run marks ${(report.onlyInRun as string[]).join(',')}`);
+    // into start, where its own calls show as rows
+    (document.querySelectorAll('.seqv .srow')[0] as HTMLElement).click();
+    await sleep(200);
+    (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await sleep(700);
+    report.only = only();
+    await api.smoke.capture('configs-3-debug-board2');
+    check((report.only as string[]).join(' | ') === 'start: only with DEBUG · BOARD=2: log_line, init_board_b', `only with the setting: ${(report.only as string[]).join(' | ')}`);
+    check((report.withSetting as string[])[0] === 'init_board_a | only as built', `as built's own call is not a ghost in place: ${(report.withSetting as string[]).join(' ; ')}`);
+    // as built again: nothing of the setting stays
+    click('.setc .chip');
+    await sleep(300);
+    check(click('.setm .mi', 'as built'), 'no as built choice');
+    await sleep(600);
+    report.back = { only: only(), ghosts: ghosts() };
+    check(!only().length && ghosts().length === 2, `as built again still shows the setting: ${JSON.stringify(report.back)}`);
+  } catch (e) { errors.push(`configs: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/**
+ * `--scenario repair` on samples/repair. Coverage: correct code broken one edit at a time, and how many of those errors
+ * get a fix clangd confirms (and how many give back the code as it was). Then the editor: the fixes under broken.cpp's
+ * three errors, the reason on hover, ✓, ✗, the next check, and undo.
+ */
+async function repairCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`repair: ${what}`); };
+  const BREAKS: [string, string, string, string][] = [
+    ['missing ;', 'repair.cpp', 'int sum = 0;', 'int sum = 0'],
+    ['missing )', 'repair.cpp', 'count > 0) {', 'count > 0 {'],
+    ['missing ]', 'repair.cpp', 'sum += v[i];', 'sum += v[i;'],
+    ['missing }', 'repair.cpp', 'std::endl;\n  }\n', 'std::endl;\n'],
+    ['stray }', 'repair.cpp', 'p->y; }', 'p->y; } }'],
+    ['stray )', 'repair.cpp', 'return head;', 'return head);'],
+    ['misspelt call', 'repair.cpp', 'total(numbers)', 'totl(numbers)'],
+    ['misspelt variable', 'repair.cpp', 'count > 0', 'cont > 0'],
+    ['misspelt keyword', 'repair.cpp', 'return sum;', 'retrun sum;'],
+    ['string without std::', 'repair.cpp', 'std::string name', 'string name'],
+    ['vector without std::', 'repair.cpp', 'std::vector<int> numbers', 'vector<int> numbers'],
+    ['cout without std::', 'repair.cpp', 'std::cout <<', 'cout <<'],
+    ['no #include <algorithm>', 'repair.cpp', '#include <algorithm>\n', ''],
+    ['. on a pointer', 'repair.cpp', 'p->x *', 'p.x *'],
+    ['-> on an object', 'repair.cpp', 'corner.x', 'corner->x'],
+    ['missing *', 'repair.cpp', 'int head = *values;', 'int head = values;'],
+    ['missing &', 'repair.cpp', 'fill(&count,', 'fill(count,'],
+    ['no #include <stdio.h>', 'repair.c', '#include <stdio.h>\n', ''],
+    ['no #include <string.h>', 'repair.c', '#include <string.h>\n', ''],
+    ['missing ; (C)', 'repair.c', 'return 0;', 'return 0'],
+  ];
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    const base: Record<string, string> = {};
+    for (const f of ['repair.cpp', 'repair.c']) base[f] = (await api.fs.read(`${root()}/${f}`)) as string;
+    const rows: unknown[] = [];
+    let broken = 0, fixed = 0, original = 0;
+    for (const [name, f, from, to] of BREAKS) {
+      const good = base[f], file = `${root()}/${f}`;
+      check(good.split(from).length === 2, `${name}: "${from}" is not in ${f} once`);
+      const bad = good.replace(from, to), t0 = Date.now();
+      const r = await api.repair.check(file, fileToUri(file), bad, true);
+      const fixes = r.suggestions ?? [];
+      check(r.ok, `${name}: ${r.message}`);
+      if (r.errors) broken++;
+      if (fixes.length) fixed++;
+      const back = fixes.some((s) => applyEdit(bad, s.edit).replace(/\s+/g, '') === good.replace(/\s+/g, ''));   // as it was, but for spaces
+      if (back) original++;
+      for (const s of fixes) check(!isCast(s.edit.insert), `${name}: a cast was offered: ${s.edit.insert}`);
+      // what clangd found, and each edit tried, where no fix gave back the code as it was
+      rows.push({ name, errors: r.errors, fixes: fixes.map((s) => `${s.src} → ${JSON.stringify(s.edit.insert)}`), original: back, tries: r.tries, ms: Date.now() - t0, ...(back ? {} : { base: r.base, tried: r.tried }) });
+    }
+    report.coverage = { breaks: BREAKS.length, broken, fixed, original, rate: broken ? +(fixed / broken).toFixed(2) : 0 };
+    report.breaks = rows;
+    check(broken > 0 && fixed / broken >= 0.75, `coverage: ${JSON.stringify(report.coverage)}`);
+
+    // the editor (first what the engine finds in broken.cpp as it is on disk, for the report)
+    const file = `${root()}/broken.cpp`;
+    report.direct = await api.repair.check(file, fileToUri(file), (await api.fs.read(file)) as string, true);
+    await openFile(file);
+    const v = () => getMainView()!;
+    const shown = () => [...document.querySelectorAll('.code .rs')].map((r) => `${r.querySelector('.ed')?.textContent} | ${r.querySelector('.src')?.textContent}`);
+    const rowOf = (re: RegExp) => [...document.querySelectorAll('.code .rs')].find((r) => re.test(r.querySelector('.src')?.textContent ?? '')) as HTMLElement | undefined;
+    const note = () => document.querySelector('.hdr .rnote')?.textContent ?? '';
+    // clang reads two errors at first: it skips the if's body while it recovers from the missing ), so the misspelt
+    // call there shows only once the ) is in
+    const STRING = 'struct Request { std::string path; int size; }; | clang · did you mean std::string';
+    const t0 = Date.now();
+    report.shown = await until(() => fixesIn(v().state).length >= 2, 120000);
+    report.firstMs = Date.now() - t0;
+    await sleep(600);
+    report.rows = shown();
+    report.note = note();
+    check(JSON.stringify(report.rows) === JSON.stringify([STRING, 'if (validate(r) && check_size(r)) { | closes the ( opened at column 6']), `fixes shown: ${JSON.stringify(report.rows)}`);
+    check(report.note === '2 errors · 2 fixes found, each checked with clangd', `status note: ${report.note}`);
+    await api.smoke.capture('repair-1-fixes');
+
+    // the reason, on hover: beside the fix, over no code
+    rowOf(/closes the/)?.dispatchEvent(new MouseEvent('mouseenter'));
+    await sleep(300);
+    report.tip = document.querySelector('.rtip')?.textContent;
+    check(report.tip === "The ( opened at column 6 is never closed. A ) here closes it. With it, this error is gone. clangd then reads the code it had skipped, and finds 1 more problem there, not made by this fix: use of undeclared identifier 'rout' (line 16).", `hover: ${report.tip}`);
+    const tb = document.querySelector('.rtip')?.getBoundingClientRect();
+    const textBox = (el: Element) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
+    const over = (a: DOMRect, b: DOMRect) => a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    report.tipCovers = tb ? [...document.querySelectorAll('.code .cm-line, .code .rs .ed, .code .rs .src, .code .why0')].filter((el) => over(tb, textBox(el))).map((el) => el.textContent) : ['no tip'];
+    check(!(report.tipCovers as string[]).length, `the reason covers: ${JSON.stringify(report.tipCovers)}`);
+    await api.smoke.capture('repair-2-reason');
+    rowOf(/closes the/)?.dispatchEvent(new MouseEvent('mouseleave'));
+
+    // ✓ applies that one fix, and nothing else
+    const before = v().state.doc.toString();
+    rowOf(/closes the/)?.querySelector('.ok')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(300);
+    report.applied = v().state.doc.toString() === before.replace('check_size(r) {', 'check_size(r)) {');
+    check(report.applied as boolean, `✓ changed: ${v().state.doc.line(15).text}`);
+    check(!!document.querySelector('.code .applied'), 'no "applied" note on the line');
+    report.afterYes = shown();
+    await api.smoke.capture('repair-3-applied');
+
+    // the next check reads the revealed error, with its own fix
+    report.rechecked = await until(() => shown().length === 2 && !!rowOf(/did you mean route/), 60000);
+    report.afterCheck = shown();
+    report.noteAfterCheck = note();
+    check(JSON.stringify(report.afterCheck) === JSON.stringify([STRING, 'routroute(r); | clang · did you mean route']) && report.noteAfterCheck === '2 errors · 2 fixes found, each checked with clangd',
+      `after the next check: ${JSON.stringify(report.afterCheck)} (${note()})`);
+
+    // ✗ hides a fix and changes no code; a later check doesn't bring it back
+    rowOf(/did you mean route/)?.querySelector('.no')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await sleep(300);
+    report.afterNo = shown();
+    check(JSON.stringify(report.afterNo) === JSON.stringify([STRING]) && note() === '2 errors · 1 fix found, each checked with clangd', `after ✗: ${JSON.stringify(report.afterNo)} (${note()})`);
+    check(v().state.doc.toString() === before.replace('check_size(r) {', 'check_size(r)) {'), '✗ changed the code');
+    v().dispatch({ changes: { from: v().state.doc.length, insert: '\n' } });   // a change elsewhere: the file is checked again
+    report.checkedAgain = await until(() => /checking/.test(note()), 5000) && await until(() => !/checking/.test(note()), 60000);
+    await sleep(300);
+    report.afterNoCheck = shown();
+    check(!!report.checkedAgain && JSON.stringify(report.afterNoCheck) === JSON.stringify([STRING]), `✗ came back: ${JSON.stringify(report.afterNoCheck)} (${note()})`);
+
+    // undo gives back the code exactly as it was
+    report.undoDepth = undoDepth(v().state);
+    while (undoDepth(v().state) > 0) undo(v());
+    await sleep(300);
+    check(v().state.doc.toString() === before, 'undo did not give back the code');
+  } catch (e) { errors.push(`repair: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/** `--scenario change` on a git repository whose last commit is samples/change/v1 and whose files on disk are v2. */
+async function changeCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`change: ${what}`); };
+  const chip = () => [...document.querySelectorAll('.setc > .chip')].find((c) => /^(compare|compared)/.test(c.textContent ?? '')) as HTMLElement | undefined;
+  const marks = () => Object.fromEntries([...document.querySelectorAll('.seqv .srow')].map((r) => [r.querySelector('.nm')?.textContent ?? '', [...r.querySelectorAll('.nt')].map((n) => n.textContent ?? '').filter(Boolean)]).filter(([, v]) => (v as string[]).length));
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('sequence');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    report.before = marks();
+    check(!!chip(), 'no compare chip');
+    chip()?.click();
+    await until(() => document.querySelectorAll('.setm .mr').length > 0, 15000);
+    report.commits = [...document.querySelectorAll('.setm .mr .mi')].map((b) => b.textContent);
+    ([...document.querySelectorAll('.setm .mr .mi')][0] as HTMLElement | undefined)?.click();
+    const t0 = Date.now();
+    await until(() => comparing()?.state !== 'reading', 180000);
+    await until(() => !!comparing()?.summary, 15000);
+    report.compareMs = Date.now() - t0;
+    report.state = { state: comparing()?.state, note: comparing()?.note };
+    report.summary = comparing()?.summary;
+    check(report.summary === '+ 2 steps in handle · − log_request from start · route now inside if (validate(r) && check_size(r)) · 2 steps changed', `summary: ${report.summary} (${comparing()?.state} ${comparing()?.note})`);
+    await sleep(600);
+    report.csum = document.querySelector('.setc .csum')?.textContent;
+    report.marks = marks();
+    report.gone = [...document.querySelectorAll('.seqv .sline .gh.gone')].map((g) => `${g.textContent} | ${g.nextElementSibling?.textContent ?? ''}`);
+    await api.smoke.capture('change-1-compared');
+    check(report.csum === report.summary, 'the summary line is not shown');
+    // validate folds into handle's uses; check_size and route keep their own rows, as they run only under the new test
+    check(JSON.stringify(report.marks) === JSON.stringify({ start: ['◆ changed · 1 line   ~ in a macro'], handle: ['◆ changed · 2 lines', 'added: validate'], check_size: ['? validate(r) &&   added'], route: ['? if (validate(r) && check_size(r))   now inside if (validate(r) && check_size(r))'], 'end of the run': ['main returns'] }), `rows say ${JSON.stringify(report.marks)}`);
+    check((report.gone as string[]).join(' ; ') === 'log_request | removed · in the last commit', `removed calls: ${(report.gone as string[]).join(' ; ')}`);
+    // the boxes view shows the same, by colour
+    setFlowView('boxes');
+    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    await sleep(800);
+    report.boxes = { added: [...document.querySelectorAll('.fbox .fr.cadd .nm')].map((n) => n.textContent), changed: [...document.querySelectorAll('.fbox .fr.cchg .nm')].map((n) => n.textContent) };
+    await api.smoke.capture('change-2-boxes');
+    check(JSON.stringify(report.boxes) === JSON.stringify({ added: ['validate', 'check_size'], changed: ['start', 'handle'] }) || JSON.stringify(report.boxes) === JSON.stringify({ added: ['check_size', 'validate'], changed: ['handle', 'start'] }), `boxes: ${JSON.stringify(report.boxes)}`);
+    setFlowView('sequence');
+    await sleep(500);
+    chip()?.click();
+    await sleep(300);
+    ([...document.querySelectorAll('.setm .mi')].find((b) => b.textContent === 'no comparison') as HTMLElement | undefined)?.click();
+    await sleep(600);
+    report.back = { marks: marks(), csum: !!document.querySelector('.setc .csum') };
+    const back = report.back as { marks: object; csum: boolean };
+    check(JSON.stringify(back.marks) === JSON.stringify(report.before) && !back.csum, `no comparison still shows one: ${JSON.stringify(back)} (before: ${JSON.stringify(report.before)})`);
+  } catch (e) { errors.push(`change: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }

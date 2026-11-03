@@ -70,6 +70,26 @@ const api = {
     notify: (method: string, params: unknown) => invoke('lsp:notify', method, params),
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),
   },
+  repair: {
+    /** The checked fixes for the errors in a C/C++ file with this text (src/main/main.ts repair:check). */
+    check: (file: string, uri: string, text: string, detail = false) => invoke('repair:check', file, uri, text, detail) as Promise<{ ok: boolean; message?: string; errors?: number; tries?: number; ms?: number;
+      base?: string[]; tried?: { error: string; src: string; insert: string; cleared: number; after: string[] | null }[];
+      suggestions?: { error: { range: { start: { line: number; character: number }; end: { line: number; character: number } }; message: string }; edit: { from: number; to: number; insert: string }; src: string; why: string; clang: boolean; cleared: number }[] }>,
+  },
+  setting: {
+    options: (root: string) => invoke('setting:options', root) as Promise<{ folders: string[]; commands: boolean }>,
+    start: (job: { root: string; entry: string; flags: string[]; folder?: string; label: string }) => invoke('setting:start', job) as Promise<{ ok: boolean; id?: string; message?: string }>,
+    stop: () => invoke('setting:stop'),
+    onDone: (cb: (r: any) => void) => on('setting:done', cb),
+    /** The hidden window's side: what to read, and the result. */
+    job: () => invoke('setting:job') as Promise<{ id: string; root: string; entry?: string; entryRel?: string; entryName?: string; flags: string[]; label: string; texts?: boolean } | null>,
+    done: (result: unknown) => invoke('setting:done', result),
+  },
+  change: {
+    history: (root: string) => invoke('change:history', root) as Promise<{ ok: boolean; message?: string; commits?: { sha: string; short: string; subject: string; when: string }[] }>,
+    start: (job: { root: string; entryRel: string; entryName: string; older: string; newer: string; olderLabel: string; newerLabel: string }) => invoke('change:start', job) as Promise<{ ok: boolean; message?: string }>,
+    onDone: (cb: (r: any) => void) => on('change:done', cb),
+  },
   flow: {
     fingerprint: (root: string) => invoke('flow:fingerprint', root) as Promise<string>,
     kept: (root: string, key: string) => invoke('flow:kept', root, key) as Promise<string | null>,
