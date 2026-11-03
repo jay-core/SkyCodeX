@@ -1,7 +1,7 @@
 {
   "name": "skycodex",
   "productName": "SkyCodeX",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A portable, offline C/C++ code editor.",
   "author": "Jatin Aggarwal",
   "license": "SEE LICENSE IN LICENSE",
