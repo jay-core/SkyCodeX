@@ -3,7 +3,11 @@
 import { parser } from '@lezer/cpp';
 import type { Tree, SyntaxNode } from '@lezer/common';
 
-export const parseCpp = (text: string): Tree => parser.parse(text);
+/**
+ * The parser loses its way on Windows line endings (\r\n): a file saved that way showed no functions at all. Each \r
+ * is read as a space, which keeps the text the same length, so every offset and line the caller works out is unchanged.
+ */
+export const parseCpp = (text: string): Tree => parser.parse(text.includes('\r') ? text.replace(/\r/g, ' ') : text);
 
 export interface LoopInfo { key: string; label: string; from: number }
 

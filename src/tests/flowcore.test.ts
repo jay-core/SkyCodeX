@@ -67,3 +67,14 @@ describe('flow core', () => {
     expect(rankEntries([{ rel: 'src/irq.c', kind: 'interrupt' }, { rel: 'tests/main.c', kind: 'main' }]).map((e) => e.rel)).toEqual(['tests/main.c', 'src/irq.c']);
   });
 });
+
+describe('Windows line endings', () => {
+  it('finds the same functions, at the same lines and offsets, in a file saved with \\r\\n', () => {
+    const lf = '#include <cstdio>\n#include "server.h"\n\nstatic int helper(int x) { return x + 1; }\n\nint main(int argc, char **argv) {\n  return helper(argc);\n}\n';
+    const crlf = lf.replace(/\n/g, '\r\n');
+    const a = functionDefs(parseCpp(lf), lf), b = functionDefs(parseCpp(crlf), crlf);
+    expect(b.map((d) => [d.name, d.line, d.endLine])).toEqual(a.map((d) => [d.name, d.line, d.endLine]));
+    expect(b.map((d) => d.name)).toEqual(['helper', 'main']);
+    for (const d of b) expect(crlf.slice(d.from, d.to).replace(/\r/g, '')).toBe(lf.slice(a.find((x) => x.name === d.name)!.from, a.find((x) => x.name === d.name)!.to));
+  });
+});
