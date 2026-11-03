@@ -63,6 +63,41 @@ jobs:
           timeout 360 xvfb-run -a "$dir/skycodex" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
           node src/build/check-smoke.mjs "$dir"
 
+      # as the README tells Windows users: the C/C++ standard headers come from the llvm-mingw pack. Installed the way
+      # the app installs it (src/main/packs.ts): the official release, its published SHA-256 checked, unpacked into
+      # language_packs/<name>-<version> beside the app with its skycodex-pack.json
+      - name: llvm-mingw pack (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dir = (Get-ChildItem release -Directory | Select-Object -First 1).FullName
+          $rels = gh api 'repos/mstorsjo/llvm-mingw/releases?per_page=20' | ConvertFrom-Json
+          $asset = $null
+          foreach ($r in $rels) {
+            if ($r.prerelease -or $r.draft) { continue }
+            $asset = $r.assets | Where-Object { $_.name -match '^llvm-mingw-(\d{8})-ucrt-x86_64\.zip$' -and $_.digest -match '^sha256:[0-9a-f]{64}$' } | Select-Object -First 1
+            if ($asset) { break }
+          }
+          if (-not $asset) { throw 'no llvm-mingw release with a published checksum' }
+          $version = [regex]::Match($asset.name, '\d{8}').Value
+          $zip = Join-Path $env:RUNNER_TEMP $asset.name
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ("sha256:$sha" -ne $asset.digest) { throw "checksum mismatch for $($asset.name)" }
+          $tmp = Join-Path $env:RUNNER_TEMP 'llvm-mingw'
+          Expand-Archive $zip -DestinationPath $tmp
+          $top = (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName
+          $packs = Join-Path $dir 'language_packs'
+          New-Item -ItemType Directory -Force $packs | Out-Null
+          $id = "llvm-mingw-$version"
+          Move-Item $top (Join-Path $packs $id)
+          @{ id = $id; kind = 'toolchain'; name = 'llvm-mingw'; version = $version; bin = 'bin'; source = 'github.com/mstorsjo/llvm-mingw';
+             asset = $asset.name; sha256 = $sha; bytes = 0; installedAt = (Get-Date).ToUniversalTime().ToString('o') } |
+            ConvertTo-Json | Set-Content (Join-Path $packs $id 'skycodex-pack.json') -Encoding utf8
+          Write-Host "installed $id into $packs"
+
       - name: Boot check (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
