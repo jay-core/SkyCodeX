@@ -1,6 +1,7 @@
 // Play controls, the same in both flow views: restart (the start of the run, then play), play / pause (Space), one
 // step (→), and the speed (+ / −).
-const SPEEDS = [0.5, 1, 1.5, 2, 3];
+// 0.25× first: a first reading can go slowly
+const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3];
 
 export default function PlayControls(props: { playing: boolean; speed: number; toggle: () => void; restart: () => void; step: () => void; setSpeed: (k: number) => void }) {
   const next = () => SPEEDS.find((s) => s > props.speed + 1e-6) ?? SPEEDS[0];

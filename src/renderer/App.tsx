@@ -19,20 +19,8 @@ import CompilerWindow, { compilerOpen } from './components/CompilerWindow';
 import { preloadFonts } from './lib/motion';
 import { watchPower } from './lib/power';
 
-function Split(props: { onDrag: (dx: number) => void }) {
-  let el!: HTMLDivElement;
-  // pointer events: a mouse, a finger or a pen can all drag the divider
-  const down = (e: PointerEvent) => {
-    e.preventDefault();
-    let last = e.clientX;
-    el.classList.add('drag');
-    el.setPointerCapture(e.pointerId);
-    const move = (m: PointerEvent) => { props.onDrag(m.clientX - last); last = m.clientX; };
-    const up = () => { el.classList.remove('drag'); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
-    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  };
-  return <div ref={el} class="split" style={{ 'touch-action': 'none' }} onPointerDown={down} role="separator" aria-orientation="vertical" />;
-}
+import Split from './components/Split';
+import StartWindow, { startOpen, setStartOpen } from './components/StartWindow';
 
 export default function App() {
   const [codeW, setCodeW] = createSignal(Math.round(window.innerWidth * 0.31));
@@ -57,8 +45,11 @@ export default function App() {
     api.fs.onChange((paths) => { for (const p of paths) { invalidateText(p); onDiskChange(p); } refreshTree(); });
     if (s.problems.length) flash(`settings.toml: ${s.problems[0].message}${s.problems.length > 1 ? ` (+${s.problems.length - 1} more)` : ''}`, 8000);
     if ((i as any).fallbackReason) flash((i as any).fallbackReason, 12000);
+    // the 'start' smoke scenario opens no folder: it shows the start window, as a first launch does
+    if ((i as any).smoke && (i as any).scenario === 'start') { setStartOpen(true); return; }
     if ((i as any).smoke) { await openFolder((i as any).smoke); runSmoke(); return; }
     await restoreSession();
+    if (!root()) setStartOpen(true);   // nothing to restore: the start window says what to do first
   });
 
   const onKey = (e: KeyboardEvent) => {
@@ -89,7 +80,7 @@ export default function App() {
       <div class="body" ref={body} style={{ position: 'relative', display: page() === 'editor' ? 'flex' : 'none' }}>
         <div class="pane" style={previewOn() ? { width: `${codeW()}px`, flex: 'none' } : { flex: '1' }}>
           <div class="pane" style={{ flex: 1 }} ref={code}>
-            <Show when={files.active} fallback={<div class="empty">{root() ? 'open a file from the right' : 'open a folder · ⌘/Ctrl O'}</div>}>{null}</Show>
+            <Show when={files.active} fallback={<div class="empty">{root() ? 'open a file from the right' : <button class="lnk" onClick={() => setStartOpen(true)}>open a folder · ⌘/Ctrl O</button>}</div>}>{null}</Show>
             <div style={{ display: files.active ? 'flex' : 'none', flex: 1, 'min-height': 0, 'flex-direction': 'column' }}><Editor onScroll={() => redraw()} onCursor={() => redraw()} /></div>
           </div>
         </div>
@@ -109,6 +100,7 @@ export default function App() {
       <Show when={palette()}><Palette /></Show>
       <AppMenu />
       <Show when={compilerOpen()}><CompilerWindow /></Show>
+      <Show when={startOpen() && !root()}><StartWindow /></Show>
       <Show when={toast()}><div class="toast" role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '52px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>

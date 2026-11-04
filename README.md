@@ -60,9 +60,9 @@ Get the file for your system from [Releases](https://github.com/jay-core/SkyCode
 
 | System | File |
 |---|---|
-| macOS 13+, Apple silicon | `SkyCodeX-1.0.0-mac-arm64.zip` |
-| Windows 10/11, x64 | `SkyCodeX-1.0.0-win-x64.zip` |
-| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.0.0-linux-x64.tar.gz` |
+| macOS 13+, Apple silicon | `SkyCodeX-1.1.0-mac-arm64.zip` |
+| Windows 10/11, x64 | `SkyCodeX-1.1.0-win-x64.zip` |
+| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.1.0-linux-x64.tar.gz` |
 
 Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
@@ -72,7 +72,7 @@ Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
 ## Using it
 
-1. **Open a folder.** It doesn't need to be built: without a `compile_commands.json`, SkyCodeX writes one into its own data folder, never into your project.
+1. **Open a folder.** When no folder is open, the start window shows your five most recent folders (press 1–5) and **Open a folder**. The folder doesn't need to be built: without a `compile_commands.json`, SkyCodeX writes one into its own data folder, never into your project.
 2. **Pick a program** from the list, or let SkyCodeX open the likely one. Backspace goes back to the list.
 3. **Read the run.** **Tab** switches sequence and boxes, **Space** plays, and the step buttons (or the keyboard) move one call at a time.
 
@@ -84,6 +84,8 @@ Unpack it and put the folder anywhere: a projects folder or a USB drive.
 | D / ⇧D | More code for this function / everywhere |
 | A | Focus on the current step and its neighbours |
 | M | Magnifier |
+| Alt ← / Alt → | Preview: one level back / one level deeper (Alt Home: back to the source) |
+| + / − | Play speed, 0.25× to 3× |
 | ⌘/Ctrl-click | Go to definition |
 | ⌘/Ctrl ⇧ F | Search the whole folder |
 | F2 | Rename |

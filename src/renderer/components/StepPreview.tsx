@@ -1,6 +1,7 @@
 // The flow page's preview pane, the same in both views: the selected step's code with the line that leads on marked,
 // where it was called from, and the moves that work here.
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
+import Split from './Split';
 import { seq, trail, runStatus } from '../lib/flowstore';
 import { stepWays } from '../../shared/flowseq';
 import { openFile } from '../lib/store';
@@ -9,6 +10,16 @@ import { lines } from '../lib/seqtext';
 import SeqCode from './SeqCode';
 
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+
+// the code pane's width on the flow page, shared by both views and kept between sessions
+const WIDTH_KEY = 'litho.flow.codeW';
+const savedW = (() => { try { const v = Number(localStorage.getItem(WIDTH_KEY)); return v >= 280 ? v : 440; } catch { return 440; } })();
+export const [stepW, setStepW] = createSignal(savedW);
+/** The divider before the code pane: dragging left widens the pane; the diagram keeps at least 420 px. */
+export function StepSplit() {
+  return <Split onDrag={(dx) => setStepW(Math.round(Math.max(280, Math.min(window.innerWidth - 420, stepW() - dx))))}
+    onEnd={() => { try { localStorage.setItem(WIDTH_KEY, String(stepW())); } catch { /* not kept */ } }} />;
+}
 
 /** Opens the editor at the selected step: the function, or for a call through a pointer the line making it. */
 export function openStep() {
@@ -54,7 +65,7 @@ export default function StepPreview() {
   });
   const ways = createMemo(() => (S() ? stepWays(S()!, trail()) : []));
   return (
-    <div class="pane prev" style={{ width: '440px', flex: 'none' }}>
+    <div class="pane prev" style={{ width: `${stepW()}px`, flex: 'none' }}>
       <Show when={cur() && S()} fallback={<div class="empty">{runStatus() || 'the code of each step shows here'}</div>}>
         <div class="ph" style={{ padding: '0 20px' }}>
           <span style={{ color: 'var(--bright)' }}>{atEnd() ? 'end of the run' : stepNo() ? `step ${stepNo()}` : ''}</span>

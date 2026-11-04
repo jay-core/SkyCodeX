@@ -69,6 +69,7 @@ export async function openFolder(folder: string) {
   for (const f of files.list) if (f.dirty) await api.buffers.save(f.path, states.get(f.path)!.doc.toString());
   setRoot(path); setFiles({ list: [], active: '' }); states.clear(); saved.clear();
   await api.fs.watch(path);
+  void api.recent.add(path);   // the start window's recent folders
   await startLsp(path);
   persistSession();
 }

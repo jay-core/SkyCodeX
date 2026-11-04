@@ -56,6 +56,7 @@ const api = {
     load: () => invoke('buffers:load'),
   },
   session: { get: () => invoke('session:get'), set: (s: unknown) => invoke('session:set', s) },
+  recent: { get: () => invoke('recent:get'), add: (p: string) => invoke('recent:add', p), remove: (p: string) => invoke('recent:remove', p) },
   lang: {
     start: (lang: string, root: string) => invoke('lang:start', lang, root),
     request: (lang: string, method: string, params: unknown) => invoke('lang:request', lang, method, params),

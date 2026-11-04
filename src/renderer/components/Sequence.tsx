@@ -18,7 +18,7 @@ import { settings, root, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
 import { hlLine } from '../lib/hlcode';
-import StepPreview, { openStep } from './StepPreview';
+import StepPreview, { openStep, StepSplit } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import SettingChip from './SettingChip';
@@ -972,6 +972,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           </Show>
         </div>
       </div>
+      <StepSplit />
       <StepPreview />
     </div>
   );
@@ -1000,9 +1001,10 @@ function rowNote(f: RunFrame): string {
 function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<number, string>; onScrub: (it: number) => void; read: string }) {
   let el!: HTMLCanvasElement, box!: HTMLDivElement;
   const [w, setW] = createSignal(800);
+  const [hov, setHov] = createSignal(-1);   // the bar under the pointer
   onMount(() => { const ro = new ResizeObserver(() => setW(box.clientWidth)); ro.observe(box); onCleanup(() => ro.disconnect()); });
   createEffect(() => {
-    const s = seq(), W = w(), H = SKY - 14, dpr = window.devicePixelRatio || 1;
+    const s = seq(), W = w(), H = SKY - 14, dpr = window.devicePixelRatio || 1, hv = hov();
     if (!s || !el) return;
     el.width = W * dpr; el.height = H * dpr; el.style.width = `${W}px`; el.style.height = `${H}px`;
     const x = el.getContext('2d')!;
@@ -1011,9 +1013,12 @@ function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<n
     for (let i = 0; i < n; i++) {
       const r = s.run.rows[s.items[i]], loops = r.frames.filter((f) => s.run.frames[f].kind === 'loop').length;
       if (loops) { x.fillStyle = `rgba(111,158,158,${Math.min(0.28, 0.06 + loops * 0.06)})`; x.fillRect(i * bw, 0, Math.ceil(bw), H); }
-      const h = 3 + (r.depth / maxD) * (H - 6);
-      x.fillStyle = i === props.at ? '#ad9b6f' : props.changedItems.has(i) ? '#79c9ae' : r.kind === 'step' ? '#4a504a' : '#33373a';
-      x.fillRect(i * bw + (bw > 3 ? 0.5 : 0), H - h, Math.max(1, bw - (bw > 3 ? 1 : 0)), h);
+      const h = 3 + (r.depth / maxD) * (H - 6), lit = i === hv;
+      // the hovered bar: a faint column behind it, the bar itself bright and a little taller
+      if (lit) { x.fillStyle = 'rgba(227,214,173,.10)'; x.fillRect(i * bw, 0, Math.max(2, Math.ceil(bw)), H); }
+      x.fillStyle = lit ? '#e3d6ad' : i === props.at ? '#ad9b6f' : props.changedItems.has(i) ? '#79c9ae' : r.kind === 'step' ? '#4a504a' : '#33373a';
+      const hh = lit ? Math.min(H, h + 3) : h;
+      x.fillRect(i * bw + (bw > 3 ? 0.5 : 0), H - hh, Math.max(lit ? 2 : 1, bw - (bw > 3 ? 1 : 0)), hh);
       if (props.notes[i]) { x.fillStyle = '#ad9b6f'; x.fillRect(i * bw, 0, Math.max(2, bw), 2); }
     }
   });
@@ -1026,5 +1031,32 @@ function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<n
     const up = () => { el.removeEventListener('pointermove', go); el.removeEventListener('pointerup', up); };
     el.addEventListener('pointermove', go); el.addEventListener('pointerup', up);
   };
-  return <div class="ssky" ref={box} title="the run as a profile of call depth · drag to scrub · K hides it"><canvas ref={el} onPointerDown={down} /><Show when={props.read}><span class="seqread" title="functions you have been to in this run (kept between sessions)">{props.read}</span></Show></div>;
+  // what the hovered bar holds, in a small box above it
+  const tip = createMemo(() => {
+    const i = hov(), s = seq();
+    if (i < 0 || !s || i >= s.items.length) return null;
+    const R = s.run.rows, r = R[s.items[i]], fn = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
+    const nm = (x: string) => x.replace(/^.*::(?=[^:]+$)/, '');   // the name without its scope
+    const what = r.kind === 'step' ? `${r.n}  ${nm(r.name)}` : r.kind === 'ref' ? `→${fn.n}  ${nm(fn.name)}  again`
+      : r.kind === 'indirect' ? `call through a pointer · ${nm(r.name)}` : nm(r.name);
+    const loops = r.frames.map((f) => s.run.frames[f]).filter((f) => f.kind === 'loop');
+    const n = s.items.length, bw = w() / Math.max(1, n);
+    return {
+      what, where: fn.file ? `${basename(fn.file)}:${fn.line + 1}` : '', depth: r.depth, loop: loops.length ? loops[loops.length - 1].text : '',
+      changed: props.changedItems.has(i), note: props.notes[i] ?? '', pos: `step ${i + 1} of ${n}`,
+      left: Math.max(110, Math.min(box.clientWidth - 110, (el.offsetLeft || 0) + (i + 0.5) * bw)),
+    };
+  });
+  return <div class="ssky" ref={box} aria-label="the run as a profile of call depth · drag to scrub · K hides it">
+    <canvas ref={el} onPointerDown={down} onPointerMove={(e) => setHov(itAt(e.clientX))} onPointerLeave={() => setHov(-1)} />
+    <Show when={tip()}>{(tp) => (
+      <div class="sskytip" style={{ left: `${tp().left}px` }}>
+        <div class="w">{tp().what}</div>
+        <div class="d">{tp().where}{tp().where ? ' · ' : ''}depth {tp().depth}{tp().changed ? ' · edited' : ''}</div>
+        <Show when={tp().loop}><div class="d">↻ {tp().loop}</div></Show>
+        <Show when={tp().note}><div class="d nt">{tp().note}</div></Show>
+        <div class="d k">{tp().pos} · click to go there · drag to scrub</div>
+      </div>
+    )}</Show>
+    <Show when={props.read}><span class="seqread" title="functions you have been to in this run (kept between sessions)">{props.read}</span></Show></div>;
 }

@@ -179,6 +179,15 @@ ipcMain.handle('buffers:drop', (_e, file: string) => dropBuffer(BUFFERS, file));
 ipcMain.handle('buffers:load', () => loadBuffers(BUFFERS));
 ipcMain.handle('session:get', () => { try { return JSON.parse(fs.readFileSync(SESSION, 'utf8')); } catch { return null; } });
 ipcMain.handle('session:set', (_e, s: unknown) => atomicWrite(SESSION, JSON.stringify(s, null, 1)));
+// the start window's recent folders: newest first, at most 5, kept beside the session (so they travel with the app)
+const RECENT = path.join(STATE, 'recent.json');
+const readRecent = (): { path: string; at: number }[] => {
+  try { const r = JSON.parse(fs.readFileSync(RECENT, 'utf8')); return Array.isArray(r) ? r.filter((x) => x && typeof x.path === 'string' && typeof x.at === 'number') : []; } catch { return []; }
+};
+const sameFolder = (a: string, b: string) => (process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase());
+ipcMain.handle('recent:get', () => readRecent().slice(0, 5).map((r) => ({ ...r, found: fs.existsSync(r.path) })));
+ipcMain.handle('recent:add', (_e, p: string) => atomicWrite(RECENT, JSON.stringify([{ path: p, at: Date.now() }, ...readRecent().filter((r) => !sameFolder(r.path, p))].slice(0, 5), null, 1)));
+ipcMain.handle('recent:remove', (_e, p: string) => atomicWrite(RECENT, JSON.stringify(readRecent().filter((r) => !sameFolder(r.path, p)), null, 1)));
 
 // ---------- clangd ----------
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));

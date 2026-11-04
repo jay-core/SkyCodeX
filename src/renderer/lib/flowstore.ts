@@ -334,7 +334,23 @@ function showRun(run0: Run) {
   const s = buildSeq(run);
   const old = seq(), keep = old && old.items.length === s.items.length && old.run.rows.every((r, i) => r.key === run.rows[i]?.key);
   setSeq(s);
-  if (!keep) setTrail([startState(s)]);
+  // a rebuild while clangd settles adds steps: the selected step is found again rather than reset to the start
+  if (!keep) setTrail(placeIn(old, s));
+}
+/** The selected step in a rebuilt run: the same function at the same occurrence; the start when it is gone. */
+function placeIn(old: Seq | null, s: Seq): StepState[] {
+  const start = [startState(s)], c = trail()[trail().length - 1];
+  if (!old || !c || c.at <= 0 || c.at >= old.items.length) return start;
+  const key = old.run.rows[old.items[c.at]].key;
+  if (!key) return start;
+  let nth = 0;
+  for (let i = 0; i < c.at; i++) if (old.run.rows[old.items[i]].key === key) nth++;
+  for (let j = 0, seen = 0; j < s.items.length; j++) {
+    if (s.run.rows[s.items[j]].key !== key || seen++ !== nth) continue;
+    const r = move(s, start, { jump: j });
+    return r.trail && !r.note ? r.trail : start;
+  }
+  return start;
 }
 /** Shows another entry point: kept as this folder's choice, then traced and run. */
 export async function setLane(i: number) {

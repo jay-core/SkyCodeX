@@ -16,7 +16,7 @@ import {
   routePoints, walkPoints, neighbourhood, howOftenLevel, stepOf, nodeOf, MIN_K, Level, Lay, Line, RouteInfo, Pt,
 } from '../../shared/flowboxes';
 import { move, loopsAt, Move } from '../../shared/flowseq';
-import StepPreview, { openStep } from './StepPreview';
+import StepPreview, { openStep, StepSplit, stepW } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { setPalette } from '../lib/actions';
@@ -630,8 +630,9 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
           <Show when={caption()}><div class="scap"><Show when={caption()!.key}><span class="key">{caption()!.key}</span></Show>{caption()!.what}<Show when={caption()!.why}><span class="why">{caption()!.why}</span></Show></div></Show>
         </div>
       </div>
+      <StepSplit />
       <Show when={route()} fallback={<StepPreview />}>{(r) => (
-        <div class="pane prev" style={{ width: '440px', flex: 'none' }}>
+        <div class="pane prev" style={{ width: `${stepW()}px`, flex: 'none' }}>
           <div class="ph" style={{ padding: '0 20px' }}><span style={{ color: 'var(--bright)' }}>{r().list.length} route{r().list.length === 1 ? '' : 's'} · {short(R()[r().from].name)} → {short(R()[r().to].name)}</span><span class="grow" /><button class="chip" onClick={() => setRoute(null)}>clear</button></div>
           <For each={r().list}>{(x, i) => (
             <div class="bxr" classList={{ on: r().only === i(), dim: r().only >= 0 && r().only !== i() }} onClick={() => setRoute({ ...r(), only: r().only === i() ? -1 : i() })}>

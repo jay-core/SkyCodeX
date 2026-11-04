@@ -175,17 +175,18 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const freeze = () => setFrozen(new Map(cols.map((c, li) => [li, c?.offsetWidth ?? 0] as [number, number]).filter(([, w]) => w > 0)));
   const colWidth = (li: number) => frozen()?.get(li) ?? slotW(li - win());
   const turnstile = (els: HTMLElement[], frames: Keyframe[], o: (i: number) => KeyframeAnimationOptions) => els.map((el, i) => el.animate(frames, o(i)));
-  async function doShift(dir: 1 | 0) {
+  // 1: one level deeper · -1: one level back · 0: back to the source
+  async function doShift(dir: 1 | 0 | -1) {
     if (animating) return;
     const w = win();
-    if (dir === 0 && w === 0) return;
+    if (dir !== 1 && w === 0) return;
     animating = true;
     const svg = props.overlay(); if (svg) svg.style.opacity = '0';
     try {
       if (dir === 1 && !(await prepareShiftRight())) return;
       freeze();
       await afterPaint();   // the incoming column's editors are mounted and measured before anything moves
-      if (reduce()) { setWin(dir === 1 ? w + 1 : 0); return; }
+      if (reduce()) { setWin(dir === 1 ? w + 1 : dir === -1 ? w - 1 : 0); return; }
       const anims: Animation[] = [];
       if (dir === 1) {
         const out = cols[w] ? onScreen(cols[w], '.card, .pnote, .more') : [], mid = cols[w + 1], inc = cols[w + 2] ? onScreen(cols[w + 2], '.card, .pnote, .more') : [];
@@ -196,8 +197,10 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
         if (mid) anims.push(mid.animate([{ transform: `translate3d(${frozen()?.get(w) ?? w1()}px,0,0)` }, { transform: 'translate3d(0,0,0)' }], { duration: 600, delay: 160, easing: EXPO, fill: 'backwards' }));
         anims.push(...turnstile(inc, [{ transform: 'translate3d(170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], (i) => ({ duration: 600, delay: 260 + i * 50, easing: EXPO, fill: 'backwards' })));
       } else {
-        shiftHome();
-        for (const c of [0, 1]) if (cols[c]) anims.push(...turnstile(onScreen(cols[c], '.card, .pnote, .more'), [{ transform: 'translate3d(-170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+        // back one level, or home: the columns that come into view slide in from the left
+        const to = dir === -1 ? w - 1 : 0;
+        if (dir === -1) setWin(to); else shiftHome();
+        for (const c of [0, 1]) if (cols[to + c]) anims.push(...turnstile(onScreen(cols[to + c], '.card, .pnote, .more'), [{ transform: 'translate3d(-170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }],
           (i) => ({ duration: 620, delay: 100 + c * 70 + i * 45, easing: EXPO, fill: 'backwards' })));
       }
       await Promise.allSettled(anims.map((a) => a.finished));
@@ -212,7 +215,8 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const onKey = (e: KeyboardEvent) => {
     if (!e.altKey || e.metaKey || e.ctrlKey) return;
     if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); doShift(1); }
-    else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); doShift(0); }
+    else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); doShift(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); doShift(0); }
   };
   onMount(() => window.addEventListener('keydown', onKey));
   onCleanup(() => window.removeEventListener('keydown', onKey));
@@ -318,12 +322,15 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
         <Handle left={w1()} onDrag={(dx) => setFrac(Math.max(0.15, Math.min(0.85, (w1() + dx) / cardsW())))} onEnd={() => store('litho.preview.split', frac())} />
       </Show>
       <div class="shiftbar">
-        <button disabled={win() === 0} onClick={() => doShift(0)}>{t('‹ source')}</button>
+        <button disabled={win() === 0} title={t('back to the source (Alt Home)')} onClick={() => doShift(0)}>{t('« source')}</button>
         <span style={{ 'font-size': '12.5px', color: '#3a3f3a' }}>{levelCount() ? `levels ${win() + 1}–${win() + 2}` : ''}</span>
         <span style={{ flex: 1 }} />
         <button title={t('macros, static_assert, lambdas and calls through pointers, listed after the functions')} onClick={() => api.settings.set('preview.include_other', settings()['preview.include_other'] === false)}>{settings()['preview.include_other'] === false ? t('show non-functions') : t('hide non-functions')}</button>
         <button onClick={() => api.settings.set('preview.include_std', !settings()['preview.include_std'])}>{settings()['preview.include_std'] ? t('hide std calls') : t('show std calls')}</button>
-        <button disabled={!canShift()} onClick={() => doShift(1)}>{t('shift preview ›')}</button>
+        <span class="pnav" role="group" aria-label={t('preview levels')}>
+          <button disabled={win() === 0} title={t('one level back (Alt ←)')} onClick={() => doShift(-1)}>{t('‹ back')}</button>
+          <button disabled={!canShift()} title={t('one level deeper (Alt →)')} onClick={() => doShift(1)}>{t('next ›')}</button>
+        </span>
       </div>
     </div>
   );
