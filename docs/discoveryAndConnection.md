@@ -69,7 +69,7 @@ IDs: **F** for foundations (the toolkit), **D** for discovery threads. Sub-ideas
 | D3 | Verified improvement suggestions (repair engine), incl. D3.6 AI-free engine, D3.7 growth ledger, D3.8 feedback and deduction, D3.9 deep re-read R-1…R-29 | Adapted / Candidates | D1, D2, A-batches | SkyCodeX UI |
 | T | Uniform atomic treatment of D1–D4 (atoms, injection, dominance, repair), new results N-1…N-8 | Mixed per item | A.0 | D3.7 |
 | D4 | Sheaf gluing for C/C++: partial-information fold (Helly), units over abelian groups, tractability by coefficient group, proof gluing over covers (correction), Mayer–Vietoris, lockset gluing | Candidate / Known per item | F1, D2.2, D3.6.3 | D3 repair, A10, R-1, R-21 |
-| U | Unified SkyFlowX: the 64 concepts where Frama-C is below LDRA, Frama-C's methods rebuilt clean-room, the common core on every OS, the Frama-C add-on on Linux and macOS, ARINC 653 checks, "more capable" measured per axis | Decided / Known / Candidates | A.2, F5, D1–D4 | D3.7, ROADMAP |
+| U | Unified SkyFlowX (U.11: the SkyFlowX tab): the 64 concepts where Frama-C is below LDRA, Frama-C's methods rebuilt clean-room, the common core on every OS, the Frama-C add-on on Linux and macOS, ARINC 653 checks, "more capable" measured per axis | Decided / Known / Candidates | A.2, F5, D1–D4 | D3.7, ROADMAP |
 
 ## Prior-art and novelty register (2026-10-31)
 **Honest position:** so far this document is mostly a **careful synthesis of known mathematics**, applied to our design. No entry has been shown to be new to the literature. Novelty is claimed only after a prior-art search and a measured improvement over existing tools.
@@ -2909,6 +2909,7 @@ The configuration tables are an input. Their exact form is taken from the licens
 | U.3 slicing | — | — | A fix's footprint is its backward slice; only checks that meet the slice are rerun (D3.11) |
 | U.5 APEX ports | Port pairing fixes | The D2 pass certificate | — |
 | U.2 group 5 | — | An undecidable rule's fix is confirmed only by the sound side (A10) | — |
+| U.11 repair card | — | A suggestion is drawn beside its error only after its confirmation passed; the card says which check confirmed it | — |
 
 ### U.9 Open, and to verify
 1. The exact licences of the Frama-C plug-ins and of the Alt-Ergo prover. This matters only to users of the add-on, who install them.
@@ -2951,3 +2952,113 @@ The configuration tables are an input. Their exact form is taken from the licens
 **Exactness rule:** a reused check counts toward a rule only after it passes that rule's known-answer tests. Until then, it is shown as *relates to* the rule, not as checking it.
 
 **Prior art:** all methods in U.3 are Known. Candidates: one contract used three ways in one product (Refinement at most; the Frama-C ecosystem already shares ACSL between WP and E-ACSL); reading a C++ One Definition Rule violation as a gluing failure (Candidate, unverified).
+
+### U.11 Concept 0: the SkyFlowX tab (decided 2026-11-04, mock-ups approved)
+The approved mock-ups for U.11–U.14 are in [mockups/skyflowx](mockups/skyflowx/README.md).
+
+**Place:** a tab of its own, at the far right of the tab row (`flow · folder · files … · [SkyFlowX]`). Its label sits in a thin bordered box (`1px #3a3f3a`, accent while the engine pulses).
+
+**States shown in the box:**
+| State | Box shows |
+|---|---|
+| Not started | `SkyFlowX` + **Init** |
+| Running | `SkyFlowX covered / total` (files analysed, like clangd's indexing count) and a thin progress line under the box |
+| Ready | `SkyFlowX 3 · 12`: proven (error colour) · possible (warning colour) |
+| Stale | the counts dimmed, **Init** back |
+| Stopped or failed | "engine stopped" + **Retry**; the editor and flow keep working |
+
+**On/off control (decided 2026-11-04, option 2 of three compared):** an **ON | OFF** segmented control at the end of the SkyFlowX button, both words always visible, the current one filled. The button is larger (38 px, label 19 px, control 30 px). OFF never relies on colour: the OFF segment is filled, the border turns dashed, the label and kept counts dim.
+
+**The button, prominent (approved 2026-11-04 on the real app, tinyhttp):** 42 px tall, its own mark (two crossing flow paths with nodes at their ends, an X made of flow), the label `SkyFlow` + a gold semibold **X** (20 px), a warm accent tint, an accent border and a soft halo; a thin vertical divider sets it apart from the tabs and clangd's status. Contents in order: mark, label, then Init / `covered / total` / `proven · possible`, then **ON | OFF**. When the SkyFlowX tab is open the button lights fully, a 2 px gold rule runs under the tab row and the other tabs dim. When OFF it stays visible (dashed border, no tint, mark and label dimmed), so the feature is never hidden.
+
+**The other tabs, for balance (approved 2026-11-04):** flow, folder and file tabs each sit in a thin 1 px box (`#2a2d2a`), 42 px tall like SkyFlowX, 10 px apart; the open tab has a brighter border (`#5f665f`) and a faint fill. Only SkyFlowX carries gold, tint and halo.
+
+**Engine at work:** the whole tab row brightens and dims, about every 1.6 s (accent tint and a hairline under the row). With reduced motion it stays bright.
+
+**Starts only on Init.** SkyFlowX never runs by itself; after an edit the results go stale until the next Init.
+
+**Storage:** results only in SkyCodeX's data folder, never in the project.
+
+**Repair suggestions in the file:** while the repair engine runs, each confirmed suggestion is drawn to the right of its error line, joined by a thin connector (a dot at the error's end, an elbow, a card). The card holds clangd's message and position, the fixed line with the edit highlighted, the confirmation ("checked by the second clangd: the error is gone, no new error"), **✓ Apply** and **✗**. Nothing changes until ✓.
+
+**Edge cases (from Concept 0):** no folder open; no C/C++ in the project; mixed projects (only C/C++ analysed, the skipped count shown); very large projects (scope settled in Concept 1); read-only folders; the Frama-C add-on missing (its checks *can't tell*, never pass); the engine missing or crashed.
+
+**Next:** Concept 1, initialization: what's in the folder, how it is built, for which machine, what to check, what to cover, and the Start summary.
+
+### U.12 Concept 1.1: the inventory (decided 2026-11-04)
+On Init, before analysis, SkyFlowX lists everything in the project:
+- **Sources** (`.c .cc .cpp .cxx .c++`): by extension, then confirmed by their compile commands (Concept 1.2, still open).
+- **Headers** (`.h .hh .hpp .hxx .inl .ipp .tpp`, and headers with no extension): from the `#include`s the sources actually make.
+- **Language per file:** from `-x` and `-std`, otherwise from the extension.
+- **Programs:** from the build's link steps, otherwise from SkyCodeX's `main` finder.
+- **Libraries:** units with no `main`.
+- **Assembly and linker scripts:** listed only, not analysed.
+
+**Decided:**
+| Case | Rule |
+|---|---|
+| Header used by both C and C++ | Analysed in each language; findings tagged *in C*, *in C++* or *both* |
+| Orphan header (included by no source) | Analysed alone with the project's settings; findings marked "not included by any source" |
+| Vendor, generated and test code | Analysed as context; findings hidden by default, kept under "not yours" |
+| Build output folders | Skipped; their generated headers are still read when a source includes them |
+| Symlinks and duplicates | Counted once, by real path; names differing only in capitals flagged on macOS and Windows |
+| Encodings | Windows line endings handled; non-UTF-8 read in the detected encoding and noted; unreadable files listed with the reason |
+| Huge files | Analysed, shown with their size |
+| Large repositories | No file cap; the inventory fills in as it goes; the tab box shows the real total |
+
+**Connections:** each file's content hash is kept in the data folder, so a later Init re-reads only changed files (P5). Every skipped or excluded file is listed with its reason (P7). SkyCodeX's file listing and `main` finder are reused.
+
+### U.13 Concept 1.3: the toolchain, and how static and dynamic analysis run (decided 2026-11-04, mock-ups shown)
+**No build for static analysis.** clang's front end reads each file in memory with its compile command (no code generation, no linking, no object files). Per-function summaries are joined into a whole-program view. A build is needed only for dynamic analysis, which is a separate step: SkyFlowX compiles its own instrumented copy in the data folder and never touches the project's build outputs. Code that doesn't compile is still analysed; functions clang couldn't read cleanly are *can't tell*.
+
+**The user chooses the toolchain; SkyFlowX never infers it (revised 2026-11-04):**
+1. The Toolchain step shows one toggle button per compiler family (GCC, Clang, Apple clang, Arm GNU, IAR, Keil, TI, Green Hills, MSVC, Other…). Click selects, click again deselects; several may be selected.
+2. What the project's files name (e.g. "compile_commands.json names clang++ for 9 files") is shown as information beside the buttons, never pre-selected.
+3. For each selected family, the copies on the machine are listed (folders read, nothing run) and the user picks one, or a download.
+4. **Confirm**: only then does SkyCodeX offer the commands, in the permission window below.
+5. If a command's output contradicts the choice (e.g. a `gcc` that is really Apple clang), SkyFlowX stops and shows it; it never switches family by itself.
+6. The queries carry the project's own flags (`-std`, `--target`, `-mcpu`, `--sysroot`…); files sharing one flag set share one query.
+
+Labels: the chosen compiler and its queried settings are **Exact**; a skipped query reads with clang's defaults, **Guessed**. SkyFlowX is C/C++ only, so Ada (GNAT) isn't offered; GNAT's C compiler counts as GCC.
+
+**Permission window (SkyCodeX look):** lists every exact command and why, says they only print, warns when the compiler lives inside the project folder; **Run**, **Run once**, **Skip** (Skip reads with clang's defaults, Guessed). While running, a terminal panel shows each command's live output and exit code, with **Stop**. Permission is remembered per project and per compiler file (SHA-256); a changed compiler asks again.
+
+**Downloads:** only open-licence toolchains with official checksums (LLVM/clang, Arm GNU Toolchain, xPack GNU, llvm-mingw), through the language-pack process: official release, resumable download, size + SHA-256 (+ signature where published), unpack to a temporary folder, check the layout and `--version`, one atomic move into `language_packs/<name>-<version>`, a manifest of every file and hash so removal is exact. No installer, no admin, no PATH change. Licensed compilers (IAR, Keil, Green Hills, TI, Wind River, MSVC) are detected only. Offline: the download list is shown greyed with the reason.
+
+**Branches:** several compilers per project (each file uses its own); wrappers (ccache, sccache, distcc) unwrapped; builds in Docker or elsewhere (path mapping, or an installed equivalent); MSVC via clang's MSVC mode; vendor extensions through a table, unknown ones named, dependent code *can't tell*.
+
+### U.14 Results display principles (decided 2026-11-04, mock-ups shown; full design in Concept 7)
+Not limited to LDRA's reports: more complete and easier to act on.
+- **Standards are verdicts with a breakdown, never a lone %:** *Compliant*, *Not compliant* or *Can't tell yet*, with rules and code split into met, deviated, violated and **not checked** (always shown, hatched so colour isn't the only cue).
+- **DO-178C is objectives:** backed by SkyFlowX evidence, needing people or process evidence, missing. SkyFlowX never claims DO-178C compliance on its own. Objective counts per level confirmed against the user's licensed copy.
+- **Coverage** (statement, decision, MC/DC) against the level's target, with the uncovered part split by reason: **proven unreachable** (certificate attached), **missing test**, **can't tell**.
+- **Every segment is clickable**, drilling standard → rule → file → function → line, with a breadcrumb; Esc goes back, F8 / ⇧F8 move between gaps.
+- **Project map:** files sized by lines, coloured by worst finding.
+- **Fix first:** proven before possible, checked fixes first.
+- **Filters:** mine / not yours, certainty, program, configuration; change since the last Init.
+- **In the code:** a coverage band in the margin (covered, partly, not covered), uncovered lines shaded, reason tags on the line, and an MC/DC card joined by a connector, showing the condition combinations seen and the ones still needed.
+- **Flow tab:** uncovered calls faded, findings on their steps; "Show in flow" from any card.
+
+**Layout of the results page (approved 2026-11-04): one reading order, top to bottom.**
+1. **Context line:** "Results", project, configuration, file count, last Init; on the right the active filters ("Showing mine · all certainties ▾") and a **List | Map** switch (the project map lives behind Map, not on the main page).
+2. **The answer:** one sentence in a band with a coloured edge, e.g. "Not compliant with 2 of 4 standards", then "3 proven and 12 possible findings · 2 checked fixes ready · 2 more violations than the last Init", and **Fix first ›**.
+3. **One legend** for every bar: met / covered, deviated / proven unreachable, violated / missing test, not checked / can't tell (hatched).
+4. **Standards** as aligned rows on one column grid: name · verdict (icon + word: ✕ Not compliant, ? Can't tell yet, ✓ Compliant) · one rules bar · met · deviated · violated · not checked, numbers right-aligned in equal-width digits, zeros faded. A row opens **in place** (no pop-ups): its code bar, then its rules with the location and **Open ›**.
+5. **Fix first:** proven before possible, with location and *checked fix* / *possible*.
+6. **Coverage:** statement, decision, MC/DC on the same grid (covered %, bar, covered, unreachable, missing test, can't tell), target from the level.
+7. **DO-178C:** objectives by evidence (SkyFlowX, people or process, missing), with "never claims DO-178C compliance on its own".
+
+Three text sizes only, colour only where it means something, space between groups instead of boxes.
+
+### U.15 Concept 1.2 decisions, the engine's life, and the on/off switch (decided 2026-11-04)
+**Compile commands (Concept 1.2):**
+- Sources in order: the project's `compile_commands.json` → build tools that list commands without building → IDE project files → watching a real build → guessed.
+- Running the project's own tools (CMake set-up, watching a build) needs one yes per project at Init, remembered.
+- A file with only a Guessed command: rules that depend on macros or type sizes show *can't tell*, never a pass; other rules run as usual.
+- A file built twice with different flags is analysed in each context, its findings tagged by context.
+
+**Engine life:** the engine starts on Init and closes when the run finishes; nothing stays in memory. Results are files in the data folder; viewing them needs no engine.
+
+**On/off switch, per project:** a switch in the SkyFlowX box.
+- **Off:** the engine stops at once (mid-run too), nothing runs, edits aren't even compared. Every finished file's results are already saved (P5), so nothing is lost; the box shows `SkyFlowX off` with the last counts dimmed.
+- **On again:** it resumes. Files finished before are kept if their content hash, compile command, toolchain and rule-set version are unchanged; everything else, and every file not reached, is analysed. Old results are never shown as current: what's being redone is marked stale until done.
