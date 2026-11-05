@@ -721,7 +721,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={aroundOn() || N() > 150}><button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button></Show>
           <button class="chip" classList={{ on: detailAll() !== 'calls' || detailFn().size > 0 }} title="how much code to show between calls: calls only, with decisions, or all code (⇧D everywhere, D for the current function)" onClick={() => { cycleDetail(true); canvas.focus(); }}>{detailAll() === 'calls' ? 'calls' : detailAll() === 'decisions' ? 'decisions' : 'all code'}</button>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
-            restart={() => { stopTour(); setPlaying(false); go('home'); setPlaying(true); canvas.focus(); }} step={() => { stopTour(); setPlaying(false); go('next'); canvas.focus(); }} />
+            restart={() => { stopTour(); setPlaying(false); go('home'); canvas.focus(); }} step={() => { stopTour(); setPlaying(false); go('next'); canvas.focus(); }} />
           <Show when={tour()}><span class="sub">tour · Esc stops</span></Show>
           {props.switcher}
           <span class="shr">

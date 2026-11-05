@@ -13,4 +13,6 @@ Real data from `samples/tinyhttp` and the machine they were made on; finding cou
 | [toolchain-running.png](toolchain-running.png) | The same window running, with its terminal panel | U.13 |
 | [results-refined.png](results-refined.png) | The results page, top to bottom | U.14 |
 | [coverage-code.png](coverage-code.png) | Uncovered parts in the code, with the MC/DC card | U.14 |
+| [standards-rules.png](standards-rules.png) | Standards → Rules: CERT C++ as a wall of rule tiles by section, usage per section, the selected rule (approved 2026-11-05) | U.16 |
+| [standards-in-the-code.png](standards-in-the-code.png) | Standards → In the code: ✓/✕ highlights, the why pane and the compliance tendency engine (approved 2026-11-05) | U.16 |
 | [repair-connector.png](repair-connector.png) | A checked repair suggestion beside its error, joined by a connector | U.11 |

@@ -2,7 +2,7 @@ import { onMount, onCleanup, Show, createSignal } from 'solid-js';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { cardExtensions } from '../lib/cm';
-import { definitionAt } from '../lib/lsp';
+import { gotoDefinition } from '../lib/goto';
 import { openFile } from '../lib/store';
 import type { Card as CardData } from '../lib/preview';
 import { cardLoc, depths } from '../lib/preview';
@@ -18,20 +18,10 @@ function mountCode(host: HTMLElement, text: string, firstLine: number, file: str
     state: EditorState.create({
       doc: text,
       extensions: [
-        cardExtensions(firstLine),
+        cardExtensions(firstLine), gotoDefinition({ file: () => file, base: () => startLine }),
         EditorView.updateListener.of((u) => { if (u.selectionSet) setCardCursor({ id, head: u.state.selection.main.head }); }),
         EditorView.domEventHandlers({
-          mousedown(e, v) {
-            onFocus();
-            if (!(e.metaKey || e.ctrlKey)) return false;
-            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-            if (pos == null) return false;
-            e.preventDefault();
-            const l = v.state.doc.lineAt(pos);
-            definitionAt(file, { line: startLine + l.number - 1, character: pos - l.from })
-              .then((loc) => { if (loc) openFile(loc.file, { line: loc.line, character: loc.character }); });
-            return true;
-          },
+          mousedown() { onFocus(); return false; },
           focus() { onFocus(); return false; },
         }),
       ],

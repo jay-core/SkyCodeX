@@ -533,7 +533,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()}
-            restart={() => { stop(); report(stepMove('home')); play(); }} step={() => { stop(); report(stepMove('next')); }} />
+            restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />
           {props.switcher}
           <button class="chip" classList={{ on: heat() }} aria-pressed={heat()} title="shade each row by how often it runs, from the loops around it (H)" onClick={() => setHeat(!heat())}>how often</button>
           <button class="chip" title="save the diagram as drawn: an SVG picture or a PNG image" onClick={() => setPalette({ placeholder: 'export the diagram as…', items: [{ label: 'PNG image', detail: 'twice the size on screen', run: exportPng }, { label: 'SVG picture', detail: 'scales without blur', run: exportSvg }] })}>export</button>

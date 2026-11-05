@@ -2910,6 +2910,7 @@ The configuration tables are an input. Their exact form is taken from the licens
 | U.5 APEX ports | Port pairing fixes | The D2 pass certificate | — |
 | U.2 group 5 | — | An undecidable rule's fix is confirmed only by the sound side (A10) | — |
 | U.11 repair card | — | A suggestion is drawn beside its error only after its confirmation passed; the card says which check confirmed it | — |
+| U.16 compliance tendency engine | Multi-edit ways to comply, ranked (e.g. std::jthread, a join guard, catch-and-rethrow), each only if the build's language standard allows it | A second clangd compiles the changed code and the affected rules are re-analysed: the rule holds and no new finding appears | Only the functions whose flow the change touches are re-traced; the flow-change preview comes from that |
 
 ### U.9 Open, and to verify
 1. The exact licences of the Frama-C plug-ins and of the Alt-Ergo prover. This matters only to users of the add-on, who install them.
@@ -3049,6 +3050,23 @@ Not limited to LDRA's reports: more complete and easier to act on.
 7. **DO-178C:** objectives by evidence (SkyFlowX, people or process, missing), with "never claims DO-178C compliance on its own".
 
 Three text sizes only, colour only where it means something, space between groups instead of boxes.
+
+### U.16 The Standards view and the compliance tendency engine (approved 2026-11-05, mock-ups kept)
+Results has tabs: Summary, Along the run, Assurance, **Standards**, Map; every tab has **Print** and **Export PDF report** (the PDF format is decided later). Standards has one tab per chosen standard (with its verdict mark) and, inside each, a **Rules | In the code** switch.
+
+**Rules (the main view): the whole standard as a wall of rule tiles,** grouped in the standard's own sections (for CERT C++: DCL, EXP, INT, CTR, STR, MEM, FIO, ERR, OOP, CON, MSC, with the real rule IDs).
+- Tile states: met, violated (badge = places), deviated, not checked (hatched), and **nothing to check here** (an empty outline, when the rule's subject isn't used in this code; never counted as met).
+- Each section shows **how much of the code it looks at**: a bar and a line counted from the code (e.g. OOP: 7 classes · 0 inherit · 0 virtual; CON: 1 thread · 3 atomic · 0 locks; FIO: no file streams), so a sparingly used area shows as such.
+- **Selection is unmistakable:** the selected tile lifts and grows with a gold ring, glow and pointer; its section row is tinted; related rules get a faint ring. ⇧ adds to the selection; a rule ID can be typed to jump.
+- The card on the right: **SELECTED · rule**, where it fails (✕), where it holds (✓), how SkyFlowX checks it, the same problem in other standards, and **In the code ›**, Show in flow, Deviation.
+
+**In the code:** files with their ✕/✓ counts for this standard; the code with
+- ✓ **green highlight** and the rule tag where a rule was checked and holds;
+- ✕ **red highlight**, the rule tag and the reason inline where it is broken;
+- a thin red bar on the lines that lead to it (its path).
+Every highlight is **selectable** (like the function flows), with the same gold selection outline; F8 / ⇧F8 move between ✕. A divider makes the right pane **adjustable** within limits.
+
+**The right pane:** *Why* (plain words, with line numbers) for a ✕, and also for a ✓ (why it holds); then the **compliance tendency engine**: the ways to comply, best first. Each shows its **result** (the rule holds, new findings), the **edit**, whether the project **allows** it (from the build's language standard and the active profile), whether it was **checked** (second clangd compiles it, re-analysis), the **flow change** (a small before/after strip) and what changes **elsewhere**. A way that fixes this rule but moves the problem (e.g. an exception now reaching main()) says so. **Preview the change** shows it in the code and the flow; nothing changes until **Apply ✓**.
 
 ### U.15 Concept 1.2 decisions, the engine's life, and the on/off switch (decided 2026-11-04)
 **Compile commands (Concept 1.2):**

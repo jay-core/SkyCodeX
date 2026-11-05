@@ -4,14 +4,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 /** Writes via a temporary file in the same folder, then renames it over the target. */
-export function atomicWrite(file: string, text: string): void {
+export function atomicWrite(file: string, text: string | Buffer): void {
   const dir = path.dirname(file);
   const tmp = path.join(dir, `.${path.basename(file)}.skycodex-${process.pid}-${Date.now()}.tmp`);
   let mode: number | undefined;
   try { mode = fs.statSync(file).mode; } catch { /* new file */ }
   const fd = fs.openSync(tmp, 'w', mode ?? 0o644);
   try {
-    fs.writeFileSync(fd, text, 'utf8');
+    if (typeof text === 'string') fs.writeFileSync(fd, text, 'utf8'); else fs.writeFileSync(fd, text);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);

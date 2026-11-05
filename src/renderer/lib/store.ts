@@ -10,7 +10,7 @@ import { SETTINGS as ALL_SETTINGS } from '../../shared/settings-schema';
 
 const COLOR_DEFS = ALL_SETTINGS.filter((d) => d.type === 'color');
 import { noteText } from './langs';
-import { openDoc, changeDoc, savedDoc, startLsp, promote } from './lsp';
+import { openDoc, changeDoc, savedDoc, startLsp, promote, onClangdStopped } from './lsp';
 
 export type Settings = Record<string, any>;
 export interface Problem { key: string; line: number; message: string }
@@ -80,6 +80,7 @@ export async function restartLsp() {
   await startLsp(root());
   for (const [path, st] of states) openDoc(path, st.doc.toString());
 }
+onClangdStopped(restartLsp);
 
 export async function openFile(file: string, at?: { line: number; character: number }, textOverride?: string) {
   const path = normPath(file);

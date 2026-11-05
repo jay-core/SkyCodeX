@@ -43,9 +43,22 @@ api.lsp.onNotify((method, params) => {
     else if (v.kind === 'report') setIndexing(`${v.title ?? 'indexing'}${v.percentage != null ? ` ${v.percentage}%` : ''}${v.message ? ` · ${v.message}` : ''}`);
     else if (v.kind === 'end') { setIndexing(null); defCache.clear(); setIndexEpoch((n) => n + 1); }
   } else if (method === '$/exit') {
-    setLspState('failed'); setLspMessage('clangd stopped');
+    // clangd crashed: start it again (twice a minute at most) and hand it the open files, saying so meanwhile
+    const now = Date.now();
+    while (stops.length && now - stops[0] > 60_000) stops.shift();
+    stops.push(now);
+    if (restartHook && root && stops.length <= 2) {
+      setLspState('starting'); setLspMessage(`clangd stopped · starting it again (${stops.length} of 2 this minute)`);
+      void restartHook().catch((e) => { setLspState('failed'); setLspMessage(`clangd stopped and could not start again: ${(e as Error)?.message ?? e}`); });
+    } else {
+      setLspState('failed'); setLspMessage(stops.length > 2 ? 'clangd stopped 3 times in a minute · press refresh to start it again' : 'clangd stopped');
+    }
   }
 });
+const stops: number[] = [];
+let restartHook: (() => Promise<void>) | null = null;
+/** What to run when clangd stops by itself (the store starts it again and reopens the open files). */
+export const onClangdStopped = (f: () => Promise<void>) => { restartHook = f; };
 
 // C and C++ files, including standard headers that have no extension (<ostream>, <ios>, <thread> …)
 const isCpp = (f: string) => langOf(f) === 'cpp';

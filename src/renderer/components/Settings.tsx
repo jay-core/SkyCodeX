@@ -61,7 +61,8 @@ function Combo(props: { value: string; load: () => Promise<Opt[]>; onPick: (v: s
     <div class="combo" ref={box}>
       <input type="text" ref={input} value={open() ? q() : props.value} placeholder={open() ? props.value : ''} spellcheck={false}
         style={{ 'font-family': props.font && !open() ? fontOf(props.value) : undefined }}
-        onFocus={show} onInput={(e) => { setQ(e.currentTarget.value); setHi(0); }} onKeyDown={key} />
+        onFocus={show} onMouseDown={() => { if (!open()) void show(); }}
+        onInput={(e) => { const v = e.currentTarget.value; if (!open()) void show().then(() => setQ(v)); setQ(v); setHi(0); }} onKeyDown={key} />
       <span class="caret" onMouseDown={(e) => { e.preventDefault(); open() ? setOpen(false) : input.focus(); }}>⌄</span>
       <Show when={open()}>
         <div class="combo-list" ref={list}>

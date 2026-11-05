@@ -4,8 +4,7 @@ import { onMount, onCleanup } from 'solid-js';
 import { EditorView, Decoration } from '@codemirror/view';
 import { EditorState, StateField } from '@codemirror/state';
 import { cardExtensions } from '../lib/cm';
-import { definitionAt } from '../lib/lsp';
-import { openFile } from '../lib/store';
+import { gotoDefinition } from '../lib/goto';
 
 /** file: absolute path; text: the function's lines; start: its first line in the file (0-based); hl: a file line to mark, or -1. */
 export default function SeqCode(props: { file: string; text: string; start: number; hl: number }) {
@@ -22,18 +21,7 @@ export default function SeqCode(props: { file: string; text: string; start: numb
       state: EditorState.create({
         doc: props.text,
         extensions: [
-          cardExtensions(props.start + 1), mark,
-          EditorView.domEventHandlers({
-            mousedown(e, v) {
-              if (!(e.metaKey || e.ctrlKey)) return false;
-              const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-              if (pos == null) return false;
-              e.preventDefault();
-              const l = v.state.doc.lineAt(pos);
-              definitionAt(props.file, { line: props.start + l.number - 1, character: pos - l.from }).then((loc) => { if (loc) openFile(loc.file, { line: loc.line, character: loc.character }); });
-              return true;
-            },
-          }),
+          cardExtensions(props.start + 1), mark, gotoDefinition({ file: () => props.file, base: () => props.start }),
         ],
       }),
     });

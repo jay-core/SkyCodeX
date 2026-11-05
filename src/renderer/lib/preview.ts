@@ -4,6 +4,7 @@ import { api, CallItem, Range, Pos, uriToFile, fileToUri, basename, relPath } fr
 import { symbols, enclosingFunction, callItemAt, outgoing, inProject, projectRoot, resolveDefinition, withBody, definitionAt } from './lsp';
 import { parseCpp, offsetOf, lineOf } from '../../shared/flowcore';
 import { states, settings } from './store';
+import { mergeLevel, keepsDeeper } from '../../shared/levelmerge';
 
 /** call: a real function call (clangd). The rest look like calls but are not functions. */
 export type CardKind = 'call' | 'macro' | 'assert' | 'lambda' | 'indirect';
@@ -172,12 +173,23 @@ async function mk(kind: CardKind, name: string, file: string, a: number, b: numb
   };
 }
 
-let generation = 0;
+// requests are counted per level: a newer request for a level cancels only older requests for that same level,
+// so a card click is never lost to a cursor refresh, nor a cursor refresh to a click
+let rootGen = 0;
+const levelGen: number[] = [];
+const sameCaller = (a: CallItem, b: CallItem) => a.uri === b.uri && a.range.start.line === b.range.start.line && a.name === b.name;
+/** Puts a freshly built level at idx, merged into the one shown; the levels below stay when they still belong to it. */
+function place(idx: number, fresh: Level): Level {
+  const ls = levels(), old = ls[idx], m = mergeLevel(old, fresh, sameCaller);
+  setLevels([...ls.slice(0, idx), m, ...(m !== fresh && keepsDeeper(old, m) ? ls.slice(idx + 1) : [])]);
+  return m;
+}
+
 /** Called when the main cursor settles. Rebuilds level 1 only when the enclosing function changes. */
 export async function refreshForCursor(file: string, pos: Pos, force = false) {
-  const gen = ++generation;
+  const gen = ++rootGen;
   const fn = enclosingFunction(await symbols(file), pos);
-  if (gen !== generation) return;
+  if (gen !== rootGen) return;
   if (!fn) { setMainFn(null); setLevels([]); setWin(0); return; }
   if (!settings()['preview.enabled']) {
     const cur = mainFn();
@@ -186,40 +198,62 @@ export async function refreshForCursor(file: string, pos: Pos, force = false) {
     return;
   }
   const cur = mainFn();
-  if (!force && cur && cur.file === file && cur.name === fn.name && cur.range.start.line === fn.range.start.line && levels().length) return;
+  const sameFn = !!cur && cur.file === file && cur.name === fn.name && cur.range.start.line === fn.range.start.line;
+  if (!force && sameFn && levels().length) return;
   setMainFn({ name: fn.name, file, range: fn.range });
   setBusy(true);
   // while clangd is still building the file or loading its index, it may answer with no calls, or resolve
   // some callees only to their header declaration: keep one retry pending, for up to 30 s after the first attempt for this function
   const key = `${file}#${fn.range.start.line}`;
   const retry = () => scheduleRetry(key, () => refreshForCursor(file, pos, true));
+  const shown = sameFn ? levels()[0] : undefined;   // what the reader is looking at for this same function
   const item = await callItemAt(file, fn.selectionRange.start);
-  if (gen !== generation) return;
-  if (!item) { setLevels([]); setBusy(false); retry(); return; }
+  if (gen !== rootGen) return;
+  // a retry that gets a worse answer than the one shown (clangd still settling) keeps the one shown and tries again
+  if (!item) { if (!shown) setLevels([]); setBusy(false); retry(); return; }
   const l1 = await buildLevel(item, 0);
-  if (gen !== generation) return;
-  setLevels([l1]); setWin(0); setBusy(false);
+  if (gen !== rootGen) return;
+  setBusy(false);
+  if (shown && !l1.cards.length && shown.cards.length) { retry(); return; }
+  if (shown) place(0, l1);
+  else { setLevels([l1]); setWin(0); }
+  if (win() > Math.max(0, levels().length - 1)) setWin(0);
   if (!l1.cards.length || l1.cards.some(unresolvedCard)) retry();
   else retryStart.delete(key);
 }
 
-/** Rebuilds the levels in place (after a preview setting changed), keeping pane 1's focused card. */
+/** Rebuilds the levels in place (after a preview setting changed or clangd finished indexing), keeping every focused card. */
 export async function rebuildLevels(file: string, pos: Pos) {
-  const l0 = levels()[0], keep = l0 && l0.focus >= 0 ? l0.cards[l0.focus]?.key : undefined;
   await refreshForCursor(file, pos, true);
-  const k = keep ? levels()[0]?.cards.findIndex((c) => c.key === keep) ?? -1 : -1;
-  if (k >= 0) await focusCard(0, k);
+  for (let i = 0; i < levels().length - 1; i++) {
+    const lv = levels()[i], c = lv && lv.focus >= 0 ? lv.cards[lv.focus] : undefined;
+    if (c) await refreshNext(i, c.key);
+  }
 }
 
 export const unresolvedCard = (c: Card) => c.kind === 'call' && !c.std && /\.(h|hh|hpp|hxx)$/i.test(c.file) && !c.text.includes('{');
 const retryStart = new Map<string, number>();
-let retryTimer: number | undefined;
+const retryTimers = new Map<string, number>();   // one per key: a retry for one level never cancels another's
 function scheduleRetry(key: string, run: () => void) {
   const first = retryStart.get(key) ?? Date.now();
   retryStart.set(key, first);
   if (Date.now() - first > 30000) return;
-  clearTimeout(retryTimer);
-  retryTimer = window.setTimeout(run, 1500);
+  clearTimeout(retryTimers.get(key));
+  retryTimers.set(key, window.setTimeout(() => { retryTimers.delete(key); run(); }, 1500));
+}
+
+/** Builds the level under level idx's focused card again and merges it in, if that card (by key) is still focused. */
+async function refreshNext(idx: number, key: string) {
+  const lv = levels()[idx], card = lv && lv.focus >= 0 ? lv.cards[lv.focus] : undefined;
+  if (!card || card.key !== key || card.std || card.kind !== 'call') return;
+  const g = (levelGen[idx] = (levelGen[idx] ?? 0) + 1);
+  const next = await buildLevel(card.item, card.startLine);
+  const now = levels()[idx];
+  if (g !== levelGen[idx] || !now || now.cards[now.focus]?.key !== key) return;
+  const shown = levels()[idx + 1];
+  if (shown && !next.cards.length && shown.cards.length) { scheduleRetry(`${key}@${idx}`, () => refreshNext(idx, key)); return; }
+  place(idx + 1, next);
+  if (next.cards.some(unresolvedCard)) scheduleRetry(`${key}@${idx}`, () => refreshNext(idx, key));
 }
 
 /** Puts the preview cursor in a card: the next level shows that card's calls. */
@@ -231,11 +265,13 @@ export async function focusCard(levelIdx: number, cardIdx: number) {
   setLevels(ls);
   const card = lv.cards[cardIdx];
   if (!card || card.std || card.kind !== 'call') return;   // library code and call-like things have no next level
-  const gen = ++generation;
+  const g = (levelGen[levelIdx] = (levelGen[levelIdx] ?? 0) + 1);
   const next = await buildLevel(card.item, card.startLine);
-  if (gen !== generation) return;
-  setLevels([...levels().slice(0, levelIdx + 1), next]);
-  if (next.cards.some(unresolvedCard)) scheduleRetry(`${card.key}@${levelIdx}`, () => { const lv = levels()[levelIdx]; if (lv?.focus === cardIdx) { setLevels(levels().slice(0, levelIdx + 1).map((l, i) => (i === levelIdx ? { ...l, focus: -1 } : l))); focusCard(levelIdx, cardIdx); } });
+  // still the card the reader chose (found by key: a cursor refresh may have rebuilt the level meanwhile)
+  const now = levels()[levelIdx];
+  if (g !== levelGen[levelIdx] || !now || now.cards[now.focus]?.key !== card.key) return;
+  place(levelIdx + 1, next);
+  if (next.cards.some(unresolvedCard)) scheduleRetry(`${card.key}@${levelIdx}`, () => refreshNext(levelIdx, card.key));
 }
 
 /** True when shifting right would land on a pair of levels that has content. */

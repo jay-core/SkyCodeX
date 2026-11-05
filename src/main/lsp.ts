@@ -3,6 +3,7 @@ import { spawn, execFileSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { atomicWrite } from './files';
 import { createHash } from 'node:crypto';
 import { commandFor, Compiler } from './compilers';
 
@@ -124,8 +125,18 @@ export function ensureCompileCommands(root: string, stateDir: string, compiler?:
   const out = path.join(dir, 'compile_commands.json'), text = JSON.stringify(db, null, 1);
   fs.mkdirSync(dir, { recursive: true });
   // unchanged commands keep clangd's index for this folder (kept beside the file) valid
-  if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) fs.writeFileSync(out, text);
+  if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) atomicWrite(out, text);   // never half-written: clangd reads it
   return dir;
+}
+
+export type CompileEntry = { directory: string; file: string; arguments?: string[]; command?: string; output?: string };
+/** A folder's compile_commands.json, or an error that names the file and what is wrong with it. */
+export function readCompileDb(dir: string): CompileEntry[] {
+  const f = path.join(dir, 'compile_commands.json');
+  let db: unknown;
+  try { db = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { throw new Error(`${f} can't be read: ${(e as Error).message}`); }
+  if (!Array.isArray(db)) throw new Error(`${f} is not a list of compile commands`);
+  return db as CompileEntry[];
 }
 
 /**
@@ -135,7 +146,7 @@ export function ensureCompileCommands(root: string, stateDir: string, compiler?:
  * beside it, apart from the one as built. Returns dir.
  */
 export function writeSettingDb(inUse: string, flags: string[], dir: string): string {
-  const db = JSON.parse(fs.readFileSync(path.join(inUse, 'compile_commands.json'), 'utf8')) as { directory: string; file: string; arguments?: string[]; command?: string; output?: string }[];
+  const db = readCompileDb(inUse);
   const q = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
   const out = db.map((e) => {
     if (e.arguments) { const a = [...e.arguments], k = a.indexOf('--'); a.splice(k < 0 ? a.length : k, 0, ...flags); return { ...e, arguments: a }; }
@@ -145,7 +156,7 @@ export function writeSettingDb(inUse: string, flags: string[], dir: string): str
   });
   fs.mkdirSync(dir, { recursive: true });
   const f = path.join(dir, 'compile_commands.json'), text = JSON.stringify(out, null, 1);
-  if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== text) fs.writeFileSync(f, text);
+  if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== text) atomicWrite(f, text);
   return dir;
 }
 /** The project's other build folders with their own compile_commands.json (build-release/, out/debug …), one level down. */

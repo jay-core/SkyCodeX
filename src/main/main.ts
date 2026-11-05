@@ -8,7 +8,7 @@ import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, listFiles, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
 import { searchFolder, cancelSearch } from './search';
-import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
@@ -146,7 +146,7 @@ ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
 ipcMain.handle('fs:list', (_e, dir: string) => listDir(dir));
 ipcMain.handle('fs:sources', (_e, root: string) => listSources(root));
 ipcMain.handle('fs:files', (_e, root: string) => listFiles(root));
-ipcMain.handle('fs:writeBase64', (_e, file: string, b64: string) => fs.writeFileSync(file, Buffer.from(b64, 'base64')));
+ipcMain.handle('fs:writeBase64', (_e, file: string, b64: string) => atomicWrite(file, Buffer.from(b64, 'base64')));
 ipcMain.handle('search:run', (_e, root: string, q: string, id: number) => searchFolder(root, q, id, (hits) => send('search:hits', id, hits)));
 ipcMain.handle('search:cancel', () => cancelSearch());
 ipcMain.handle('fs:targets', (_e, root: string) => buildTargets(root));
@@ -285,10 +285,10 @@ function movedDb(inUse: string, root: string, there: string, dir: string): strin
   // on the parsed commands (a Windows path is escaped in the file's text), and only where root ends a path's part
   const at = new RegExp(`${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\\\/"'\\s]|$)`, 'g');
   const mv = (s: unknown) => (typeof s === 'string' ? s.replace(at, () => there) : s);
-  const db = (JSON.parse(fs.readFileSync(path.join(inUse, 'compile_commands.json'), 'utf8')) as Record<string, unknown>[])
+  const db = (readCompileDb(inUse) as unknown as Record<string, unknown>[])
     .map((e) => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, Array.isArray(v) ? v.map(mv) : mv(v)])));
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'compile_commands.json'), JSON.stringify(db, null, 1));
+  atomicWrite(path.join(dir, 'compile_commands.json'), JSON.stringify(db, null, 1));
   return dir;
 }
 /** One version's run: 'work' is the files on disk (the window's own run, so nothing to read here), else a commit. */

@@ -2,13 +2,14 @@ import { onMount, onCleanup, createEffect, on } from 'solid-js';
 import { EditorView, Decoration, DecorationSet, keymap, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { EditorState, StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
 import { editorExtensions, offsetToPos } from '../lib/cm';
-import { completionFor, hoverFor, lintSupport, attachView, definitionAt, indexEpoch } from '../lib/lsp';
+import { completionFor, hoverFor, lintSupport, attachView, indexEpoch } from '../lib/lsp';
 import { langOf, syntaxFor, serverLang } from '../lib/langs';
 import { sender, flush as flushOther } from '../lib/langlsp';
 import { saver } from '../lib/power';
-import { files, states, settings, setStateFactory, setMainView, onDocChanged, openFile, save, setCrumb, setCursorPos } from '../lib/store';
+import { files, states, settings, setStateFactory, setMainView, onDocChanged, save, setCrumb, setCursorPos } from '../lib/store';
 import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
 import { repairFor } from '../lib/repair';
+import { gotoDefinition } from '../lib/goto';
 
 /** C and C++ sources and headers the repair engine checks (not fragments such as .inc tables). */
 const REPAIRABLE = /\.(c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|tcc)$/i;
@@ -87,7 +88,7 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
         // C and C++ talk to clangd; Rust, Python and Go to their pack's engine; other files only get colouring
         langOf(file) === 'cpp' ? [completionFor(() => file), hoverFor(() => file)]
           : serverLang(file) ? [completionFor(() => file, sender(file), flushOther), hoverFor(() => file, sender(file))] : [],
-        lintSupport, marksField, dimPlugin,
+        lintSupport, marksField, dimPlugin, gotoDefinition({ file: () => file, base: () => 0 }),
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
         // standard-library and SDK headers open read-only; the project's own C and C++ get checked fixes for their errors
         SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : langOf(file) === 'cpp' && REPAIRABLE.test(file) ? repairFor(file) : [],
@@ -97,24 +98,6 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
           if (u.docChanged || u.selectionSet) settle();
         }),
         EditorView.domEventHandlers({
-          mousedown(e, v) {
-            if (!(e.metaKey || e.ctrlKey) || e.button !== 0) return false;
-            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-            if (pos == null) return false;
-            e.preventDefault();
-            definitionAt(file, offsetToPos(v.state.doc, pos)).then((loc) => { if (loc) openFile(loc.file, { line: loc.line, character: loc.character }); });
-            return true;
-          },
-          mousemove(e, v) {
-            const want = e.metaKey || e.ctrlKey;
-            const cur = v.state.field(marksField).m.link;
-            if (!want) { if (cur) v.dispatch({ effects: setMarks.of({ link: null }) }); return false; }
-            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-            const w = pos == null ? null : wordAt(v, pos);
-            if (w?.[0] !== cur?.[0] || w?.[1] !== cur?.[1]) v.dispatch({ effects: setMarks.of({ link: w }) });
-            return false;
-          },
-          keyup(e, v) { if ((e.key === 'Meta' || e.key === 'Control') && v.state.field(marksField).m.link) v.dispatch({ effects: setMarks.of({ link: null }) }); return false; },
           scroll() { props.onScroll(); return false; },
         }),
       ],
