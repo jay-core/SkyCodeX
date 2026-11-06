@@ -1,6 +1,6 @@
 # Flow views (grid and metro), the approved UX changes, and the reliability fixes: the plan
 
-Decided 2026-11-05. **Not implemented yet**: building starts on "SkyCodeX execute!". Mock-ups in [mockups/flow](mockups/flow).
+Decided 2026-11-05. **Built 2026-11-06** (what is in, what is checked and what is not yet: [ROADMAP.md](ROADMAP.md), 2026-11-06). Mock-ups in [mockups/flow](mockups/flow).
 
 ## 1. What is decided, exactly as approved
 
@@ -19,6 +19,18 @@ Decided 2026-11-05. **Not implemented yet**: building starts on "SkyCodeX execut
 - Each square holds that call's **steps** (done dim, current gold, ↻ again); a call inside one file is tinted in the file's colour; empty squares show a faint dot.
 - Each row ends with a **"called ×N"** bar; each column shows **"N calls"** it makes.
 - A **crosshair** follows the current call; sort **by file / run order / most called**; large projects show **files × files** first, a click opens a block's functions.
+
+### Grid, refined (approved 2026-11-06, replaces the description above where they differ)
+- **Axes labelled where they are:** CALLER → beside the column names, CALLED ↓ above the row names.
+- **Totals always in sight:** TIMES CALLED (bar and ×N) at the end of each row, CALLS IT MAKES under each column; the grid fits the pane.
+- **Key** under the summary line: colour = file; numbers in squares = **steps** (1–N), ƒ = function; dim = run, gold = now, plain = to come; from 4 calls a square shows one dot per call and the count. No ↻ in the grid: a square lists its calls in run order (`13 · 16`).
+- **Summary line:** functions called, callers, calls, share that cross a file, most called; sort by file / run order / most called (ƒN = order of first run; by file, rows follow ƒ order within each file).
+- **File outlines** only around a file's own block when its functions call each other (an empty block gets none).
+- **Hover** a square: its row and column tint, the square is outlined, a hand pointer and a tag (`route → match_path · step 18 · click to open`, placed so it covers no square).
+- **Selected square opens in place:** its column widens and its row grows to list each call as `step N` with its calling line and line number; the current one gold.
+- **Click a step** → the run goes there; the code preview shows that call with the called function outlined as in the folder tab's preview panes, and the calls inside its body outlined; **clicking an outlined call** moves the run to its step.
+- **Details card** (bottom right, joined to the selection by the dotted gold line) holds everything, scrolling inside itself: times called; every call (step, 1st/2nd…, file:line, the calling line); caller (function, file, calls it makes, the loop it is in); called (function, file and lines, signature, what it passes in and gets back, its calls with steps, library calls not followed, loops, ways out); effects (what it changes, globals, locks, allocation, throws, pure or why not, thread); notes (comment, findings, files crossed).
+- **Up-down divider** between the code preview and the card: drag up → the card grows until all its content fits (never past it; it scrolls only if the pane is too short), the code preview shrinks to a few lines at least; drag down → the code preview grows until the card is at its comfortable minimum (header, times called, the current call: about 170 px). Remembered, like the left-right divider.
 
 ### Shared by both views
 - **Details box** at the bottom of the right pane, linked from the selection by a fine **dotted gold line** ([details-link.png](mockups/flow/details-link.png)): for metro, the step's facts and where each came from; for grid, the call's calling lines, files and enclosing loop.

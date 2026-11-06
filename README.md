@@ -12,9 +12,10 @@ Copyright (c) 2026 Jatin Aggarwal. See [LICENSE](LICENSE). (Formerly called Lith
 
 **1. The flow of the whole program, not just the file you're in**
 - Pick a program (SkyCodeX finds every `main` and suggests the likely one) and see its run two ways, switched with **Tab**:
-  - **Sequence:** one row per call, in execution order. Step through calls, returns and loop passes with the keyboard.
-  - **Boxes:** files as boxes, the functions that run as rows, and a numbered line from every caller to every callee. Readable from "whole project" down to 100%.
-- Press **Space** and a marker plays the run along the lines.
+  - **Metro:** the run as a metro line, one station per call in execution order, a colour per file. Each row says who calls what, as written, where the result goes, and what the analyses note. Step through calls, returns and loop passes with the keyboard.
+  - **Grid:** who calls whom. Called functions down the side, callers across the top, grouped by file; each square holds the steps where that call happens, with the totals always in sight. Click a square to open it in place.
+- Beside both, the step's code with the calls it makes outlined: click one to go to that step. A card below holds everything about the step: how often it's called and from where, what it passes and gets back, its loops, ways out and effects.
+- Press **Space** and the run plays, its code walked line by line at the play speed.
 - It follows calls through virtual methods, function pointers, interrupt handlers, threads and RTOS tasks (std::thread, pthread, FreeRTOS, ThreadX, Zephyr, CMSIS…).
 
 **2. Analyses on that run, graded honestly**
@@ -74,11 +75,11 @@ Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
 1. **Open a folder.** When no folder is open, the start window shows your five most recent folders (press 1–5) and **Open a folder**. The folder doesn't need to be built: without a `compile_commands.json`, SkyCodeX writes one into its own data folder, never into your project.
 2. **Pick a program** from the list, or let SkyCodeX open the likely one. Backspace goes back to the list.
-3. **Read the run.** **Tab** switches sequence and boxes, **Space** plays, and the step buttons (or the keyboard) move one call at a time.
+3. **Read the run.** **Tab** switches metro and grid, **Space** plays, and the step buttons (or the keyboard) move one call at a time.
 
 | Key | Does |
 |---|---|
-| Tab | Switch sequence ↔ boxes, keeping your place |
+| Tab | Switch metro ↔ grid, keeping your place |
 | Space | Play / pause the run |
 | ⇧-click two functions | Every route between them |
 | D / ⇧D | More code for this function / everywhere |
@@ -86,7 +87,7 @@ Unpack it and put the folder anywhere: a projects folder or a USB drive.
 | M | Magnifier |
 | Alt ← / Alt → | Preview: one level back / one level deeper (Alt Home: back to the source) |
 | + / − | Play speed, 0.25× to 3× |
-| ⌘/Ctrl-click | Go to definition |
+| ⌘/Ctrl-click | Go to definition (⌘/Ctrl-hover shows where it leads; ⌥-click peeks it under the line) |
 | ⌘/Ctrl ⇧ F | Search the whole folder |
 | F2 | Rename |
 | ⌘/Ctrl . | Fixes and refactorings |

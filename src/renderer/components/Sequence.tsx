@@ -6,17 +6,18 @@
 // shared as a link or written out as a walkthrough. Every position comes from layoutSeq (src/shared/flowseq.ts),
 // which never lets two rows or labels share space.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
-import { seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
+import { setWalkSpeed, seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
 import { watch, journey, watchable, argName } from '../../shared/flowwatch';
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
-  move, Move, layoutSeq, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
+  move, Move, layoutSeq, stepNumbers, ordinal, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
   encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings } from '../../shared/flowseq';
 import { routesBetween, RouteInfo } from '../../shared/flowboxes';
 import type { RunFrame, Exit } from '../../shared/flowrun';
 import { settings, root, flash } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
+import { metroRow, MetroRow } from '../../shared/metrofacts';
 import { hlLine } from '../lib/hlcode';
 import StepPreview, { openStep, StepSplit } from './StepPreview';
 import Magnifier from './Magnifier';
@@ -24,7 +25,9 @@ import PlayControls from './PlayControls';
 import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 
-const ROW = 23, SLOT = 15, TOP = 30, SPINE = 16, SKY = 50;
+const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;   // TOP: below the legend and the column headings
+// one colour per file on the metro line, in order of first appearance
+const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
 /** Runs longer than this open around the step (A shows the whole run). */
 const AROUND_AT = 400;
@@ -38,7 +41,7 @@ const KEYS: [string, string][] = [
   ['Home / End', 'start / end of the run'], ['G', 'go to a step number, or paste a shared walk'], ['/', 'find a function and its paths from the start'],
   ['A', 'around the step: its callers and two levels of calls, the rest folded'], ['D / ⇧ D', 'more code in this function / everywhere: calls, decisions, all code'], ['⇧ F', 'fold or unfold this call'], ['T', 'tour: plays and waits at each loop and decision'], ['J', 'jump: two letters on every row in view'],
   ['E', 'ways out: the usual path dims, every early return, throw and exit lights'], ['W', 'watch a variable: every step that sets or reads it, through renames'], ['V', 'a value’s journey from this step: a parameter or what its calls pass on'], ['N', 'a note on this step'], ['K', 'the depth skyline on or off'], ['M', 'the magnifier on or off'], ['Enter', 'open the code at this step'],
-  ['Space', 'play; again to pause'], ['+ / −', 'play faster / slower'], ['Tab', 'switch to the boxes view'], ['?', 'this list'],
+  ['Space', 'play; again to pause'], ['+ / −', 'play faster / slower'], ['Tab', 'switch to the grid view'], ['?', 'this list'],
 ];
 
 export default function Sequence(props: { switcher: JSX.Element }) {
@@ -219,7 +222,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const geom = createMemo(() => {
     const s = S(), c = cur();
     if (!s || !c) return null;
-    return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: foldedAll(), skip: what()?.skip, extra: codeExtra() });
+    return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: foldedAll(), skip: what()?.skip, extra: codeExtra(), mode: 'metro' });
   });
   const [skyOn, setSkyOn] = createSignal(load('flow.skyline', true));
   const viewH = () => height() - (skyOn() ? SKY : 0);
@@ -258,6 +261,16 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R()[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
   const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  // ---- metro: the numbers, the facts of each row (built on demand for the rows on screen), a colour per file ----
+  const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
+  const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
+  const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f)); c.set(it, m); } return m; };
+  const fileCol = createMemo(() => {
+    const m = new Map<string, string>(), s = S();
+    if (s) for (const row of s.items) { const r = s.run.rows[row], f = r.kind === 'ref' ? s.run.rows[r.ref!].file : r.kind === 'step' ? r.file : r.caller != null ? s.run.rows[r.caller].file : r.file; if (!m.has(f)) m.set(f, METRO[m.size % METRO.length]); }
+    return m;
+  });
+  const colOf = (it: number) => fileCol().get(metro(it).file) ?? fileCol().get(rowOf(it).file) ?? '#7b8279';
   // (after num and short, which it uses as soon as the view opens with unsaved edits)
   const rippleNote = createMemo(() => {
     const s = S(), c = changed();
@@ -327,6 +340,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
 
   // play: one step at a strict cadence; any other key stops it
   let timer: ReturnType<typeof setInterval> | undefined;
+  createEffect(on([playing, speed], ([p, k]) => setWalkSpeed(p ? k : 0)));
+  onCleanup(() => setWalkSpeed(0));
   createEffect(on([playing, speed], ([p, k]) => {
     clearInterval(timer);
     if (!p) return;
@@ -543,9 +558,10 @@ export default function Sequence(props: { switcher: JSX.Element }) {
 
   // ---- size, focus, the box's own height ----
   onMount(() => {
-    const ro = new ResizeObserver(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); });
+    let f = 0;
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); }); });
     ro.observe(canvas);
-    onCleanup(() => ro.disconnect());
+    onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); });
     canvas.focus();
   });
   // the box is as tall as what it says: measured after it is drawn
@@ -664,6 +680,16 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const ways = createMemo(() => (S() ? stepWays(S()!, trail()) : []));
 
+  /** An outermost loop's summary: how many steps, functions and files run inside it (a chapter of the run). */
+  const sumCache = createMemo(() => { S(); nums(); return new Map<number, string>(); });
+  const chapterSum = (f: number) => {
+    const hit = sumCache().get(f); if (hit != null) return hit;
+    const s = S()!, [a, b] = s.span.get(f)!, fns = new Set<number>(), fls = new Set<string>();
+    for (let i = a; i <= b; i++) { const n = nums()[i]; if (n?.fn) fns.add(n.fn); fls.add(metro(i).file); }
+    const out = ` · ${b - a + 1} steps · ${fns.size} functions · ${fls.size} files`;
+    sumCache().set(f, out);
+    return out;
+  };
   const frameX = (f: number) => { const g = geom()!, [a, b] = S()!.span.get(f)!; let m = Infinity; for (let i = a; i <= b; i++) if (!hidden().has(i)) m = Math.min(m, g.x[i]); return m - 12; };
   const visFrames = createMemo(() => {
     const s = S(), g = geom();
@@ -734,12 +760,15 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </Show>
           </span>
         </div>
-        <div class="seqv" classList={{ still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
+        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
-            <Show when={geom()!.mode === 'files'}>
-              <For each={geom()!.lanes}>{(f, i) => <div class="slane" style={{ left: `${34 + i() * Math.floor((width() - SPINE - 40) / geom()!.lanes.length)}px` }} title={f}>{basename(f)}</div>}</For>
-            </Show>
+            <div class="mlegend">
+              <div class="mfiles"><span>line colour = file</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f).replace(/\.(c|cc|cpp|cxx|h|hpp)$/, '')}</span>}</For></div>
+              <div class="mhead" style={{ left: `${geom()!.x[0] ?? 0}px`, width: `${Math.max(60, width() - SPINE - (geom()!.x[0] ?? 0) - 10)}px` }}>
+                <span class="h1">step · ƒ</span><span class="h2">who → the call as written</span><span class="h3">result goes to</span><span class="h4">notes</span>
+              </div>
+            </div>
             <div class="seqin" style={{ transform: `translateY(${-scroll()}px)` }}>
               <For each={visFrames()}>{(f) => {
                 const fr = () => S()!.run.frames[f] as RunFrame;
@@ -748,10 +777,27 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   <div class="sframe" classList={{ hot: hotFrame(f) }} style={{ left: `${frameX(f)}px`, top: `${geom()!.y[sp()[0]] + 1}px`, height: `${geom()!.y[sp()[1]] + geom()!.h[sp()[1]] - geom()!.y[sp()[0]] - 2}px` }}>
                     <span style={{ top: `${(geom()!.slotY.get(f) ?? 0) - geom()!.y[sp()[0]] - 1}px`, 'max-width': `${width() - SPINE - frameX(f) - 30}px` }}>
                       ↻ {fr().count != null ? `×${fr().count} · ` : ''}{fr().text}{hotFrame(f) ? ` · pass ${cur()!.passes[f] ?? 1}${fr().count != null ? ` of ${fr().count}` : ''}` : ''}
+                      <Show when={fr().parent == null}><i class="msum">{chapterSum(f)}</i></Show>
                     </span>
                   </div>
                 );
               }}</For>
+              <svg class="mtrack" width={geom()!.x[0]} height={geom()!.height} aria-hidden="true">
+                <For each={visible()}>{(it, k) => {
+                  const cy = (i: number) => geom()!.y[i] + ROW / 2;
+                  const prev = () => (k() > 0 ? visible()[k() - 1] : -1);
+                  const fut = () => !!cur() && it > cur()!.at;
+                  return (
+                    <>
+                      <Show when={prev() >= 0}>{(_) => { const a = prev(), x1 = () => geom()!.barX[a], y1 = () => cy(a), x2 = () => geom()!.barX[it], y2 = () => cy(it), h = () => Math.min(16, (y2() - y1()) * 0.6);
+                        return <path d={`M${x1()} ${y1()} C${x1()} ${y1() + h()} ${x2()} ${y2() - h()} ${x2()} ${y2()}`} stroke={colOf(it)} stroke-width="3.5" fill="none" stroke-linecap="round" opacity={fut() ? 0.3 : 1} />; }}</Show>
+                      <Show when={cur()?.at === it} fallback={<circle cx={geom()!.barX[it]} cy={cy(it)} r="5" fill="#171817" stroke={colOf(it)} stroke-width="2.5" stroke-dasharray={nums()[it]?.again ? '2.5 2' : undefined} opacity={fut() ? 0.45 : 1} />}>
+                        <circle cx={geom()!.barX[it]} cy={cy(it)} r="12" fill="rgba(227,214,173,.16)" /><circle cx={geom()!.barX[it]} cy={cy(it)} r="6.5" fill="#e3d6ad" stroke="#171817" stroke-width="2" />
+                      </Show>
+                    </>
+                  );
+                }}</For>
+              </svg>
               <For each={visBars()}>{(it) => (
                 <div class="sbar" classList={{ on: chain().has(S()!.items[it]) }} style={{ left: `${geom()!.barX[it]}px`, top: `${geom()!.y[it] + 4}px`, height: `${geom()!.y[S()!.lastItem[it]] + geom()!.h[S()!.lastItem[it]] - geom()!.y[it] - 8}px` }} />
               )}</For>
@@ -781,17 +827,23 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const sel = () => cur()?.at === it;
                 const tag = () => (sel() ? '' : it === prevAt() ? '← back' : it === nextAt() ? (nextIsReturn() ? `next → · back in ${short(nextIsReturn())}` : 'next →') : '');
                 return (
-                  <div class={`srow k-${r().kind}`} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel(), cadd: r().change === 'added', cchg: r().change === 'changed' }}
+                  <div class={`srow k-${r().kind}`} data-name={r().kind === 'indirect' ? r().text : short(r().kind === 'ref' && r().ref != null ? R()[r().ref!].name : r().name)} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel(), cadd: r().change === 'added', cchg: r().change === 'changed' }}
                     style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.y[it]}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
                     onClick={() => { setPeek(null); go({ jump: it }); canvas.focus(); }}
                     onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; peekTimer = setTimeout(() => setPeek({ it, up }), 450); }}
                     onMouseLeave={() => { clearTimeout(peekTimer); setPeek(null); }}>
-                    <span class="n">{num(it)}</span>
-                    <span class="nm">{r().kind === 'indirect' ? r().text : short(r().name)}</span>
-                    <Show when={!sel() && geom()!.mode === 'depth' && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}</span></Show>
-                    <Show when={sel() && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}:{r().line + 1}</span></Show>
-                    <Show when={r().kind === 'indirect'}><span class="nt" title={r().could?.length ? `could be: ${r().could!.join(', ')} — functions whose address the code takes` : undefined}>{r().via}{r().could?.length ? ` · could be ${r().could!.slice(0, 3).join(', ')}${r().could!.length > 3 ? ` +${r().could!.length - 3}` : ''}` : ''}</span></Show>
-                    <Show when={r().kind === 'value'}><span class="nt">named, not called</span></Show>
+                    <span class="n" title="step: its place in the run">{it + 1}</span>
+                    <span class="fno" title={nums()[it]?.fn ? `function ${nums()[it].fn} · its ${ordinal(nums()[it].call)} call` : undefined}>{nums()[it]?.again ? <span class="rp">↻</span> : null}{nums()[it]?.fn ? `ƒ${nums()[it].fn}` : r().kind === 'indirect' ? '⇢' : '·'}</span>
+                    <span class="mmain">
+                      <Show when={metro(it).who} fallback={<span class="nm">{r().kind === 'indirect' ? r().text : short(r().name)}</span>}>
+                        <span class="who">{metro(it).who}</span><span class="ar">→</span><span class="nm mcall" title={r().kind === 'indirect' && r().could?.length ? `could be: ${r().could!.join(', ')} — functions whose address the code takes` : undefined}>{metro(it).callText}</span>
+                      </Show>
+                      <Show when={metro(it).inside}><span class="min">in <code>{metro(it).inside}</code></span></Show>
+                      <Show when={sel() && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}:{r().line + 1}</span></Show>
+                    </span>
+                    <span class="mres" classList={{ warn: metro(it).resultTone === 'warn' }}>{metro(it).result}</span>
+                    <span class="mnotes">
+                    <For each={metro(it).notes}>{(n) => <span class={`mchip t-${n.tone}`} title={n.text}>{n.text}</span>}</For>
                     <Show when={notes(it)}><span class="nt" classList={{ ask: whatOptions(it).length > 0 }} title={whatOptions(it).length ? 'what if this went the other way?' : undefined}
                       onClick={(e) => { const o = whatOptions(it); if (!o.length) return; e.stopPropagation(); setWhatMenu(whatMenu()?.it === it ? null : { it, options: o }); }}>{notes(it)}</span></Show>
                     <Show when={waysOut() && exitsAt(it).length}>
@@ -805,6 +857,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <For each={usesMarks(it)}>{(m) => <span class="nt sonly" classList={{ cadd: m.added }}>{m.text}</span>}</For>
                     <Show when={tag()}><span class="tag">{tag()}</span></Show>
                     <Show when={notesByItem()[it]}><span class="snote" title={notesByItem()[it]}>✎ {notesByItem()[it]}</span></Show>
+                    </span>
                   </div>
                 );
               }}</For>
@@ -997,31 +1050,51 @@ function rowNote(f: RunFrame): string {
   }
 }
 
-/** The whole run as a profile of call depth, along the bottom: loops shaded, edits and notes marked; drag to scrub. */
-function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<number, string>; onScrub: (it: number) => void; read: string }) {
-  let el!: HTMLCanvasElement, box!: HTMLDivElement;
+/** The run bars: the whole run as a profile of call depth, along the bottom. Green a first call, blue a function
+ *  called again, purple a call through a pointer; the current step outlined in pale gold; loops shaded; an orange dot
+ *  an edit, a gold line a note; taller is deeper. − / + zoom (then it scrolls); click or drag to go. */
+const SKY_COL = { first: '#7f9e82', again: '#6f86b8', ptr: '#b07fa4', value: '#5f665f' };
+const SKY_H = 30;
+export function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<number, string>; onScrub: (it: number) => void; read: string }) {
+  let el!: HTMLCanvasElement, box!: HTMLDivElement, wrap!: HTMLDivElement;
   const [w, setW] = createSignal(800);
   const [hov, setHov] = createSignal(-1);   // the bar under the pointer
-  onMount(() => { const ro = new ResizeObserver(() => setW(box.clientWidth)); ro.observe(box); onCleanup(() => ro.disconnect()); });
+  const [z, setZ] = createSignal(1);        // zoom: how many times wider than the pane
+  const nums = createMemo(() => (seq() ? stepNumbers(seq()!) : []));
+  const zMax = () => { const n = seq()?.items.length ?? 1, dpr = window.devicePixelRatio || 1; return Math.max(1, Math.min((n * 24) / Math.max(1, w()), 30000 / dpr / Math.max(1, w()))); };
+  const zoom = (k: number) => setZ(Math.max(1, Math.min(zMax(), z() * k)));
+  // applied on the next frame (the canvas it sizes is inside what is observed), and never wider than the pane at 100%
+  onMount(() => { let f = 0; const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => setW(wrap.clientWidth)); }); ro.observe(wrap); onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); }); });
   createEffect(() => {
-    const s = seq(), W = w(), H = SKY - 14, dpr = window.devicePixelRatio || 1, hv = hov();
+    const s = seq(), W = Math.floor(w() * z()), H = SKY_H, dpr = window.devicePixelRatio || 1, hv = hov(), N = nums();
     if (!s || !el) return;
     el.width = W * dpr; el.height = H * dpr; el.style.width = `${W}px`; el.style.height = `${H}px`;
     const x = el.getContext('2d')!;
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
-    const n = s.items.length, bw = W / Math.max(1, n), maxD = Math.max(1, ...s.items.map((r) => s.run.rows[r].depth));
+    const n = s.items.length, bw = W / Math.max(1, n), maxD = Math.max(1, ...s.items.map((r) => s.run.rows[r].depth)), gap = bw > 3 ? 1 : 0;
     for (let i = 0; i < n; i++) {
       const r = s.run.rows[s.items[i]], loops = r.frames.filter((f) => s.run.frames[f].kind === 'loop').length;
       if (loops) { x.fillStyle = `rgba(111,158,158,${Math.min(0.28, 0.06 + loops * 0.06)})`; x.fillRect(i * bw, 0, Math.ceil(bw), H); }
-      const h = 3 + (r.depth / maxD) * (H - 6), lit = i === hv;
-      // the hovered bar: a faint column behind it, the bar itself bright and a little taller
+      const h = 3 + (r.depth / maxD) * (H - 8), lit = i === hv, now = i === props.at;
+      // the hovered bar: a faint column behind it, the bar itself a little taller
       if (lit) { x.fillStyle = 'rgba(227,214,173,.10)'; x.fillRect(i * bw, 0, Math.max(2, Math.ceil(bw)), H); }
-      x.fillStyle = lit ? '#e3d6ad' : i === props.at ? '#ad9b6f' : props.changedItems.has(i) ? '#79c9ae' : r.kind === 'step' ? '#4a504a' : '#33373a';
-      const hh = lit ? Math.min(H, h + 3) : h;
-      x.fillRect(i * bw + (bw > 3 ? 0.5 : 0), H - hh, Math.max(lit ? 2 : 1, bw - (bw > 3 ? 1 : 0)), hh);
-      if (props.notes[i]) { x.fillStyle = '#ad9b6f'; x.fillRect(i * bw, 0, Math.max(2, bw), 2); }
+      x.fillStyle = r.kind === 'indirect' ? SKY_COL.ptr : r.kind === 'value' ? SKY_COL.value : r.kind === 'ref' || N[i]?.again ? SKY_COL.again : SKY_COL.first;
+      const hh = lit ? Math.min(H - 2, h + 3) : h, bx = i * bw + gap / 2, bwid = Math.max(lit || now ? 2 : 1, bw - gap);
+      x.globalAlpha = lit || now ? 1 : 0.72;
+      x.fillRect(bx, H - hh, bwid, hh);
+      x.globalAlpha = 1;
+      if (now) { x.strokeStyle = '#e3d6ad'; x.lineWidth = 1.5; x.strokeRect(bx - 1.5, H - hh - 1.5, bwid + 3, hh + 1.5); }
+      if (props.changedItems.has(i)) { x.fillStyle = '#e0904f'; x.beginPath(); x.arc(i * bw + bw / 2, H - hh - 4, 2, 0, Math.PI * 2); x.fill(); }
+      if (props.notes[i]) { x.fillStyle = '#c9b27a'; x.fillRect(i * bw, 0, Math.max(2, bw), 2); }
     }
   });
+  // zoomed in, the current bar stays in view
+  createEffect(on([() => props.at, z, w], () => requestAnimationFrame(() => {
+    const n = seq()?.items.length ?? 0;
+    if (!wrap || !n || z() <= 1) return;
+    const bx = ((props.at + 0.5) / n) * w() * z();
+    if (bx < wrap.scrollLeft + 30 || bx > wrap.scrollLeft + wrap.clientWidth - 30) wrap.scrollTo({ left: bx - wrap.clientWidth / 2 });
+  })));
   const itAt = (clientX: number) => { const r = el.getBoundingClientRect(), n = seq()?.items.length ?? 0; return Math.max(0, Math.min(n - 1, Math.floor(((clientX - r.left) / Math.max(1, r.width)) * n))); };
   const down = (e: PointerEvent) => {
     let last = -1;
@@ -1040,23 +1113,32 @@ function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<n
     const what = r.kind === 'step' ? `${r.n}  ${nm(r.name)}` : r.kind === 'ref' ? `→${fn.n}  ${nm(fn.name)}  again`
       : r.kind === 'indirect' ? `call through a pointer · ${nm(r.name)}` : nm(r.name);
     const loops = r.frames.map((f) => s.run.frames[f]).filter((f) => f.kind === 'loop');
-    const n = s.items.length, bw = w() / Math.max(1, n);
+    const n = s.items.length, bw = (w() * z()) / Math.max(1, n);
+    const kind = r.kind === 'indirect' ? 'via a pointer' : r.kind === 'ref' || nums()[i]?.again ? 'called again' : r.kind === 'step' ? 'first call' : '';
     return {
-      what, where: fn.file ? `${basename(fn.file)}:${fn.line + 1}` : '', depth: r.depth, loop: loops.length ? loops[loops.length - 1].text : '',
+      what, kind, where: fn.file ? `${basename(fn.file)}:${fn.line + 1}` : '', depth: r.depth, loop: loops.length ? loops[loops.length - 1].text : '',
       changed: props.changedItems.has(i), note: props.notes[i] ?? '', pos: `step ${i + 1} of ${n}`,
-      left: Math.max(110, Math.min(box.clientWidth - 110, (el.offsetLeft || 0) + (i + 0.5) * bw)),
+      left: Math.max(110, Math.min(box.clientWidth - 110, wrap.offsetLeft + (i + 0.5) * bw - wrap.scrollLeft)),
     };
   });
-  return <div class="ssky" ref={box} aria-label="the run as a profile of call depth · drag to scrub · K hides it">
-    <canvas ref={el} onPointerDown={down} onPointerMove={(e) => setHov(itAt(e.clientX))} onPointerLeave={() => setHov(-1)} />
+  return <div class="ssky" ref={box} aria-label="the run bars: the run as a profile of call depth · click or drag to go · K hides it">
+    <div class="skyk">
+      <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span>
+      <span><i class="now" />now</span><span><i class="loop" />in a loop</span><span><i class="ed" />edited</span><span><i class="nt" />note</span><span>taller = deeper</span>
+      <span class="grow" />
+      <Show when={props.read}><span class="seqread" title="functions you have been to in this run (kept between sessions)">{props.read}</span></Show>
+      <button class="zb" title="zoom out the run bars" disabled={z() <= 1} onClick={() => zoom(1 / 2)}>−</button><span class="zv">{Math.round(z() * 100)}%</span><button class="zb" title="zoom in the run bars (then scroll)" disabled={z() >= zMax()} onClick={() => zoom(2)}>+</button>
+    </div>
+    <div class="skyw" ref={wrap}>
+      <canvas ref={el} onPointerDown={down} onPointerMove={(e) => setHov(itAt(e.clientX))} onPointerLeave={() => setHov(-1)} />
+    </div>
     <Show when={tip()}>{(tp) => (
       <div class="sskytip" style={{ left: `${tp().left}px` }}>
         <div class="w">{tp().what}</div>
-        <div class="d">{tp().where}{tp().where ? ' · ' : ''}depth {tp().depth}{tp().changed ? ' · edited' : ''}</div>
+        <div class="d">{tp().kind}{tp().kind ? ' · ' : ''}{tp().where}{tp().where ? ' · ' : ''}depth {tp().depth}{tp().changed ? ' · edited' : ''}</div>
         <Show when={tp().loop}><div class="d">↻ {tp().loop}</div></Show>
         <Show when={tp().note}><div class="d nt">{tp().note}</div></Show>
         <div class="d k">{tp().pos} · click to go there · drag to scrub</div>
       </div>
-    )}</Show>
-    <Show when={props.read}><span class="seqread" title="functions you have been to in this run (kept between sessions)">{props.read}</span></Show></div>;
+    )}</Show></div>;
 }

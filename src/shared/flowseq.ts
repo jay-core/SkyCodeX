@@ -192,7 +192,7 @@ export function embers(trail: StepState[], n = 4): number[] {
 // ---------- layout ----------
 
 export interface SeqGeom {
-  mode: 'files' | 'depth';
+  mode: 'files' | 'depth' | 'metro';
   lanes: string[];                   // files mode: one column per file, in order of first appearance
   y: number[]; h: number[];          // per item; then the end-of-run row at index items.length
   slotY: Map<number, number>;        // loop frame → the y of its label's own row
@@ -200,7 +200,7 @@ export interface SeqGeom {
   barX: number[];                    // per item: where the bar of a running function is drawn
   height: number;
 }
-export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number]; extra?: Map<number, number> }
+export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth' | 'metro'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number]; extra?: Map<number, number> }
 
 /** Columns, rows and label slots. Every row and every label has its own y band; no two overlap (checked in tests). */
 export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
@@ -222,9 +222,14 @@ export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
     });
   }
   const depthX = (d: number) => 20 + Math.min(d, 24) * 16 + Math.max(0, d - 24) * 3;
+  // metro: every row's text starts at one column; barX is its station on the line, one lane per call depth (deep runs squeeze)
+  const maxD = mode === 'metro' ? Math.max(0, ...s.items.map((row) => R[row].depth)) : 0;
+  const metroX = (d: number) => 14 + Math.min(d, 10) * 16 + Math.max(0, d - 10) * 4;
+  const textX = metroX(maxD) + 26;
   const x: number[] = [], barX: number[] = [];
   s.items.forEach((row, it) => {
-    if (mode === 'files') {
+    if (mode === 'metro') { x.push(textX); barX.push(metroX(R[row].depth)); }
+    else if (mode === 'files') {
       const lx = 34 + lanes.indexOf(fileOf(row)) * laneW;
       x.push(lx + 12 + nestOf[it] * 6 + (R[row].kind === 'indirect' || R[row].kind === 'value' ? 6 : 0));
       barX.push(lx + 3 + nestOf[it] * 6);
@@ -626,3 +631,22 @@ function findingsIn(run: Run): Finding[] {
   });
   return out;
 }
+
+/**
+ * The numbers shown for each item, the same in every view and in the code preview: `step` is its place in the run
+ * (1, 2, 3 … only ever counting up), `fn` its function's number (ƒ; 0 for a call through a pointer or a value), and
+ * `call` which call of that function it is so far in the run (1st, 2nd …).
+ */
+export interface StepNumber { step: number; fn: number; call: number; again: boolean }
+export function stepNumbers(s: Seq): StepNumber[] {
+  const R = s.run.rows, seen = new Map<string, number>();
+  return s.items.map((row, i) => {
+    const r = R[row], fnRow = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
+    const fn = r.kind === 'step' || r.kind === 'ref' ? fnRow.n : 0;
+    const k = fn ? fnRow.key : `#${i}`, call = (seen.get(k) ?? 0) + 1;
+    seen.set(k, call);
+    return { step: i + 1, fn, call, again: call > 1 };
+  });
+}
+/** "1st", "2nd", "3rd", "11th" … */
+export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;

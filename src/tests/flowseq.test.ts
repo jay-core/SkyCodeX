@@ -300,3 +300,27 @@ describe('findings from the facts (both found in tinyhttp without running it)', 
     expect(f.map((x) => x.kind).sort()).toEqual(['dropped', 'race']);
   });
 });
+
+describe('step numbers', () => {
+  it('counts steps up one by one, keeps each function its own number, and counts its calls', async () => {
+    const { stepNumbers, ordinal } = await import('../shared/flowseq');
+    const ns = stepNumbers(s);
+    expect(ns.map((n) => n.step)).toEqual(s.items.map((_, i) => i + 1));
+    // a function keeps one ƒ number every time it runs, and its calls are counted 1, 2, 3 …
+    const byFn = new Map<number, number[]>();
+    ns.forEach((n) => { if (n.fn) byFn.set(n.fn, [...(byFn.get(n.fn) ?? []), n.call]); });
+    for (const calls of byFn.values()) expect(calls).toEqual(calls.map((_, i) => i + 1));
+    expect(ns.every((n) => n.again === n.call > 1)).toBe(true);
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
+  });
+});
+
+describe('metro layout', () => {
+  it('starts every row at one column and puts each station one lane further right per call depth', () => {
+    const g = layoutSeq(s, 0, { width: 1200, rowH: 23, slotH: 15, top: 46, boxH: 0, mode: 'metro' });
+    expect(g.mode).toBe('metro');
+    expect(new Set(g.x).size).toBe(1);
+    s.items.forEach((row, i) => s.items.forEach((row2, j) => { if (s.run.rows[row].depth < s.run.rows[row2].depth) expect(g.barX[i]).toBeLessThan(g.barX[j]); }));
+    expect(Math.max(...g.barX)).toBeLessThan(g.x[0]);
+  });
+});

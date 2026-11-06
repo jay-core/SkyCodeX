@@ -8,7 +8,7 @@ import { api } from '../lib/api';
 import { refreshTree } from './FilesPane';
 import { indexEpoch, lspState } from '../lib/lsp';
 import Sequence from './Sequence';
-import FlowBoxes from './FlowBoxes';
+import GridView from './GridView';
 
 export default function Flow() {
   onMount(ensureBuilt);
@@ -25,14 +25,14 @@ export default function Flow() {
   };
   // switching views: the current step glides from its row in one view to its place in the other, as the new view
   // fades in (no motion when animations are calmed: reduced motion or battery saver)
-  async function switchView(v: 'sequence' | 'boxes') {
+  async function switchView(v: 'metro' | 'grid') {
     if (v === flowView()) return;
-    const sel = (w: string) => document.querySelector(w === 'sequence' ? '.seqv .srow.sel' : '.bxv .fr.sel') as HTMLElement | null;
+    const sel = (w: string) => document.querySelector(w === 'metro' ? '.seqv .srow.sel' : '.gview .gcell.on') as HTMLElement | null;
     const from = sel(flowView()), calm = document.documentElement.classList.contains('calm');
     const a = from?.getBoundingClientRect(), label = from?.textContent?.trim() ?? '';
     setFlowView(v);
     if (calm || !a) return;
-    const host = document.querySelector(v === 'sequence' ? '.seqv' : '.bxv') as HTMLElement | null;
+    const host = document.querySelector(v === 'metro' ? '.seqv' : '.gview') as HTMLElement | null;
     host?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' });
     let to: HTMLElement | null = null;
     for (let i = 0; i < 40 && !(to = sel(v)); i++) await new Promise((r) => requestAnimationFrame(r));
@@ -59,8 +59,8 @@ export default function Flow() {
       <Show when={entries().length > 1 && entries().length <= 6 && !listing()}>
         <span class="lanes"><For each={entries()}>{(e, i) => <button class="chip" classList={{ on: lane() === i() }} aria-pressed={lane() === i()} title={e.rel} onClick={() => setLane(i())}>{e.label}</button>}</For></span>
       </Show>
-      <button class="chip" classList={{ on: flowView() === 'sequence' }} aria-pressed={flowView() === 'sequence'} onClick={() => switchView('sequence')}>sequence</button>
-      <button class="chip" classList={{ on: flowView() === 'boxes' }} aria-pressed={flowView() === 'boxes'} onClick={() => switchView('boxes')}>boxes</button>
+      <button class="chip" classList={{ on: flowView() === 'metro' }} aria-pressed={flowView() === 'metro'} onClick={() => switchView('metro')}>metro</button>
+      <button class="chip" classList={{ on: flowView() === 'grid' }} aria-pressed={flowView() === 'grid'} onClick={() => switchView('grid')}>grid</button>
       <button class="chip" title="read the folder again: new files, functions and entry points, and a compile_commands.json a build has written" onClick={refresh}>refresh</button>
       <span class="mgchips">
         <button class="chip" classList={{ on: !!magnify() }} aria-pressed={!!magnify()} title="a magnifier that follows the pointer, at any zoom (M)" onClick={toggleMagnify}>magnifier</button>
@@ -71,14 +71,14 @@ export default function Flow() {
   return (
     <div style={{ height: '100%' }} onKeyDown={(e) => {
       // Tab switches between the two views, keeping the selected step
-      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); switchView(flowView() === 'boxes' ? 'sequence' : 'boxes'); }
+      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); switchView(flowView() === 'grid' ? 'metro' : 'grid'); }
       // Backspace: back to the list of programs
       if (e.key === 'Backspace' && entries().length > 1 && !listing() && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); setPrograms(true); }
       // M: the magnifier, in either view
       if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); toggleMagnify(); }
     }}>
       <Show when={!listing()} fallback={<Programs switcher={switcher()} />}>
-        <Show when={flowView() === 'boxes'} fallback={<Sequence switcher={switcher()} />}><FlowBoxes switcher={switcher()} /></Show>
+        <Show when={flowView() === 'grid'} fallback={<Sequence switcher={switcher()} />}><GridView switcher={switcher()} /></Show>
       </Show>
     </div>
   );

@@ -12,7 +12,7 @@ import { buildSeq, startState, move, Move, Seq, StepState } from '../../shared/f
 import { alignRuns, alignChange, functionTexts, Side } from '../../shared/flowalign';
 import { t } from './i18n';
 
-export type FlowView = 'sequence' | 'boxes';
+export type FlowView = 'metro' | 'grid';
 /** Ways out (E, both views): the usual path dims and every early return, throw, goto and call that never returns lights. */
 export const [waysOut, setWaysOut] = createSignal(false);
 /** A step's early ways out (src/shared/flowrun.ts exitsOf); none for other rows. */
@@ -23,7 +23,8 @@ export const [followed, setFollowed] = createSignal<{ label: string; hits: Hit[]
 export const hitWords = (h: Hit) => h.how === 'set' ? (h.copy ? `▲ sets its copy ${h.as}` : `▲ sets ${h.as}`) : h.how === 'read' ? `▽ reads ${h.as}` : h.how === 'passed' ? `→ ${h.from} passed on as ${h.as}${h.copy ? ' · a copy' : ''}` : `↩ returns ${h.as}`;
 /** How many functions of a run can leave early. */
 export const leavingCount = (run: Run) => Object.values(run.exits ?? {}).filter((xs) => xs.some((x) => x.early)).length;
-const stored = (() => { try { return localStorage.getItem('flow.view') === 'boxes' ? 'boxes' : 'sequence'; } catch { return 'sequence'; } })();
+// the views were called sequence and boxes before: a choice saved under the old names is read as the new ones
+const stored = ((): FlowView => { try { const v = localStorage.getItem('flow.view'); return v === 'grid' || v === 'boxes' ? 'grid' : 'metro'; } catch { return 'metro'; } })();
 export const [flowView, setFlowViewRaw] = createSignal<FlowView>(stored);
 export function setFlowView(v: FlowView) { setFlowViewRaw(v); try { localStorage.setItem('flow.view', v); } catch { /* kept for this run */ } }
 
@@ -34,6 +35,8 @@ export const [entries, setEntries] = createSignal<Entry[]>([]);
 export const [lane, setLaneRaw] = createSignal(0);
 export const [seq, setSeq] = createSignal<Seq | null>(null);
 export const [trail, setTrail] = createSignal<StepState[]>([]);
+/** The play speed while a view plays the run (0 when stopped): the code preview walks the body at this speed. */
+export const [walkSpeed, setWalkSpeed] = createSignal(0);
 export const [runStatus, setRunStatus] = createSignal('');
 /** The start key of the run shown (a function's uri#line), for links and what is kept per start. */
 export const entryStart = () => graph()?.lanes[0]?.start ?? '';

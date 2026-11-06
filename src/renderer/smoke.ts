@@ -20,7 +20,6 @@ import { fileToUri } from './lib/api';
 import { fixesIn } from './lib/repair';
 import { applyEdit, isCast } from '../shared/repair';
 import { undo, undoDepth } from '@codemirror/commands';
-import { boxModel, layoutBoxes } from '../shared/flowboxes';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -78,6 +77,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'colors') return colorsCheck(report);
   if (info()?.scenario === 'revisit') return revisitCheck(report);
   if (info()?.scenario === 'exits') return exitsCheck(report);
+  if (info()?.scenario === 'jump') return jumpCheck(report);
   if (info()?.scenario === 'findings') return findingsCheck(report);
   if (info()?.scenario === 'watch') return watchCheck(report);
   if (info()?.scenario === 'values') return valuesCheck(report);
@@ -263,41 +263,41 @@ export async function runSmoke() {
     (document.querySelector('.wctl') as HTMLElement).style.opacity = '';
     (document.querySelector('.wctl') as HTMLElement).style.transition = '';
 
-    setFlowView('boxes');
+    setFlowView('grid');
     setPage('flow');
-    report.flowReady = await until(() => document.querySelectorAll('.fbox').length >= 4 && ![...document.querySelectorAll('.fbox:not(.dead) .t')].some((e) => /\.(h|hpp)$/.test(e.textContent ?? '')), 45000);
+    report.flowReady = await until(() => document.querySelectorAll('.gview .gcell.has').length >= 4, 45000);
     await sleep(1200);
-    report.flowBoxes = [...document.querySelectorAll('.fbox .t')].map((e) => e.textContent);
-    report.flowLabels = [...document.querySelectorAll('.flab')].map((e) => e.textContent);
-    // the rename above is unsaved: the change ripple marks the renamed function's row
-    report.flowRipple = [...document.querySelectorAll('.fbox .fr.chg .nm')].map((e) => e.textContent);
+    report.gridHeads = { rows: [...document.querySelectorAll('.gview .grh b')].map((e) => e.textContent), cols: [...document.querySelectorAll('.gview .gch b')].map(headText) };
+    report.gridSummary = document.querySelector('.gview .gtop')?.textContent;
+    report.gridTotals = { rows: document.querySelectorAll('.gview .grh').length, timesCalled: document.querySelectorAll('.gtot .t').length, cols: document.querySelectorAll('.gview .gch').length, callsItMakes: document.querySelectorAll('.gmk .m').length };
+    // the rename above is unsaved: the change ripple marks the renamed function
+    report.flowRipple = [...document.querySelectorAll('.gview .grh.chg b, .gview .gch.chg b')].map(headText);
     report.flowChanged = [...changed()].map((i) => { const r = seq()!.run.rows[i]; return `${r.name} ${r.file.split('/').pop()}:${r.start}+${r.lines}`; });
-    await api.smoke.capture('5-flow');
-    const server = [...document.querySelectorAll('.fbox')].find((e) => /src\/server\.cpp$/.test(e.querySelector('.t')?.getAttribute('title') ?? '')) as HTMLElement | undefined;
-    if (server) {
-      server.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
-      await sleep(500);
-      report.hoverList = [...document.querySelectorAll('.hpop div')].map((e) => e.textContent);
-      await api.smoke.capture('6-flow-hover');
-      server.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
-      server.click();
-      await sleep(1200);
-      await api.smoke.capture('7-flow-select');
-    }
-
-    // unreached boxes hover and open too
-    const dead = document.querySelector('.fbox.dead') as HTMLElement | null;
-    report.flowStatus = document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent;
-    report.startMarkers = [...document.querySelectorAll('.fbox .start')].map((e) => e.textContent);
-    if (dead) {
-      dead.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+    report.gridCollisions = auditGrid();
+    await api.smoke.capture('5-flow-grid');
+    {
+      // hover a square: its row and column tint, a hand pointer, a tag over no square that holds a call
+      const sq = [...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[];
+      const target = sq.find((e) => e.querySelectorAll('i').length >= 2) ?? sq[0];
+      target.dispatchEvent(new MouseEvent('mouseenter'));
       await sleep(400);
-      report.deadHover = [...document.querySelectorAll('.hpop div')].map((e) => e.textContent);
-      dead.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
-      dead.click();
-      await sleep(1200);
-      report.deadSelectCards = document.querySelectorAll('.pane.prev .card').length;
-      await api.smoke.capture('7b-flow-unreached');
+      const tag = document.querySelector('.gtag')?.getBoundingClientRect();
+      report.gridHover = { tag: document.querySelector('.gtag')?.textContent ?? null, tinted: document.querySelectorAll('.gview .gcell.hl').length, outlined: !!document.querySelector('.gview .gcell.hv'), pointer: getComputedStyle(target).cursor,
+        coversSquares: tag ? sq.filter((e) => e !== target && overlap(e.getBoundingClientRect(), tag)).length : -1 };
+      await api.smoke.capture('6-grid-hover');
+      // a click opens the square in place, and the card says what it holds
+      target.click();
+      await sleep(800);
+      report.gridOpen = { steps: [...document.querySelectorAll('.gview .gcell.pk .gstep')].map((e) => e.textContent), card: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, cardHead: document.querySelector('.sprev .ibx.full .h .w')?.textContent ?? null, link: !!document.querySelector('svg.slink path') };
+      await api.smoke.capture('7-grid-open');
+      // a step in the open square: the run goes there
+      const gs = [...document.querySelectorAll('.gview .gcell.pk .gstep')] as HTMLElement[], last = gs[gs.length - 1];
+      const want = Number(/step (\d+)/.exec(last?.textContent ?? '')?.[1] ?? 0);
+      last?.click();
+      await sleep(700);
+      report.gridStepGo = { want, now: Number(document.querySelector('.sprev .pstep b')?.textContent ?? 0), header: document.querySelector('.ghd')?.textContent ?? null };
+      (document.querySelector('.gview') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(300);
     }
     setPage('editor');
     await sleep(400);
@@ -400,24 +400,16 @@ export async function runSmoke() {
     report.cardSearch = !!document.querySelector('.pcol .card .cm-search') && !document.querySelector('.cm-editor .cm-search:not(.pcol *)');
     await api.smoke.capture('10c-card-search');
     (document.querySelector('.pcol .card .cm-search input') as HTMLInputElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    setPage('flow'); setFlowView('sequence');
+    setPage('flow'); setFlowView('metro');
     await until(() => !!document.querySelector('.seqv .playc'), 10000);
     const pc = (n: number) => document.querySelectorAll('.playc button')[n] as HTMLButtonElement;
     const stepAt = () => document.querySelector('.seqk')?.textContent ?? '';
     const a0 = stepAt(); pc(2).click(); await sleep(400); const a1 = stepAt();
     pc(1).click(); await sleep(1200); const playingOn = pc(1).getAttribute('aria-pressed'); pc(1).click(); await sleep(200);
     pc(0).click(); await sleep(300); const restarted = pc(1).getAttribute('aria-pressed'); pc(1).click();
-    setFlowView('boxes'); await until(() => !!document.querySelector('.bxv') && !!document.querySelector('.playc'), 10000);
-    // the diagram as a PNG: a real image of the whole diagram, at twice its size
-    const ex = [...document.querySelectorAll('.bxv ~ * .chip, .ph .chip')].find((c) => c.textContent === 'export') as HTMLElement | undefined;
-    ex?.click(); await sleep(200);
-    const png = palette()?.items?.find((i) => i.label === 'PNG image');
-    setPalette(null);
-    if (png) { await png.run(); await sleep(800); }
-    let pngFile = '';
-    for (const lv of ['functions', 'files', 'folders']) { const f = `${info()!.dataDir}/logs/smoke-${basename(root())}-${lv}.png`; if (await api.fs.exists(f)) pngFile = f; }
-    const bytes = pngFile ? ((await api.fs.read(pngFile)) as string).length : 0;
-    report.pngExport = { offered: !!png, file: basename(pngFile), bytes, png: pngFile ? ((await api.fs.read(pngFile)) as string).slice(1, 4) === 'PNG' : false };
+    setFlowView('grid'); await until(() => !!document.querySelector('.gview') && !!document.querySelector('.playc'), 10000);
+    // the grid's export asks where to save (a system dialog), so a smoke run only checks it is offered
+    report.pngExport = { offered: [...document.querySelectorAll('.ph .chip')].some((c) => c.textContent === 'export') };
     report.playControls = { stepMoved: a0 !== a1, playing: playingOn, restartPlays: restarted, boxes: document.querySelectorAll('.playc button').length };
     await api.smoke.capture('10d-play-controls');
     setPage('editor');
@@ -623,7 +615,7 @@ async function bootCheck(report: Record<string, unknown>) {
     // the flow is read once clangd has indexed the project (no indexing for 2 s running), as a person would see it
     await quiet(() => !indexing(), 2000, 180000);
     setPage('flow');
-    setFlowView('sequence');
+    setFlowView('metro');
     await until(() => document.querySelectorAll('.seqv .srow').length > 3 && !runStatus(), 60000);
     await quiet(() => !settlingNow() && !runStatus(), 1000, 60000);
     await sleep(800);
@@ -676,52 +668,29 @@ async function bootCheck(report: Record<string, unknown>) {
     report.seqHeader = document.querySelector('.ph .seqk')?.textContent;
     const stepName = (document.querySelector('.ph .seqpath')?.textContent ?? '').split('›').pop()!.trim();
     seqv.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
-    await until(() => document.querySelectorAll('.fbox').length > 0, 60000);
+    await until(() => document.querySelectorAll('.gview .gcell.has').length > 0, 60000);
     await sleep(600);
-    report.flowBoxes = document.querySelectorAll('.fbox').length;
-    // the boxes view: the same step selected; numbers on every line, never over each other or a box, at every zoom
-    report.boxKeptStep = !!stepName && document.querySelector('.fbox .fr.sel .nm')?.textContent === stepName;
-    report.boxCollisions = [] as string[];
-    const chipOf = (t: string) => [...document.querySelectorAll('.bxctl .chip')].find((c) => c.textContent === t) as HTMLElement;
-    for (const z of ['fit width', 'fit all', '100%', '150%', '−', '−', '−', '−', '−', '−']) {
-      chipOf(z).click();
-      await sleep(700);
-      (report.boxCollisions as string[]).push(...auditBoxes().map((x) => `${z} ${document.querySelector('.bxctl .ro')?.textContent}: ${x}`));
-    }
-    report.boxLevels = document.querySelector('.bxctl .lvl')?.textContent;
-    await api.smoke.capture('boxes-folders');
-    chipOf('100%').click();
-    await sleep(700);
-    await api.smoke.capture('boxes-100');
-    setFlowView('sequence');
+    report.gridSquares = document.querySelectorAll('.gview .gcell.has').length;
+    // the grid: the same step is the lit square, its called function named in gold; no text on other text
+    report.gridKeptStep = !!stepName && [...document.querySelectorAll('.gview .grh.on b')].some((e) => e.textContent === stepName);
+    report.gridCollisionsAfterTab = auditGrid();
+    await api.smoke.capture('grid-kept-step');
+    setFlowView('metro');
     await sleep(300);
     report.seqKeptStep = document.querySelector('.ph .seqk')?.textContent === report.seqHeader;
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(500);
-    // every route between main and split: two
-    const rowNamed = (n: string) => [...document.querySelectorAll('.fbox .fr')].find((e) => e.querySelector('.nm')?.textContent === n) as HTMLElement | undefined;
-    rowNamed('main')?.click();
+    // every route between main and split: two (⇧-click both names)
+    const headNamed = (n: string) => [...document.querySelectorAll('.gview .grh, .gview .gch')].find((e) => headText(e.querySelector('b')) === n) as HTMLElement | undefined;
+    headNamed('main')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
     await sleep(300);
-    rowNamed('split')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+    headNamed('split')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
     await sleep(500);
-    report.boxRoutes = document.querySelectorAll('.bxr').length;
-    // the layout engine in its worker lays out exactly as the same engine on the page does, at every level
-    {
-      const m = boxModel(seq()!.run, root());
-      const { default: Bundled } = await import('elkjs/lib/elk.bundled.js');
-      const { default: Api } = await import('elkjs/lib/elk-api.js');
-      // @ts-expect-error vite's worker import
-      const { default: W } = await import('elkjs/lib/elk-worker.min.js?worker&inline');
-      const onPage = new Bundled() as any, inWorker = new Api({ workerFactory: () => new W() }) as any;
-      const differ: string[] = [];
-      for (const lv of ['functions', 'files', 'folders'] as const) if (JSON.stringify(await layoutBoxes(m, lv, onPage)) !== JSON.stringify(await layoutBoxes(m, lv, inWorker))) differ.push(lv);
-      report.layoutWorker = { levels: 3, differ };
-      inWorker.terminateWorker?.();
-    }
-    await api.smoke.capture('boxes-routes');
-    (document.querySelector('.flow.bxv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    setFlowView('sequence');
+    report.gridRoutes = document.querySelectorAll('.bxr').length;
+    await api.smoke.capture('grid-routes');
+    (document.querySelector('.gview') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    setFlowView('metro');
     await sleep(300);
     // the analyser end to end, through the app's own clangd: every step from main, in execution order
     const entry = rankEntries(await findEntries(root()))[0];
@@ -737,7 +706,7 @@ async function bootCheck(report: Record<string, unknown>) {
     btn?.click();
     await sleep(100);
     const done = await until(() => !!btn && !btn.disabled, 120000);
-    setFlowView('sequence');
+    setFlowView('metro');
     await until(() => document.querySelectorAll('.seqv .srow').length > 3, 30000);
     report.refresh = { button: !!btn, finished: done, ms: Math.round(performance.now() - t0r), toast: document.querySelector('.toast')?.textContent ?? null, seqRows: document.querySelectorAll('.seqv .srow').length };
     setPage('editor');
@@ -748,15 +717,40 @@ async function bootCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
-/** Numbers on the boxes view's lines that cover each other or a box, as drawn now (screen rectangles). */
-function auditBoxes(): string[] {
+/** Two screen rectangles overlap by more than a pixel. */
+const overlap = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+/** A grid name as read (column names carry zero-width break points after underscores). */
+const headText = (e: Element | null) => (e?.textContent ?? '').replace(/​/g, '');
+/** The grid's totals in sight: TIMES CALLED inside the pane's width, CALLS IT MAKES above the run bars (62 px). */
+function totalsInSight(): string[] {
+  const sc = document.querySelector('.gview .gscroll') as HTMLElement | null, t = document.querySelector('.gview .gtot'), m = document.querySelector('.gview .gmk');
+  if (!sc || !t || !m) return ['no grid totals'];
+  const v = sc.getBoundingClientRect(), tr = t.getBoundingClientRect(), mr = m.getBoundingClientRect(), right = v.left + sc.clientWidth, bottom = v.top + sc.clientHeight - 62;
   const out: string[] = [];
-  const labs = [...document.querySelectorAll('.flab')].map((e) => ({ r: e.getBoundingClientRect(), t: e.textContent ?? '' }));
-  const boxes = [...document.querySelectorAll('.fbox')].map((e) => ({ r: e.getBoundingClientRect(), t: e.querySelector('.t')?.textContent ?? '' }));
-  const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
-  for (let i = 0; i < labs.length; i++) {
-    for (let j = i + 1; j < labs.length; j++) if (hit(labs[i].r, labs[j].r)) out.push(`"${labs[i].t}" over "${labs[j].t}"`);
-    for (const b of boxes) if (hit(labs[i].r, b.r)) out.push(`"${labs[i].t}" over box ${b.t}`);
+  if (tr.left < v.left - 1 || tr.right > right + 1) out.push(`TIMES CALLED at ${Math.round(tr.left)}–${Math.round(tr.right)}, outside the pane's ${Math.round(v.left)}–${Math.round(right)}`);
+  if (mr.top < v.top - 1 || mr.top + 34 > bottom + 1) out.push(`CALLS IT MAKES at ${Math.round(mr.top)}–${Math.round(mr.top + 34)}, outside the pane's ${Math.round(v.top)}–${Math.round(bottom)}`);
+  return out;
+}
+
+/**
+ * Text on text in the grid, as drawn now: names, file bands, axis labels and totals never cover each other. The
+ * sticky totals (TIMES CALLED, then CALLS IT MAKES under it) are opaque layers above the grid: text scrolled under one
+ * is hidden, not overlapping, so only text in the same layer is compared, and a layer counts as covering only when
+ * its background is really opaque.
+ */
+function auditGrid(): string[] {
+  const view = document.querySelector('.gview .gscroll')?.getBoundingClientRect();
+  if (!view) return ['no grid'];
+  const opaque = (el: Element | null) => !!el && getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(el).backgroundColor !== 'transparent';
+  const layerOf = (e: Element) => { const t = e.closest('.gtot'), m = e.closest('.gmk'); return t && opaque(t) ? 2 : m && opaque(m) ? 1 : 0; };
+  const items = [...document.querySelectorAll('.gview .grh b, .gview .gch b, .gview .gch span, .gview .gfb, .gview .grb span, .gview .gax, .gview .gtot .t, .gview .gmk .m')]
+    .map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 24), e, layer: layerOf(e) }))
+    .filter((x) => x.t && x.r.width >= 1 && x.r.bottom > view.top && x.r.top < view.bottom && x.r.right > view.left && x.r.left < view.right);
+  const out: string[] = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    if (a.layer !== b.layer || a.e.contains(b.e) || b.e.contains(a.e) || a.e.parentElement === b.e.parentElement && a.e.parentElement?.classList.contains('gch')) continue;
+    if (overlap(a.r, b.r)) out.push(`"${a.t}" over "${b.t}"`);
   }
   return out;
 }
@@ -824,7 +818,7 @@ async function largeCheck(report: Record<string, unknown>) {
       const d = await definitionAt(want, { line: call, character: lines[call].indexOf(name) + 1 });
       steps.definition = { of: name, to: d ? relPath(root(), (d as any).file ?? (d as any).uri ?? '') : null, ms: Math.round(performance.now() - t4) };
     }
-    setFlowView('boxes');
+    setFlowView('grid');
     setPage('flow');
     // a project with many mains opens on the list of them: the most likely one is picked, then back and again
     const tp = performance.now();
@@ -836,10 +830,11 @@ async function largeCheck(report: Record<string, unknown>) {
     (document.querySelector('.progs .pr.top') as HTMLElement).click();
     const t5 = performance.now(), tClick = at();
     const flowStatus = () => document.querySelector('.flow')?.parentElement?.querySelector('.ph span')?.textContent ?? '';
-    const fl = await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0 && !/tracing/.test(flowStatus()), 240000);
+    const drawn = () => document.querySelectorAll('.gview .gcell.has, .seqv .srow').length;
+    const fl = await until(() => drawn() > 0 && !/tracing/.test(flowStatus()), 240000);
     steps.busyToFirstPicture = busy(tClick, at());
     steps.entry = { count: entries().length, chosen: entries()[lane()]?.rel, name: entries()[lane()]?.name, start: entryStart() };
-    steps.flow = { status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, dead: document.querySelectorAll('.fbox.dead').length, arrows: document.querySelectorAll('.flab').length, ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
+    steps.flow = { status: flowStatus(), drawn: drawn(), ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
     await sleep(1500);
     await api.smoke.capture('large-2-flow');
     // when clangd finishes indexing the flow rebuilds with the whole call graph
@@ -847,37 +842,26 @@ async function largeCheck(report: Record<string, unknown>) {
     await sleep(1000);
     await until(() => !/tracing/.test(flowStatus()), 240000);
     await sleep(1500);
-    // the run of the first entry point, then the boxes view drawn from it: how long, how big, and readable at every zoom
+    // the run of the first entry point, then the grid drawn from it: how long, how big (files × files first when large),
+    // no text on other text, and a hovered square's tag wholly inside the window
     const t7 = performance.now();
-    await until(() => !!seq() && !runStatus() && document.querySelectorAll('.fbox .fr, .fbox .t').length > 0, 240000);
+    setFlowView('grid');
+    await until(() => !!seq() && !runStatus() && document.querySelectorAll('.gview .gcell').length > 0, 240000);
     steps.runState = { runStatus: runStatus(), status: flowStatus(), rows: seq()?.run.rows.slice(0, 8).map((r: any) => `${r.kind} ${r.name ?? r.key ?? ''}`) };
-    steps.run = { rows: seq()?.run.rows.length, steps: seq()?.run.rows.filter((r) => r.kind === 'step').length, files: document.querySelectorAll('.fbox').length, ms: Math.round(performance.now() - t7) };
-    const chipOf = (t: string) => [...document.querySelectorAll('.bxctl .chip')].find((c) => c.textContent === t) as HTMLElement | undefined;
-    const zooms: Record<string, unknown>[] = [];
-    for (const z of ['fit width', 'fit all', '100%', '150%', '−', '−', '−', '−', '−', '−']) {
-      const tz = performance.now();
-      chipOf(z)?.click();
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const frameMs = Math.round(performance.now() - tz);
-      await sleep(600);
-      const bad = auditBoxes();
-      zooms.push({ z, at: document.querySelector('.bxctl .ro')?.textContent, level: (document.querySelector('.bxctl .lvl')?.textContent ?? '').split(' ·')[0], boxes: document.querySelectorAll('.fbox').length, labels: document.querySelectorAll('.flab').length, frameMs, collisions: bad.length, first: bad.slice(0, 2) });
-    }
-    steps.boxZooms = zooms;
-    // zoomed out, hovering a box lists its functions at screen size, wholly inside the window
-    const big = [...document.querySelectorAll('.fbox')].sort((a, b) => (parseInt(b.querySelector('.s')?.textContent ?? '0') || 0) - (parseInt(a.querySelector('.s')?.textContent ?? '0') || 0))[0] as HTMLElement | undefined;
-    big?.dispatchEvent(new MouseEvent('mouseenter'));
+    steps.run = { rows: seq()?.run.rows.length, steps: seq()?.run.rows.filter((r) => r.kind === 'step').length, ms: Math.round(performance.now() - t7) };
+    const gridBad = auditGrid();
+    steps.grid = { filesFirst: !!document.querySelector('.gview .gnote'), squares: document.querySelectorAll('.gview .gcell.has').length, rows: document.querySelectorAll('.gview .grh').length, cols: document.querySelectorAll('.gview .gch').length, collisions: gridBad.length, first: gridBad.slice(0, 2) };
+    await api.smoke.capture('large-4-grid');
+    const block = [...document.querySelectorAll('.gview .gcell.has')].sort((a, b) => (parseInt(b.textContent ?? '0') || 0) - (parseInt(a.textContent ?? '0') || 0))[0] as HTMLElement | undefined;
+    if (document.querySelector('.gview .gnote')) { block?.click(); await sleep(800); }
+    const sq = document.querySelector('.gview .gcell.has') as HTMLElement | null;
+    sq?.dispatchEvent(new MouseEvent('mouseenter'));
     await sleep(300);
-    const hp = document.querySelector('.hpop') as HTMLElement | null, hr = hp?.getBoundingClientRect();
-    steps.hoverList = hp && hr ? { rows: hp.children.length, inside: hr.left >= 0 && hr.top >= 0 && hr.right <= innerWidth && hr.bottom <= innerHeight, clipped: [...hp.querySelectorAll('div')].filter((d) => d.scrollWidth > d.clientWidth + 1).length } : null;
-    await api.smoke.capture('large-4b-hover-list');
-    big?.dispatchEvent(new MouseEvent('mouseleave'));
-    await api.smoke.capture('large-4-boxes-zoomed-out');
-    chipOf('100%')?.click();
-    await sleep(800);
-    await api.smoke.capture('large-5-boxes-100');
+    const tr = document.querySelector('.gtag')?.getBoundingClientRect();
+    steps.gridOpened = { squares: document.querySelectorAll('.gview .gcell.has').length, tagInside: tr ? tr.left >= 0 && tr.top >= 0 && tr.right <= innerWidth && tr.bottom <= innerHeight : null, collisions: auditGrid().length };
+    await api.smoke.capture('large-5-grid-block');
     // the sequence on the same run: each step answers within a frame or two, and no text lands on other text
-    setFlowView('sequence');
+    setFlowView('metro');
     await until(() => document.querySelectorAll('.seqv .srow').length > 0, 30000);
     const sv = document.querySelector('.seqv') as HTMLElement, moves: number[] = [], seqBad: string[] = [];
     for (let i = 0; i < 25; i++) {
@@ -891,7 +875,7 @@ async function largeCheck(report: Record<string, unknown>) {
     seqBad.push(...auditSequence());
     steps.sequence = { rows: document.querySelectorAll('.seqv .srow').length, moveMsMax: Math.max(...moves), moveMsMedian: moves.sort((a, b) => a - b)[moves.length >> 1], collisions: seqBad.length, first: seqBad.slice(0, 2) };
     await api.smoke.capture('large-6-sequence');
-    // frame times while things move: stepping, playing, the Tab glide between views, zooming and playing the boxes
+    // frame times while things move: stepping, playing, the Tab switch between views, and playing the grid
     await api.smoke.profile(null);
     const tProf = performance.timeOrigin + performance.now();
     const key = (el: Element | null, k: string) => el?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
@@ -901,28 +885,25 @@ async function largeCheck(report: Record<string, unknown>) {
     key(document.querySelector('.seqv'), ' ');
     await sleep(300);
     motion.tabGlide = await frameStats(() => key(document.querySelector('.seqv'), 'Tab'), 1500);
-    await until(() => document.querySelectorAll('.fbox').length > 0, 10000);
-    motion.zoomAll = await frameStats(() => chipOf('fit all')?.click(), 1200);
-    motion.zoom100 = await frameStats(() => chipOf('100%')?.click(), 1200);
-    motion.boxPlay = await frameStats(() => key(document.querySelector('.flow.bxv'), ' '), 3000);
-    key(document.querySelector('.flow.bxv'), ' ');
+    await until(() => document.querySelectorAll('.gview .gcell').length > 0, 10000);
+    motion.gridPlay = await frameStats(() => key(document.querySelector('.gview'), ' '), 3000);
+    key(document.querySelector('.gview'), ' ');
     await sleep(300);
     steps.motion = motion;
     steps.profile = { file: await api.smoke.profile('large-motion'), startedAt: tProf };
-    setFlowView('sequence');
+    setFlowView('metro');
     await until(() => document.querySelectorAll('.seqv .srow').length > 0, 30000);
-    setFlowView('boxes');
+    setFlowView('grid');
     const t8 = performance.now();
     let back = false;
-    for (let f = 0; f < 1800 && !(back = document.querySelectorAll('.fbox:not(.dead)').length > 0); f++) await new Promise((r) => requestAnimationFrame(r));
-    steps.boxesBack = back ? Math.round(performance.now() - t8) : 'timed out';
+    for (let f = 0; f < 1800 && !(back = document.querySelectorAll('.gview .gcell').length > 0); f++) await new Promise((r) => requestAnimationFrame(r));
+    steps.gridBack = back ? Math.round(performance.now() - t8) : 'timed out';
     await sleep(800);
     (document.querySelector('.backp') as HTMLElement)?.click(); await sleep(400);
     const backList = document.querySelectorAll('.progs .pr').length;
     (document.querySelector('.progs .pr.top') as HTMLElement)?.click();
-    steps.programsBack = { list: backList, again: await until(() => document.querySelectorAll('.fbox:not(.dead)').length > 0, 15000) };
-    steps.flowMs = (document.querySelector(".flow") as any)?.dataset?.ms;
-    steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), live: document.querySelectorAll('.fbox:not(.dead)').length, visible: [...document.querySelectorAll('.fbox:not(.dead)')].filter((e) => +getComputedStyle(e).opacity > 0.9).length };
+    steps.programsBack = { list: backList, again: await until(() => document.querySelectorAll('.gview .gcell').length > 0, 15000) };
+    steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), squares: document.querySelectorAll('.gview .gcell.has').length };
     await api.smoke.capture('large-2b-flow-indexed');
     setPage('editor');
     await sleep(3000);   // let indexing run, then see whether the window still answers
@@ -1001,7 +982,7 @@ async function folderCheck(report: Record<string, unknown>) {
 async function engineCheck(report: Record<string, unknown>) {
   try {
     report.lsp = await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await until(() => document.querySelectorAll('.progs .pr').length > 0, 30000);
     report.entries = entries().map((e) => `${e.kind}:${e.label}`);
@@ -1036,10 +1017,10 @@ async function watchCheck(report: Record<string, unknown>) {
     inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await sleep(500);
   };
-  const lit = () => [...document.querySelectorAll('.seqv .srow.fw')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.sw')?.textContent}`);
+  const lit = () => [...document.querySelectorAll('.seqv .srow.fw')].map((r) => `${r.getAttribute('data-name')}: ${r.querySelector('.sw')?.textContent}`);
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     key('w');
@@ -1063,14 +1044,16 @@ async function watchCheck(report: Record<string, unknown>) {
     report.journey = lit();
     await api.smoke.capture('watch-2-journey');
     check((report.journey as string[]).join(' | ') === 'parse_headers: → req.raw passed on as raw · a copy · ▽ reads raw | split: → raw passed on as s · a copy · ▽ reads s', `following req.raw shows ${(report.journey as string[]).join(' | ')}`);
-    // the boxes view shows the same functions, saying how
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    // the grid names the same functions, saying how; the rest dim
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
-    report.journeyBoxes = [...document.querySelectorAll('.fbox .fr.wx')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.c')?.textContent}`);
-    await api.smoke.capture('watch-3-boxes');
-    check((report.journeyBoxes as string[]).join(' | ') === 'parse_headers: reads | split: reads', `the boxes view lights ${(report.journeyBoxes as string[]).join(' | ')}`);
-    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+    report.journeyGrid = [...document.querySelectorAll('.gview .grh.fw')].map((r) => `${r.querySelector('b')?.textContent}: ${r.querySelector('.gw')?.textContent}`);
+    const fwNames = [...new Set([...document.querySelectorAll('.gview .grh.fw b, .gview .gch.fw b')].map(headText))].sort();
+    await api.smoke.capture('watch-3-grid');
+    check(fwNames.join() === 'parse_headers,split', `the grid lights ${fwNames.join(', ')}`);
+    check(auditGrid().length === 0, `text on text in the grid: ${auditGrid().slice(0, 3).join('; ')}`);
+    check(totalsInSight().length === 0, `the grid's totals: ${totalsInSight().join('; ')}`);
   } catch (e) { errors.push(`watch: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -1081,7 +1064,7 @@ async function valuesCheck(report: Record<string, unknown>) {
   const check = (ok: boolean, what: string) => { if (!ok) errors.push(`values: ${what}`); };
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     const run = seq()!.run;
@@ -1093,13 +1076,14 @@ async function valuesCheck(report: Record<string, unknown>) {
     await api.smoke.capture('values-1-sequence');
     check((report.said as string[]).includes('not in this call · clear is true here — passed by draw(true)'), `draw's else does not say why: ${(report.said as string[]).slice(0, 3).join(' | ')}`);
     check((report.faded as number) >= (report.said as string[]).length && (report.said as string[]).length > 0, 'no row fades');
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
-    report.boxesDim = [...document.querySelectorAll('.fbox .fr.dim')].map((r) => r.querySelector('.nm')?.textContent);
-    await api.smoke.capture('values-2-boxes');
-    check((report.boxesDim as string[]).includes('inner'), `inner, called only where it cannot happen, is not faded in the boxes view: ${(report.boxesDim as string[]).join(', ')}`);
-    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+    report.gridDim = [...document.querySelectorAll('.gview .grh.dim b')].map((e) => e.textContent);
+    await api.smoke.capture('values-2-grid');
+    check((report.gridDim as string[]).includes('inner'), `inner, called only where it cannot happen, is not faded in the grid: ${(report.gridDim as string[]).join(', ')}`);
+    check(auditGrid().length === 0, `text on text in the grid: ${auditGrid().slice(0, 3).join('; ')}`);
+    check(totalsInSight().length === 0, `the grid's totals: ${totalsInSight().join('; ')}`);
   } catch (e) { errors.push(`values: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -1114,7 +1098,7 @@ async function configsCheck(report: Record<string, unknown>) {
   const click = (sel: string, text?: string) => { const el = [...document.querySelectorAll(sel)].find((x) => text == null || x.textContent?.trim() === text) as HTMLElement | undefined; el?.click(); return !!el; };
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     await sleep(400);
@@ -1292,10 +1276,10 @@ async function repairCheck(report: Record<string, unknown>) {
 async function changeCheck(report: Record<string, unknown>) {
   const check = (ok: boolean, what: string) => { if (!ok) errors.push(`change: ${what}`); };
   const chip = () => [...document.querySelectorAll('.setc > .chip')].find((c) => /^(compare|compared)/.test(c.textContent ?? '')) as HTMLElement | undefined;
-  const marks = () => Object.fromEntries([...document.querySelectorAll('.seqv .srow')].map((r) => [r.querySelector('.nm')?.textContent ?? '', [...r.querySelectorAll('.nt')].map((n) => n.textContent ?? '').filter(Boolean)]).filter(([, v]) => (v as string[]).length));
+  const marks = () => Object.fromEntries([...document.querySelectorAll('.seqv .srow')].map((r) => [r.getAttribute('data-name') ?? r.querySelector('.nm')?.textContent ?? '', [...r.querySelectorAll('.nt')].map((n) => n.textContent ?? '').filter(Boolean)]).filter(([, v]) => (v as string[]).length));
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     report.before = marks();
@@ -1320,14 +1304,20 @@ async function changeCheck(report: Record<string, unknown>) {
     // validate folds into handle's uses; check_size and route keep their own rows, as they run only under the new test
     check(JSON.stringify(report.marks) === JSON.stringify({ start: ['◆ changed · 1 line   ~ in a macro'], handle: ['◆ changed · 2 lines', 'added: validate'], check_size: ['? validate(r) &&   added'], route: ['? if (validate(r) && check_size(r))   now inside if (validate(r) && check_size(r))'], 'end of the run': ['main returns'] }), `rows say ${JSON.stringify(report.marks)}`);
     check((report.gone as string[]).join(' ; ') === 'log_request | removed · in the last commit', `removed calls: ${(report.gone as string[]).join(' ; ')}`);
-    // the boxes view shows the same, by colour
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    // the grid shows the same, by colour, on the called functions' names. Its squares are steps: validate(r), which
+    // always runs as part of handle's condition, has no step of its own (the metro folds it into handle's uses, marked
+    // "added: validate" above), so it has no row in the grid; check_size, run only when validate passes, has a step.
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
-    report.boxes = { added: [...document.querySelectorAll('.fbox .fr.cadd .nm')].map((n) => n.textContent), changed: [...document.querySelectorAll('.fbox .fr.cchg .nm')].map((n) => n.textContent) };
-    await api.smoke.capture('change-2-boxes');
-    check(JSON.stringify(report.boxes) === JSON.stringify({ added: ['validate', 'check_size'], changed: ['start', 'handle'] }) || JSON.stringify(report.boxes) === JSON.stringify({ added: ['check_size', 'validate'], changed: ['handle', 'start'] }), `boxes: ${JSON.stringify(report.boxes)}`);
-    setFlowView('sequence');
+    report.grid = { added: [...document.querySelectorAll('.gview .grh.cadd b')].map((n) => n.textContent).sort(), changed: [...document.querySelectorAll('.gview .grh.cchg b')].map((n) => n.textContent).sort() };
+    const validateIsStep = seq()!.items.some((row) => /(^|::)validate$/.test(seq()!.run.rows[row].name));
+    const validateRow = [...document.querySelectorAll('.gview .grh b')].some((b) => b.textContent === 'validate');
+    report.validate = { step: validateIsStep, gridRow: validateRow };
+    await api.smoke.capture('change-2-grid');
+    check(JSON.stringify(report.grid) === JSON.stringify({ added: ['check_size'], changed: ['handle', 'start'] }), `grid: ${JSON.stringify(report.grid)}`);
+    check(!validateIsStep && !validateRow, `validate: ${JSON.stringify(report.validate)} (it runs inside handle's condition, so it has no step and no grid row)`);
+    setFlowView('metro');
     await sleep(500);
     chip()?.click();
     await sleep(300);
@@ -1345,7 +1335,7 @@ async function changeCheck(report: Record<string, unknown>) {
 async function findingsCheck(report: Record<string, unknown>) {
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     (document.querySelector('.sfnd .chip') as HTMLElement | null)?.click();
@@ -1370,7 +1360,7 @@ async function exitsCheck(report: Record<string, unknown>) {
   const check = (ok: boolean, what: string) => { if (!ok) errors.push(`exits: ${what}`); };
   try {
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
     const sv = document.querySelector('.seqv') as HTMLElement;
@@ -1378,9 +1368,9 @@ async function exitsCheck(report: Record<string, unknown>) {
     sv.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
     await sleep(500);
     const rows = [...document.querySelectorAll('.seqv .srow:not(.sfold)')] as HTMLElement[];
-    const lit = rows.filter((r) => r.classList.contains('wx')).map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.sx')?.textContent}`);
+    const lit = rows.filter((r) => r.classList.contains('wx')).map((r) => `${r.getAttribute('data-name')}: ${r.querySelector('.sx')?.textContent}`);
     report.lit = lit;
-    report.dimmed = rows.filter((r) => r.classList.contains('wq')).map((r) => r.querySelector('.nm')?.textContent);
+    report.dimmed = rows.filter((r) => r.classList.contains('wq')).map((r) => r.getAttribute('data-name'));
     report.caption = document.querySelector('.scap')?.textContent ?? '';
     await api.smoke.capture('exits-1-ways-out');
     check(lit.some((l) => /^main: if \(setjmp\(restart\)\) → return 9 · 54 · \+1 more$/.test(l)), 'main does not show its two early ways out');
@@ -1391,18 +1381,117 @@ async function exitsCheck(report: Record<string, unknown>) {
     sv.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
     await sleep(300);
     check(!document.querySelector('.seqv .srow.wq, .seqv .srow.wx'), 'E again does not show the whole run');
-    // the boxes view: the same functions stay, each with how many ways out; the rest fade
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox .fr').length > 0, 20000);
+    // the grid: the same functions' names light in the error colour
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
-    (document.querySelector('.flow.bxv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'E', bubbles: true }));
+    (document.querySelector('.gview') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'E', bubbles: true }));
     await sleep(500);
-    report.boxes = [...document.querySelectorAll('.fbox .fr.wx')].map((r) => `${r.querySelector('.nm')?.textContent}: ${r.querySelector('.c.x')?.textContent}`);
-    report.boxesFaded = document.querySelectorAll('.fbox .fr.dim').length;
-    await api.smoke.capture('exits-2-boxes');
-    check((report.boxes as string[]).join() === 'main: 2 out,parse: 4 out,command: 4 out,die: 1 out,halt: 1 out,open_all: 2 out', `the boxes view lights ${(report.boxes as string[]).join(', ')}`);
-    check(auditBoxes().length === 0, `text on text in the boxes view: ${auditBoxes().slice(0, 3).join('; ')}`);
+    report.grid = [...new Set([...document.querySelectorAll('.gview .grh.lv b, .gview .gch.lv b')].map(headText))].sort();
+    await api.smoke.capture('exits-2-grid');
+    check((report.grid as string[]).join() === 'command,die,halt,main,open_all,parse', `the grid lights ${(report.grid as string[]).join(', ')}`);
+    const metroLit = [...new Set(lit.map((l) => l.slice(0, l.indexOf(': '))))];
+    check(metroLit.every((n) => (report.grid as string[]).includes(n)), `the metro lights ${metroLit.join(', ')} but the grid lights ${(report.grid as string[]).join(', ')}`);
+    check(auditGrid().length === 0, `text on text in the grid: ${auditGrid().slice(0, 3).join('; ')}`);
   } catch (e) { errors.push(`exits: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+/**
+ * `--scenario jump` on samples/tinyhttp: in both flow views, a click on a call outlined in the code preview moves the
+ * run to that call's step; a grid square opens in place and fills the card; the divider keeps the card between its
+ * comfortable minimum and its content, and the code at its minimum. Screenshots before and after each click.
+ */
+async function jumpCheck(report: Record<string, unknown>) {
+  const check = (ok: boolean, what: string) => { if (!ok) errors.push(`jump: ${what}`); };
+  const stepNow = () => Number(document.querySelector('.sprev .pstep b')?.textContent ?? 0);
+  const press = (sel: string, key: string) => (document.querySelector(sel) as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  // walk until the current function's code shows calls outlined (a call other than the next one, to show a real jump)
+  const toCalls = async (view: string) => {
+    press(view, 'Home'); await sleep(300);
+    for (let k = 0; k < 40 && !document.querySelector('.sprev .scode .cbx:not(.on)'); k++) { press(view, 'ArrowRight'); await sleep(250); }
+    await sleep(600);
+  };
+  const clickCall = async (name: string) => {
+    const boxes = [...document.querySelectorAll('.sprev .scode .cbx')] as HTMLElement[];
+    const first = boxes.find((b) => !b.classList.contains('on'));
+    if (!first) { check(false, `${name}: no outlined call other than the next step in the code preview`); return null; }
+    const item = first.dataset.step!, want = Number(item) + 1, before = stepNow(), call = first.textContent, fnBefore = document.querySelector('.sprev .pfn')?.textContent ?? null;
+    check(want !== before + 1 && want !== before, `${name}: the chosen call (step ${want}) is the current or the next step, so the click would prove nothing`);
+    // CodeMirror may redraw a line at any time: the call is found again by its step just before each use
+    const find = () => document.querySelector(`.sprev .scode .cbx[data-step="${item}"]`) as HTMLElement | null;
+    // only the code's own scroller moves, so the call is on screen for the screenshot; nothing else in the window scrolls
+    { const t0 = find(), sc = t0?.closest('.cm-scroller') as HTMLElement | null;
+      if (t0 && sc) { const a = t0.getBoundingClientRect(), b = sc.getBoundingClientRect(); if (a.top < b.top || a.bottom > b.bottom) sc.scrollTop += a.top - b.top - b.height / 2; } }
+    await sleep(300);
+    // for the screenshot only: a ring drawn over the call to be clicked, outside the editor so its DOM is untouched
+    const r0 = find()?.getBoundingClientRect();
+    const ring = document.createElement('div');
+    if (r0) { Object.assign(ring.style, { position: 'fixed', left: `${r0.left - 4}px`, top: `${r0.top - 4}px`, width: `${r0.width + 8}px`, height: `${r0.height + 8}px`, border: '2px solid #e0904f', pointerEvents: 'none', zIndex: '99' }); document.body.appendChild(ring); }
+    await api.smoke.capture(`jump-${name}-1-before`);
+    ring.remove();
+    const target = find();
+    if (!target) { check(false, `${name}: the call ${call} (step ${want}) left the code preview before the click`); return null; }
+    const r = target.getBoundingClientRect();
+    target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: r.left + 2, clientY: r.top + r.height / 2 }));
+    await sleep(900);
+    const now = stepNow();
+    await api.smoke.capture(`jump-${name}-2-after`);
+    check(now === want, `${name}: clicking ${call} (step ${want}) went to step ${now}, from ${before}`);
+    return { call, from: before, want, now, outlined: boxes.length, fnBefore, fnAfter: document.querySelector('.sprev .pfn')?.textContent ?? null };
+  };
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('metro');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 120000);
+    await toCalls('.seqv');
+    report.metro = await clickCall('metro');
+    report.metroCard = { tag: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, sections: [...document.querySelectorAll('.sprev .ibx.full .sec h6')].map((e) => e.textContent), link: !!document.querySelector('svg.slink path') };
+    report.metroCollisions = auditSequence();
+    check((report.metroCollisions as string[]).length === 0, `text on text in the metro: ${(report.metroCollisions as string[]).slice(0, 3).join('; ')}`);
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .gcell.has').length > 0, 20000);
+    await sleep(600);
+    await toCalls('.gview');
+    report.grid = await clickCall('grid');
+    // a square with two calls or more opens in place; the card says SELECTED and lists the calls in it
+    const sq = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).find((e) => e.querySelectorAll('i').length >= 2 || !!e.querySelector('.dots'));
+    sq?.click();
+    await sleep(800);
+    report.square = { steps: [...document.querySelectorAll('.gview .gcell.pk .gstep')].map((e) => e.textContent), tag: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, calls: document.querySelectorAll('.sprev .ibx.full .cl').length, link: !!document.querySelector('svg.slink path') };
+    check((report.square as any).tag === 'SELECTED' && (report.square as any).steps.length >= 2 && (report.square as any).calls === (report.square as any).steps.length, `the opened square: ${JSON.stringify(report.square)}`);
+    await api.smoke.capture('jump-grid-3-square-open');
+    // the divider: drag far down, then far up
+    const div = document.querySelector('.sprev .hdiv') as HTMLElement;
+    const cardH = () => Math.round((document.querySelector('.sprev .ibx.full') as HTMLElement).getBoundingClientRect().height);
+    const drag = async (dy: number) => {
+      const r = div.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + 6;
+      div.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y + dy, pointerId: 1 }));
+      window.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y + dy, pointerId: 1 }));
+      await sleep(400);
+    };
+    const paneBottom = () => Math.round((document.querySelector('.sprev') as HTMLElement).getBoundingClientRect().bottom);
+    const cardBottom = () => Math.round((document.querySelector('.sprev .ibx.full') as HTMLElement).getBoundingClientRect().bottom);
+    const codeH = () => Math.round(document.querySelector('.sprev .scodewrap')!.getBoundingClientRect().height);
+    await drag(3000);
+    const low = cardH(), codeLow = codeH();
+    await api.smoke.capture('jump-grid-4-card-low');
+    await drag(-3000);
+    const high = cardH(), content = (document.querySelector('.sprev .ibx.full .in') as HTMLElement).scrollHeight, codeHigh = codeH();
+    await api.smoke.capture('jump-grid-5-card-high');
+    report.divider = { low, high, content, codeLow, codeHigh, cardBottom: cardBottom(), paneBottom: paneBottom() };
+    // the card's height includes its 1 px border top and bottom (border-box): all content shows at content + 2
+    check(low === 170, `dragged down, the card is ${low} px, not its 170 px minimum`);
+    check(high <= content + 2, `dragged up, the card (${high} px) grows past its content (${content} px + 2 px border)`);
+    check(high === content + 2 || codeHigh <= 111, `dragged up, the card (${high} px) stops short of its content (${content} px) while the code still has ${codeHigh} px`);
+    check(codeHigh >= 109, `dragged up, the code preview is ${codeHigh} px, below its 110 px minimum`);
+    check(cardBottom() <= paneBottom(), `dragged up, the card ends at ${cardBottom()} px, below the pane (${paneBottom()} px)`);
+    check(high > low || content + 2 <= 170, 'the divider does not move');
+    try { localStorage.removeItem('flow.cardH'); } catch { /* fine */ }
+  } catch (e) { errors.push(`jump: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }
@@ -1418,7 +1507,7 @@ async function revisitCheck(report: Record<string, unknown>) {
   try {
     const home = root(), other = home.replace(/[\\/][^\\/]+$/, '/engine');
     await until(() => lspState() === 'ready', 60000);
-    setFlowView('sequence');
+    setFlowView('metro');
     setPage('flow');
     await settled();
     await sleep(1500);   // the settled picture is written in the background
@@ -1475,17 +1564,17 @@ async function programsCheck(report: Record<string, unknown>) {
     await sleep(2500);
     report.later = { list: programs(), back: !!document.querySelector('.backp'), lane: lane() };
     await api.smoke.capture('programs-flow-later');
-    // the same in the boxes view, and in a narrow window: the way back must stay visible
-    setFlowView('boxes');
-    await until(() => document.querySelectorAll('.fbox').length > 0, 15000);
+    // the same in the grid, and in a narrow window: the way back must stay visible
+    setFlowView('grid');
+    await until(() => document.querySelectorAll('.gview .gcell').length > 0, 15000);
     // every control of the header wholly visible: not cut off by the pane edge, not under another pane
     const shown = (e: Element) => { const r = e.getBoundingClientRect(), pane = e.closest('.pane')!.getBoundingClientRect(); return r.width > 0 && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.bottom <= pane.bottom && [[r.left + 2, r.top + r.height / 2], [r.right - 2, r.top + r.height / 2]].every(([x, y]) => e.contains(document.elementFromPoint(x, y))); };
     const vis = () => { const ctl = [...document.querySelectorAll('.ph.wrap .backp, .ph.wrap .lanes .chip, .ph.wrap > .chip, .ph.wrap .mgchips .chip')]; return ctl.length > 0 && ctl.every(shown) ? true : ctl.filter((e) => !shown(e)).map((e) => e.textContent); };
-    report.boxesBack = vis();
-    await api.smoke.capture('programs-boxes');
+    report.gridBack = vis();
+    await api.smoke.capture('programs-grid');
     await api.smoke.resize(900, 700); await sleep(600);
     report.narrowBack = vis();
-    await api.smoke.capture('programs-boxes-narrow');
+    await api.smoke.capture('programs-grid-narrow');
   } catch (e) { errors.push(`programs: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
