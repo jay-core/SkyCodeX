@@ -1,9 +1,5 @@
-// Colours as the settings store them (#rrggbb, or #rrggbbaa with transparency) and as the sliders move them (hue,
-// saturation, lightness, alpha). Pure, so the round trip is tested.
-
 export const isColor = (v: unknown): v is string => typeof v === 'string' && /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(v);
 
-/** h 0–360, s and l 0–100, a 0–1. */
 export interface Hsla { h: number; s: number; l: number; a: number }
 
 export function hexToHsla(hex: string): Hsla {

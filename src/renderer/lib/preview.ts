@@ -1,4 +1,3 @@
-// The preview engine: calls made by the function under the cursor, level by level.
 import { createSignal } from 'solid-js';
 import { api, CallItem, Range, Pos, uriToFile, fileToUri, basename, relPath } from './api';
 import { symbols, enclosingFunction, callItemAt, outgoing, inProject, projectRoot, resolveDefinition, withBody, definitionAt } from './lsp';
@@ -6,32 +5,31 @@ import { parseCpp, offsetOf, lineOf } from '../../shared/flowcore';
 import { states, settings } from './store';
 import { mergeLevel, keepsDeeper } from '../../shared/levelmerge';
 
-/** call: a real function call (clangd). The rest look like calls but are not functions. */
 export type CardKind = 'call' | 'macro' | 'assert' | 'lambda' | 'indirect';
 export interface Card {
   key: string;
   item: CallItem;
   file: string;
   name: string;
-  startLine: number;        // 0-based first line of the card text in its file
+  startLine: number;
   text: string;
-  fromRanges: Range[];      // call sites, in the caller's file coordinates
+  fromRanges: Range[];
   std: boolean;
-  declOnly?: boolean;       // std: only a declaration exists, the body is compiled into the library
+  declOnly?: boolean;
   kind: CardKind;
 }
 export interface Level {
   caller: CallItem;
   callerFile: string;
-  callerStartLine: number;  // where the caller's text starts (0 for the main editor)
+  callerStartLine: number;
   cards: Card[];
-  hidden: number;           // standard-library calls left out
-  more: string[];           // names beyond preview.max_cards
-  focus: number;            // card holding the preview cursor, -1 for none
+  hidden: number;
+  more: string[];
+  focus: number;
 }
 
 export const [levels, setLevels] = createSignal<Level[]>([]);
-export const [win, setWin] = createSignal(0);                // first visible level
+export const [win, setWin] = createSignal(0);
 export const [mainFn, setMainFn] = createSignal<{ name: string; file: string; range: Range } | null>(null);
 export const [busy, setBusy] = createSignal(false);
 
@@ -63,11 +61,9 @@ async function buildLevel(caller: CallItem, callerStartLine: number): Promise<Le
     const std = !inProject(file);
     if (std && !s['preview.include_std']) { hidden++; continue; }
     if (cards.length >= s['preview.max_cards']) { more.push(c.to.name); continue; }
-    const def = std ? await withBody(c.to) : await resolveDefinition(c.to);  // definition with its whole body
+    const def = std ? await withBody(c.to) : await resolveDefinition(c.to);
     const dfile = uriToFile(def.uri);
     const lines = await fileLines(dfile);
-    // a library function with no body in its header (or an implicit member) shows just its declaration line
-    // library headers are macro-heavy: trust a parsed body only when it starts just above the name and isn't a class
     const bodiless = std && (def === c.to || def.range.start.line < c.to.selectionRange.start.line - 6
       || /^\s*(template\s*<.*>\s*)?(class|struct|union)\b/.test(lines[def.range.start.line] ?? ''));
     const a = bodiless ? def.selectionRange.start.line : def.range.start.line, b = bodiless ? a : Math.min(def.range.end.line, a + 400);
@@ -77,12 +73,10 @@ async function buildLevel(caller: CallItem, callerStartLine: number): Promise<Le
       fromRanges: c.fromRanges, std, declOnly: bodiless, kind: 'call',
     });
   }
-  // after the functions: the things that look like calls (macros, static_assert, lambdas, calls through pointers)
   if (s['preview.include_other'] !== false) cards.push(...(await otherCards(caller, cards, !!s['preview.include_std'], s['preview.max_cards'])));
   return { caller, callerFile: uriToFile(caller.uri), callerStartLine, cards, hidden, more, focus: -1 };
 }
 
-// ---------- call-like things clangd does not report ----------
 const trees = new Map<string, { text: string; tree: ReturnType<typeof parseCpp> }>();
 function parsed(file: string, text: string) {
   const hit = trees.get(file);
@@ -109,7 +103,7 @@ async function otherCards(caller: CallItem, calls: Card[], includeStd: boolean, 
     if (n.name === 'StaticAssertDeclaration') asserts.push({ from: n.from, to: n.to });
     else if (n.name === 'CallExpression') {
       let c = n.node.firstChild;
-      if (c && /FieldExpression|ScopedIdentifier/.test(c.name)) c = c.lastChild;   // obj.member(…), ns::name(…)
+      if (c && /FieldExpression|ScopedIdentifier/.test(c.name)) c = c.lastChild;
       if (!c || !/Identifier/.test(c.name)) return;
       const name = text.slice(c.from, c.to);
       if (!known.has(name) && !NOT_CALLS.has(name)) sites.push({ name, at: c.from, end: c.to });
@@ -135,18 +129,17 @@ async function otherCards(caller: CallItem, calls: Card[], includeStd: boolean, 
   return out.sort((a, b) => first(a) - first(b)).slice(0, max);
 }
 
-/** What a callee that isn't a function turned out to be, from where clangd says it is defined. */
 async function classify(name: string, def: { file: string; line: number; character: number }, range: Range): Promise<Card | null> {
   const lines = await fileLines(def.file);
   if (/^\s*#\s*define\b/.test(lines[def.line] ?? '')) {
     let b = def.line;
-    while (/\\\s*$/.test(lines[b] ?? '') && b - def.line < 30) b++;   // continued with backslashes
+    while (/\\\s*$/.test(lines[b] ?? '') && b - def.line < 30) b++;
     return mk('macro', name, def.file, def.line, b, range, { line: def.line, character: def.character });
   }
   const dtext = lines.join('\n'), tree = parsed(def.file, dtext);
   let decl: any = null;
   for (let n: any = tree.resolveInner(offsetOf(dtext, def.line, def.character), 1); n; n = n.parent) {
-    if (n.name === 'FunctionDefinition') return null;   // a real function clangd missed: not ours to guess
+    if (n.name === 'FunctionDefinition') return null;
     if (/^(Declaration|FieldDeclaration|ParameterDeclaration|OptionalParameterDeclaration)$/.test(n.name)) { decl = n; break; }
   }
   if (!decl) return null;
@@ -158,7 +151,6 @@ async function classify(name: string, def: { file: string; line: number; charact
   const at = { line: def.line, character: def.character };
   if (lam) { const l = lam as { from: number; to: number }; const a = lineOf(dtext, l.from); return mk('lambda', name, def.file, a, Math.min(lineOf(dtext, l.to), a + 40), range, at); }
   const dt = dtext.slice(decl.from, decl.to);
-  // a plain prototype is a function, not something called through a pointer
   if (fnDecl && !/\(\s*[*&]|function\s*</.test(dt) && !dt.includes('=') && !/Parameter/.test(decl.name)) return null;
   const a = lineOf(dtext, decl.from);
   return mk('indirect', name, def.file, a, Math.min(lineOf(dtext, decl.to), a + 5), range, at);
@@ -173,43 +165,42 @@ async function mk(kind: CardKind, name: string, file: string, a: number, b: numb
   };
 }
 
-// requests are counted per level: a newer request for a level cancels only older requests for that same level,
-// so a card click is never lost to a cursor refresh, nor a cursor refresh to a click
 let rootGen = 0;
 const levelGen: number[] = [];
 const sameCaller = (a: CallItem, b: CallItem) => a.uri === b.uri && a.range.start.line === b.range.start.line && a.name === b.name;
-/** Puts a freshly built level at idx, merged into the one shown; the levels below stay when they still belong to it. */
 function place(idx: number, fresh: Level): Level {
   const ls = levels(), old = ls[idx], m = mergeLevel(old, fresh, sameCaller);
   setLevels([...ls.slice(0, idx), m, ...(m !== fresh && keepsDeeper(old, m) ? ls.slice(idx + 1) : [])]);
   return m;
 }
 
-/** Called when the main cursor settles. Rebuilds level 1 only when the enclosing function changes. */
+let rootKey = '';
 export async function refreshForCursor(file: string, pos: Pos, force = false) {
   const gen = ++rootGen;
   const fn = enclosingFunction(await symbols(file), pos);
   if (gen !== rootGen) return;
-  if (!fn) { setMainFn(null); setLevels([]); setWin(0); return; }
+  const key = fn ? `${file}#${fn.range.start.line}` : '';
+  if (key !== rootKey) {
+    if (rootKey) { clearTimeout(retryTimers.get(rootKey)); retryTimers.delete(rootKey); retryStart.delete(rootKey); }
+    rootKey = key;
+  }
+  if (!fn) { setMainFn(null); setLevels([]); setWin(0); setBusy(false); return; }
   if (!settings()['preview.enabled']) {
     const cur = mainFn();
     if (!cur || cur.file !== file || cur.range.start.line !== fn.range.start.line) setMainFn({ name: fn.name, file, range: fn.range });
     if (levels().length) setLevels([]);
+    setBusy(false);
     return;
   }
   const cur = mainFn();
   const sameFn = !!cur && cur.file === file && cur.name === fn.name && cur.range.start.line === fn.range.start.line;
-  if (!force && sameFn && levels().length) return;
+  if (!force && sameFn && levels().length) { setBusy(false); return; }
   setMainFn({ name: fn.name, file, range: fn.range });
   setBusy(true);
-  // while clangd is still building the file or loading its index, it may answer with no calls, or resolve
-  // some callees only to their header declaration: keep one retry pending, for up to 30 s after the first attempt for this function
-  const key = `${file}#${fn.range.start.line}`;
-  const retry = () => scheduleRetry(key, () => refreshForCursor(file, pos, true));
-  const shown = sameFn ? levels()[0] : undefined;   // what the reader is looking at for this same function
+  const retry = () => scheduleRetry(key, () => { if (rootKey === key) void refreshForCursor(file, pos, true); });
+  const shown = sameFn ? levels()[0] : undefined;
   const item = await callItemAt(file, fn.selectionRange.start);
   if (gen !== rootGen) return;
-  // a retry that gets a worse answer than the one shown (clangd still settling) keeps the one shown and tries again
   if (!item) { if (!shown) setLevels([]); setBusy(false); retry(); return; }
   const l1 = await buildLevel(item, 0);
   if (gen !== rootGen) return;
@@ -222,7 +213,6 @@ export async function refreshForCursor(file: string, pos: Pos, force = false) {
   else retryStart.delete(key);
 }
 
-/** Rebuilds the levels in place (after a preview setting changed or clangd finished indexing), keeping every focused card. */
 export async function rebuildLevels(file: string, pos: Pos) {
   await refreshForCursor(file, pos, true);
   for (let i = 0; i < levels().length - 1; i++) {
@@ -233,7 +223,7 @@ export async function rebuildLevels(file: string, pos: Pos) {
 
 export const unresolvedCard = (c: Card) => c.kind === 'call' && !c.std && /\.(h|hh|hpp|hxx)$/i.test(c.file) && !c.text.includes('{');
 const retryStart = new Map<string, number>();
-const retryTimers = new Map<string, number>();   // one per key: a retry for one level never cancels another's
+const retryTimers = new Map<string, number>();
 function scheduleRetry(key: string, run: () => void) {
   const first = retryStart.get(key) ?? Date.now();
   retryStart.set(key, first);
@@ -242,7 +232,6 @@ function scheduleRetry(key: string, run: () => void) {
   retryTimers.set(key, window.setTimeout(() => { retryTimers.delete(key); run(); }, 1500));
 }
 
-/** Builds the level under level idx's focused card again and merges it in, if that card (by key) is still focused. */
 async function refreshNext(idx: number, key: string) {
   const lv = levels()[idx], card = lv && lv.focus >= 0 ? lv.cards[lv.focus] : undefined;
   if (!card || card.key !== key || card.std || card.kind !== 'call') return;
@@ -256,7 +245,6 @@ async function refreshNext(idx: number, key: string) {
   if (next.cards.some(unresolvedCard)) scheduleRetry(`${key}@${idx}`, () => refreshNext(idx, key));
 }
 
-/** Puts the preview cursor in a card: the next level shows that card's calls. */
 export async function focusCard(levelIdx: number, cardIdx: number) {
   const ls = levels().slice(0, levelIdx + 1);
   if (!ls[levelIdx] || ls[levelIdx].focus === cardIdx && levels().length > levelIdx + 1) return;
@@ -264,21 +252,18 @@ export async function focusCard(levelIdx: number, cardIdx: number) {
   ls[levelIdx] = lv;
   setLevels(ls);
   const card = lv.cards[cardIdx];
-  if (!card || card.std || card.kind !== 'call') return;   // library code and call-like things have no next level
+  if (!card || card.std || card.kind !== 'call') return;
   const g = (levelGen[levelIdx] = (levelGen[levelIdx] ?? 0) + 1);
   const next = await buildLevel(card.item, card.startLine);
-  // still the card the reader chose (found by key: a cursor refresh may have rebuilt the level meanwhile)
   const now = levels()[levelIdx];
   if (g !== levelGen[levelIdx] || !now || now.cards[now.focus]?.key !== card.key) return;
   place(levelIdx + 1, next);
   if (next.cards.some(unresolvedCard)) scheduleRetry(`${card.key}@${levelIdx}`, () => refreshNext(levelIdx, card.key));
 }
 
-/** True when shifting right would land on a pair of levels that has content. */
 const drillable = (c: Card) => c.kind === 'call' && !c.std;
 export const canShift = () => levels().length > win() + 2 || (levels()[win() + 1]?.cards.some(drillable) ?? false);
 
-/** Builds the level a right shift would bring in, without moving; false when there is none. */
 export async function prepareShiftRight(): Promise<boolean> {
   const w = win();
   const ls = levels();
@@ -300,18 +285,11 @@ export function shiftHome() { setWin(0); }
 export const describeLevel = (lv: Level) => basename(lv.callerFile) && lv.caller.name;
 export const cardLoc = (c: Card) => `${relPath(projectRoot(), c.file)}:${c.startLine + 1}`;
 
-// ---------- how deep a call goes ----------
-
-/** depth: levels of calls below the function (0: it calls nothing in the project); fns: the functions below it. */
 export interface Depth { depth: number; fns: number; capped: boolean }
 export const [depths, setDepths] = createSignal<Record<string, Depth | 'busy'>>({});
 const DEPTH_CAP = 4000;
 const depthCache = new Map<string, Depth>();
 
-/**
- * How deep a card's function goes: the deepest chain of project calls below it, each function opened once, in call
- * order — the depth the flow view shows. The graph comes from clangd's index, many requests in flight at once.
- */
 export async function measureDepth(card: Card): Promise<void> {
   if (card.std || card.kind !== 'call') return;
   const k = card.key, have = depths()[k];
@@ -324,16 +302,11 @@ export async function measureDepth(card: Card): Promise<void> {
   depthCache.set(k, d);
   setDepths({ ...depths(), [k]: d });
 }
-/** The function each measured depth belongs to, so it can be measured again once clangd's index is complete. */
 const depthItems = new Map<string, CallItem>();
-/**
- * Measures every depth again (clangd finished indexing: calls into other files resolve only now, so a depth measured
- * while it loaded may be short). Nothing shows as busy meanwhile; a depth changes on screen only if it differs.
- */
 export async function remeasureDepths(): Promise<void> {
   for (const [k, item] of [...depthItems]) {
     const d = await depthOf(item);
-    if (!depthItems.has(k)) continue;   // cleared meanwhile (refresh, new folder)
+    if (!depthItems.has(k)) continue;
     const old = depthCache.get(k);
     depthCache.set(k, d);
     if (!old || old.depth !== d.depth || old.fns !== d.fns || old.capped !== d.capped) setDepths({ ...depths(), [k]: d });
@@ -362,7 +335,6 @@ async function depthOf(root: CallItem): Promise<Depth> {
     });
     frontier = next;
   }
-  // depth first, in call order, each function opened once (an explicit stack: chains can be thousands long)
   const opened = new Set<string>([keyOf(root)]);
   const stack: [string, number, number][] = [[keyOf(root), 0, 0]];
   let depth = 0;

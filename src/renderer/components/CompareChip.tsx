@@ -1,5 +1,3 @@
-// What a change does: the chip that compares the run with an older version from git (the last commit, or any recent
-// one), against the files on disk or another commit; its summary line says the change in words (lib/flowstore.ts).
 import { For, Show, createSignal } from 'solid-js';
 import { comparing, chooseCompare } from '../lib/flowstore';
 import { root } from '../lib/store';
@@ -10,7 +8,7 @@ type Commit = { sha: string; short: string; subject: string; when: string };
 export default function CompareChip() {
   const [open, setOpen] = createSignal(false);
   const [list, setList] = createSignal<{ commits: Commit[]; message?: string } | null>(null);
-  const [newer, setNewer] = createSignal<Commit | null>(null);   // null: the files on disk
+  const [newer, setNewer] = createSignal<Commit | null>(null);
   async function load() {
     const r = await api.change.history(root());
     setList(r.ok ? { commits: r.commits ?? [] } : { commits: [], message: r.message });

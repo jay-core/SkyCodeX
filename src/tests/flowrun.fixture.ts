@@ -1,4 +1,3 @@
-// Loads a recorded clangd fixture (src/tests/fixtures/record-flow.mjs) into what walkRun needs.
 import fs from 'node:fs';
 import path from 'node:path';
 import { analyseFunction, walkRun, fnExtent, FnInfo, Target, Run } from '../shared/flowrun';
@@ -20,7 +19,6 @@ export function loadFixture(fixture: string, root: string) {
   return { infos, run: (start: string): Run => walkRun(start, (k) => infos.get(k)) };
 }
 
-/** The run as text, one row per line: number or kind, name, the frames around it. Handy in failing tests. */
 export function describeRun(run: Run): string[] {
   return run.rows.map((r) => {
     const fr = r.frames.map((i) => { const f = run.frames[i]; return f.kind === 'loop' ? `↻${f.count != null ? '×' + f.count : ''} ${f.text}` : f.kind === 'arm' ? `[${f.label}] ${f.text}` : f.kind === 'guard' ? `past ${f.text} → ${f.label}` : `${f.kind}`; }).join(' / ');

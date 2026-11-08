@@ -13,12 +13,10 @@ import { t } from '../lib/i18n';
 
 const EXPO = 'cubic-bezier(0.16, 1, 0.3, 1)', IN = 'cubic-bezier(0.55, 0, 1, 0.45)';
 const stored = (k: string, d: number) => { try { const v = Number(localStorage.getItem(k)); return v > 0 ? v : d; } catch { return d; } };
-const store = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch { /* not kept */ } };
+const store = (k: string, v: number) => { try { localStorage.setItem(k, String(v)); } catch {  } };
 const MIN_COL = 170;
-/** Where the call-like things start in a level, or -1 when it has only functions. */
 const firstOther = (lv: Level | undefined) => lv?.cards.findIndex((c) => c.kind !== 'call') ?? -1;
 
-/** A drag handle inside the preview; reports horizontal movement. */
 function Handle(props: { left: number; onDrag: (dx: number) => void; onEnd: () => void }) {
   const down = (e: MouseEvent) => {
     e.preventDefault();
@@ -35,7 +33,6 @@ function Handle(props: { left: number; onDrag: (dx: number) => void; onEnd: () =
 export default function Preview(props: { overlay: () => SVGSVGElement | undefined; bodyEl: () => HTMLElement | undefined; codeEl: () => HTMLElement | undefined; registerRedraw: (f: () => void) => void }) {
   let area!: HTMLDivElement;
   const cols: HTMLDivElement[] = [];
-  // widths: pane 1 and pane 2, split by a draggable ratio
   const [areaW, setAreaW] = createSignal(800);
   const [frac, setFrac] = createSignal(stored('litho.preview.split', 0.5));
   const cardsW = () => Math.max(2 * MIN_COL, areaW());
@@ -53,8 +50,6 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     raf = requestAnimationFrame(draw);
   }
 
-  // ---- call outlines: every call in a source view gets a box in its card's colour ----
-  // the source of level li: the editor for level 0, else the focused card of level li - 1
   function sourceOf(li: number): { view: EditorView; base: number } | null {
     const ls = levels(), lv = ls[li];
     if (!lv) return null;
@@ -87,10 +82,8 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   }
   createEffect(on([levels, win, () => files.active, () => pal(0) + pal(1) + pal(2) + pal(3) + pal(4) + pal(5) + pal(6) + pal(7)], () => afterPaint().then(markCalls)));
 
-  // ---- hover shows a call's connector; a click brings its card into view, lit, and measures how deep it goes ----
   type Hit = { li: number; k: number; el: HTMLElement };
   const [hover, setHover] = createSignal<Hit | null>(null);
-  // a clicked call keeps its connector (and its card lit) until anything else is selected
   const [stuck, setStuck] = createSignal<Hit | null>(null);
   const callAt = (t: EventTarget | null) => {
     const el = (t as Element | null)?.closest?.('.callbox') as HTMLElement | null;
@@ -99,10 +92,9 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   };
   const onOver = (e: MouseEvent) => { const c = callAt(e.target); const h = hover(); if (c?.el !== h?.el) { setHover(c); redraw(); } };
   const onClick = async (e: MouseEvent) => {
-    if (e.metaKey || e.ctrlKey) return;   // go to definition
+    if (e.metaKey || e.ctrlKey) return;
     const c = callAt(e.target);
     if (!c) return;
-    // a call in pane 2's card leads one level further: shift first
     if (c.li === win() + 2) { await doShift(1); await afterPaint(); }
     const col = c.li - win();
     if (col !== 0 && col !== 1) return;
@@ -116,13 +108,11 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   onCleanup(() => { window.removeEventListener('mouseover', onOver); window.removeEventListener('click', onClick); });
   createEffect(on(root, () => clearDepths(), { defer: true }));
 
-  /** The connector of one call: from its outline to its card's dot (or to its pane's edge when the card is scrolled away). */
   function connector(h: Hit, br: DOMRect, ar: DOMRect): string {
     if (!h.el.isConnected || !levels()[h.li]) return '';
     const col = cols[h.li], cr = col?.getBoundingClientRect();
     const view = EditorView.findFromDOM(h.el.closest('.cm-editor') as HTMLElement);
     const r = h.el.getBoundingClientRect();
-    // the call itself must be in view: inside its editor's scroller and, for a card, inside its pane
     const pane = view?.scrollDOM.getBoundingClientRect(), holder = h.el.closest('.pcol')?.getBoundingClientRect();
     const seen = !!pane && r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1 && r.right > pane.left && r.left < pane.right
       && (!holder || (r.top >= holder.top - 1 && r.bottom <= holder.bottom + 1));
@@ -142,7 +132,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
 
   function draw() {
     const svg = props.overlay(), body = props.bodyEl();
-    if (!svg || !body || !area.isConnected) return;   // hidden preview: the editor may still ask for a redraw
+    if (!svg || !body || !area.isConnected) return;
     const br = body.getBoundingClientRect(), ar = area.getBoundingClientRect();
     svg.setAttribute('width', String(br.width)); svg.setAttribute('height', String(br.height));
     const st = stuck(), h = hover();
@@ -152,30 +142,23 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     svg.innerHTML = `<defs><clipPath id="pclip"><rect x="0" y="0" width="${clipW}" height="${clipH}"/></clipPath></defs><g clip-path="url(#pclip)">${out}</g>`;
   }
 
-  // the preview settings change what a level holds: rebuild in place
   createEffect(on(() => ['preview.include_std', 'preview.include_other', 'preview.max_cards'].map((k) => String(settings()[k])).join('|'), () => {
     const p = cursorPos();
     if (files.active && levels().length) rebuildLevels(files.active, { line: p.line - 1, character: p.col - 1 });
   }, { defer: true }));
-  // clangd finished indexing: a call it could name only by its header declaration resolves to its definition now
-  // (the retries while it loaded stop after 30 s), and depths measured meanwhile may have been short
   createEffect(on(indexEpoch, () => {
     const p = cursorPos();
     if (files.active && levels().some((l) => l.cards.some(unresolvedCard))) rebuildLevels(files.active, { line: p.line - 1, character: p.col - 1 });
     void remeasureDepths();
   }, { defer: true }));
-  // a new folder starts with empty previews
   createEffect(on(root, () => { setLevels([]); setMainFn(null); setWin(0); }, { defer: true }));
 
-  // ---- shift with the Windows Phone motion: turnstile out, slide over, slide in ----
   let animating = false;
   const reduce = () => !!settings()['motion.reduce'];
-  // column widths are held during a shift: a width change re-measures every card editor, which would stall a frame
   const [frozen, setFrozen] = createSignal<Map<number, number> | null>(null);
   const freeze = () => setFrozen(new Map(cols.map((c, li) => [li, c?.offsetWidth ?? 0] as [number, number]).filter(([, w]) => w > 0)));
   const colWidth = (li: number) => frozen()?.get(li) ?? slotW(li - win());
   const turnstile = (els: HTMLElement[], frames: Keyframe[], o: (i: number) => KeyframeAnimationOptions) => els.map((el, i) => el.animate(frames, o(i)));
-  // 1: one level deeper · -1: one level back · 0: back to the source
   async function doShift(dir: 1 | 0 | -1) {
     if (animating) return;
     const w = win();
@@ -185,26 +168,24 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     try {
       if (dir === 1 && !(await prepareShiftRight())) return;
       freeze();
-      await afterPaint();   // the incoming column's editors are mounted and measured before anything moves
+      await afterPaint();
       if (reduce()) { setWin(dir === 1 ? w + 1 : dir === -1 ? w - 1 : 0); return; }
       const anims: Animation[] = [];
       if (dir === 1) {
         const out = cols[w] ? onScreen(cols[w], '.card, .pnote, .more') : [], mid = cols[w + 1], inc = cols[w + 2] ? onScreen(cols[w + 2], '.card, .pnote, .more') : [];
         anims.push(...turnstile(out, [{ transform: 'none', opacity: 1 }, { transform: 'translate3d(-30px,0,0) perspective(900px) rotateY(-80deg)', opacity: 0 }], (i) => ({ duration: 240, delay: i * 30, easing: IN, fill: 'both' })));
-        // the outgoing column stays in place while its cards turn away
         if (cols[w]) anims.push(cols[w].animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(0,0,0)' }], { duration: 240 + out.length * 30 }));
         setWin(w + 1);
         if (mid) anims.push(mid.animate([{ transform: `translate3d(${frozen()?.get(w) ?? w1()}px,0,0)` }, { transform: 'translate3d(0,0,0)' }], { duration: 600, delay: 160, easing: EXPO, fill: 'backwards' }));
         anims.push(...turnstile(inc, [{ transform: 'translate3d(170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], (i) => ({ duration: 600, delay: 260 + i * 50, easing: EXPO, fill: 'backwards' })));
       } else {
-        // back one level, or home: the columns that come into view slide in from the left
         const to = dir === -1 ? w - 1 : 0;
         if (dir === -1) setWin(to); else shiftHome();
         for (const c of [0, 1]) if (cols[to + c]) anims.push(...turnstile(onScreen(cols[to + c], '.card, .pnote, .more'), [{ transform: 'translate3d(-170px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }],
           (i) => ({ duration: 620, delay: 100 + c * 70 + i * 45, easing: EXPO, fill: 'backwards' })));
       }
       await Promise.allSettled(anims.map((a) => a.finished));
-      anims.forEach((a) => a.cancel());   // the turned-out cards sit off screen now; drop their end state
+      anims.forEach((a) => a.cancel());
     } finally {
       setFrozen(null);
       animating = false;
@@ -221,9 +202,6 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   onMount(() => window.addEventListener('keydown', onKey));
   onCleanup(() => window.removeEventListener('keydown', onKey));
 
-  // ---- a cursor on a call lights its card in the next column (and its index entry) ----
-  // pane 1 follows the main editor's cursor, pane 2 the cursor inside pane 1's focused card;
-  // both are derived from the cursors, so scrolling or clicking elsewhere never clears them
   function hitIn(li: number): number {
     const lv = levels()[li];
     if (!lv) return -1;
@@ -236,7 +214,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
       const prev = levels()[li - 1];
       if (!prev || prev.focus < 0) return -1;
       const cc = cardCursor(), id = `${li - 1}:${prev.focus}`;
-      if (cc?.id !== id) return -1;   // no cursor placed in that card yet
+      if (cc?.id !== id) return -1;
       view = cardViews.get(id);
       base = prev.cards[prev.focus].startLine;
       if (!view) return -1;
@@ -252,7 +230,6 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     });
     return hit;
   }
-  // a clicked square holds its card lit until the next click anywhere else
   const [pinned, setPinned] = createSignal<[number, number]>([-1, -1]);
   const pin = (c: number, k: number) => setPinned(c === 0 ? [k, -1] : [pinned()[0], k]);
   const unpin = (e: MouseEvent) => { if (!(e.target as Element)?.closest?.('.callbox')) { setPinned([-1, -1]); if (stuck()) { setStuck(null); redraw(); } } };
@@ -263,7 +240,6 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const lit = createMemo(() => [pinned()[0] >= 0 ? pinned()[0] : hitIn(win()), pinned()[1] >= 0 ? pinned()[1] : hitIn(win() + 1)] as const, undefined, { equals: (a, b) => a[0] === b[0] && a[1] === b[1] });
   const isLit = (li: number, k: number) => (li === win() ? lit()[0] === k : li === win() + 1 ? lit()[1] === k : false);
   createEffect(on([levels, win, w1, lit], () => queueMicrotask(redraw)));
-  // a newly lit card glides into view when it is outside its column
   createEffect(on(lit, (now, before) => [0, 1].forEach((c) => {
     const k = now[c];
     if (k < 0 || (before && before[c] === k)) return;

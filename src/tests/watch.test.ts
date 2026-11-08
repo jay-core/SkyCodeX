@@ -1,5 +1,3 @@
-// Watch a variable and a value's journey (src/shared/flowwatch.ts) on tinyhttp, recorded from clangd. Expected
-// values read off the sources: server.cpp 13–19 and 38 (running_), metrics.cpp 20–21 (run), headers.cpp 4–6.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';
@@ -30,8 +28,6 @@ describe('a value\'s journey', () => {
     expect(show(journey(r, handle, 'req.raw'))).toEqual([
       'parse_headers: passed raw (from req.raw) [copy]', 'parse_headers: read raw [copy]', 'split: passed s (from raw) [copy]', 'split: read s [copy]']);
   });
-  // server.cpp 25, 28, 31: req.raw to parse_headers, req.path to route (→ match_path → split, router.cpp 8–19) and to
-  // record (const std::string&: the caller's own string, not a copy)
   it('req: read in handle, its parts passed on and followed', () => {
     expect(show(journey(r, handle, 'req'))).toEqual([
       'handle: read req', 'parse_headers: passed raw (from req.raw) [copy]', 'parse_headers: read raw [copy]', 'split: passed s (from raw) [copy]', 'split: read s [copy]',

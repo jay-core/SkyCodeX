@@ -1,10 +1,8 @@
-/* ---------- flow · do-178c · aadl · stills — driven by seek(t) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const scene=(id,hdr,right,body)=>`<div id="${id}" class="scn" style="position:absolute;inset:0;background:#171817;display:flex;flex-direction:column"><div class="hdr">${hdr}<span class="right" id="${id}-st">${right}</span></div><div style="flex:1;position:relative;min-height:0">${body}</div></div>`;
 
-/* ---- flow data ---- */
 const n=(name,c=[],o={})=>({name,c,...o}),L=(lab,c)=>({loop:lab,c}),P='#ad9b6f';
 const LANES=[{title:'main · tinyhttp',x:40,y:92,colW:188,root:n('main',[n('Config::load',[L('×16 · known keys',[n('read_env')])]),n('Server::start',[L('until !running_',[n('Socket::accept'),n('Server::handle',[n('parse_headers',[L('×n · header lines',[n('split'),n('trim')])]),n('Response::bad_request',[],{cond:'if headers.empty()'}),n('route',[L('×n · routes',[n('match_path')])]),n('handler',[],{ind:'⇢ 3 targets'}),n('send_response',[L('until all bytes sent',[n('write_all')])])])])]),n('Server::stop')])},
   {title:'thread · metrics flusher',x:1000,y:92,colW:120,root:n('Metrics::run',[L('every 1 s · until stop',[n('Metrics::flush',[n('write_file')]),n('sleep_for')])])},
@@ -26,7 +24,6 @@ const flowBody=`${LANES.map(l=>`<div style="position:absolute;left:${l.x}px;top:
   <div id="here" style="position:absolute;left:1000px;top:640px;font:300 13px/1.6 var(--ui);color:#ad9b6f;opacity:0">you are here<br><span style="font:12.5px var(--mono);color:#c9b98f">main › Server::start › Server::handle › parse_headers</span></div>
   <svg id="fsvg" width="1440" height="844" style="position:absolute;left:0;top:0;overflow:visible"></svg>`;
 
-/* ---- do-178c ---- */
 const COV=R`bool Router::allowed(const Request& r, const Rule& rule) {
     if («id:dec|rule.enabled && (r.is_admin || rule.public_access)»)
         return true;
@@ -50,7 +47,6 @@ const doBody=`<div style="position:absolute;left:30px;top:6px;display:flex;gap:2
   <div style="font:300 13px var(--ui);color:#4f564f;margin-bottom:8px">traceability</div>
   ${[['HLR-104','reject non-admin writes','Router::allowed :31','3 tests','#7f9e82'],['HLR-105','allow CORS preflight','Router::allowed :33','no test','#c9a26a'],['—','no requirement','Router::dump','untraced','#a8685e']].map(([id,d,f,tst,c])=>`<div class="tr1" style="padding:8px 0;border-top:1px solid #222422"><div style="display:flex;font:300 14px var(--ui)"><span style="color:#a3a8a0;width:84px">${id}</span><span style="color:#7b8279">${d}</span><span style="margin-left:auto;color:${c}">${tst}</span></div><div style="font:12px var(--mono);color:#5f7f7f;margin-left:84px">${f}</div></div>`).join('')}</div>`;
 
-/* ---- aadl ---- */
 const AADL=`package tinyhttp_arch
 public
   process tinyhttp
@@ -101,7 +97,6 @@ document.getElementById('root').innerHTML=`<div class="win" style="position:abso
  <div id="grad" style="position:absolute;left:0;right:0;bottom:0;height:140px;background:linear-gradient(rgba(23,24,23,0),rgba(23,24,23,.94));z-index:50"></div>
  <div id="cap" style="position:absolute;left:40px;bottom:30px;max-width:900px;z-index:60;font:300 17px var(--ui);color:#7b8279"></div></div>`;
 
-/* ---- precompute flow geometry ---- */
 const FN=$$('#s1 .fn'),W0=$('#fsvg').getBoundingClientRect();
 nodes.forEach((d,i)=>{const r=FN[i].getBoundingClientRect();d.r=r.right-W0.left;d.l=r.left-W0.left;d.cy=r.top+r.height/2-W0.top;});
 const order=nodes.map((d,i)=>i);

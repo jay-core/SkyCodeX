@@ -1,4 +1,3 @@
-/* ---------- terminal + press view (clean, full window) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const PR='<span style="color:#5f7f7f">~/code/tinyhttp</span> <span style="color:#6f8f74">❯</span>';
 const M=t=>`<span style="font-family:var(--mono)">${t}</span>`;

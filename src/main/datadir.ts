@@ -1,4 +1,3 @@
-// Where SkyCodeX keeps everything it writes: the data/ folder beside the executable.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -6,21 +5,19 @@ export interface DataDirInput {
   isPackaged: boolean;
   execPath: string;
   platform: NodeJS.Platform;
-  appRoot: string;          // the project folder when running unpackaged
-  appDataFallback: string;  // the OS app-data folder, used only when data/ can't be written
+  appRoot: string;
+  appDataFallback: string;
 }
 
 export interface DataDirResult {
   dir: string;
   fallback: boolean;
-  reason?: string;          // why the fallback was used, shown to the user once
+  reason?: string;
 }
 
-/** The folder the portable data/ directory belongs next to. */
 export function portableBase(i: DataDirInput): string {
   if (!i.isPackaged) return i.appRoot;
   if (i.platform === 'darwin') {
-    // …/SkyCodeX.app/Contents/MacOS/SkyCodeX → beside SkyCodeX.app, so the bundle stays signed.
     const bundle = path.resolve(i.execPath, '..', '..', '..');
     return path.dirname(bundle);
   }
@@ -57,7 +54,6 @@ export function resolveDataDir(i: DataDirInput, canWrite: (dir: string) => boole
   };
 }
 
-/** The sub-folders created on first run. */
 export const DATA_SUBDIRS = ['themes', 'state', 'state/buffers', 'state/chromium', 'notes', 'logs'];
 
 export function ensureLayout(dir: string): void {

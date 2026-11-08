@@ -1,4 +1,3 @@
-// App state: settings, the open folder, open files and their editor states, the active page.
 import { createSignal, createRoot } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { EditorState } from '@codemirror/state';
@@ -28,7 +27,6 @@ export const [toast, setToast] = createSignal<string | null>(null);
 export interface OpenFile { path: string; dirty: boolean; diskChanged: boolean }
 export const [files, setFiles] = createStore<{ list: OpenFile[]; active: string }>({ list: [], active: '' });
 
-/** Editor states live outside the reactive store: they are large and change on every keystroke. */
 export const states = new Map<string, EditorState>();
 const saved = new Map<string, string>();
 let mainView: EditorView | null = null;
@@ -50,7 +48,6 @@ export function applySettings(s: Settings, p: Problem[]) {
   document.body.style.fontVariantLigatures = s['font.ligatures'] ? 'normal' : 'none';
   (api.win as any).zoom?.(Number(s['ui.scale']) || 1);
   document.documentElement.classList.toggle('hc', !!s['ui.high_contrast']);
-  // colours: only those changed from the theme are set, so the stylesheet (and high contrast) keeps the rest
   for (const d of COLOR_DEFS) {
     if (!d.css) continue;
     if (s[d.key] && s[d.key] !== d.default) r.setProperty(d.css, String(s[d.key])); else r.removeProperty(d.css);
@@ -65,16 +62,15 @@ export function flash(msg: string, ms = 3200) {
 }
 
 export async function openFolder(folder: string) {
-  const path = normPath(folder);   // a folder kept by an older version may be spelled with backslashes
+  const path = normPath(folder);
   for (const f of files.list) if (f.dirty) await api.buffers.save(f.path, states.get(f.path)!.doc.toString());
   setRoot(path); setFiles({ list: [], active: '' }); states.clear(); saved.clear();
   await api.fs.watch(path);
-  void api.recent.add(path);   // the start window's recent folders
+  void api.recent.add(path);
   await startLsp(path);
   persistSession();
 }
 
-/** Starts clangd again on this folder (another engine, compiler or compile database), then hands it the open files. */
 export async function restartLsp() {
   if (!root()) return;
   await startLsp(root());
@@ -82,18 +78,30 @@ export async function restartLsp() {
 }
 onClangdStopped(restartLsp);
 
+const opening = new Map<string, Promise<boolean>>();
 export async function openFile(file: string, at?: { line: number; character: number }, textOverride?: string) {
   const path = normPath(file);
   if (!states.has(path)) {
-    let text: string;
-    try { text = await api.fs.read(path); } catch (e) { flash(`can't open ${basename(path)}: ${e}`); return; }
-    saved.set(path, text);
-    const body = textOverride ?? text;
-    noteText(path, body);   // a header with an unusual extension or none is still C/C++
-    states.set(path, makeState(path, body));
-    setFiles('list', (l) => [...l, { path, dirty: body !== text, diskChanged: false }]);
-    promote(path);
-    openDoc(path, body);
+    let p = opening.get(path);
+    if (!p) {
+      p = (async () => {
+        let text: string;
+        try { text = await api.fs.read(path); } catch (e) { flash(`can't open ${basename(path)}: ${e}`); return false; }
+        if (states.has(path)) return true;
+        saved.set(path, text);
+        const body = textOverride ?? text;
+        noteText(path, body);
+        states.set(path, makeState(path, body));
+        setFiles('list', (l) => [...l, { path, dirty: body !== text, diskChanged: false }]);
+        promote(path);
+        openDoc(path, body);
+        return true;
+      })();
+      opening.set(path, p);
+      const clear = () => { opening.delete(path); };
+      p.then(clear, clear);
+    }
+    if (!(await p)) return;
   }
   setFiles('active', path);
   setPage('editor');
@@ -112,7 +120,6 @@ export async function openFile(file: string, at?: { line: number; character: num
 const bufferTimers = new Map<string, number>();
 export function onDocChanged(path: string, state: EditorState) {
   states.set(path, state);
-  // the length check makes the common case free; the full comparison only runs when lengths match
   const base = saved.get(path) ?? '';
   const dirty = state.doc.length !== base.length || state.doc.toString() !== base;
   const i = files.list.findIndex((f) => f.path === path);
@@ -139,13 +146,13 @@ export async function save(path = files.active) {
   const text = st.doc.toString();
   try { await api.fs.write(path, text); } catch (e) { flash(`couldn't save ${basename(path)}: ${e}`, 6000); return; }
   saved.set(path, text);
+  const now = states.get(path)?.doc.toString() ?? text;
   const i = files.list.findIndex((f) => f.path === path);
-  if (i >= 0) { setFiles('list', i, 'dirty', false); setFiles('list', i, 'diskChanged', false); }
+  if (i >= 0) { setFiles('list', i, 'dirty', now !== text); setFiles('list', i, 'diskChanged', false); }
   savedDoc(path);
 }
 export async function saveAll() { for (const f of files.list) if (f.dirty) await save(f.path); }
 
-/** Closes without asking (used after Save As, where the text now lives in the new file). */
 export function forgetFile(path: string) {
   const i = files.list.findIndex((x) => x.path === path);
   setFiles('list', (l) => l.filter((x) => x.path !== path));
@@ -165,7 +172,6 @@ export function closeFile(path: string) {
   persistSession();
 }
 
-/** A file changed on disk: reload it if clean, otherwise mark it so nothing is lost. */
 export async function onDiskChange(path: string) {
   const i = files.list.findIndex((f) => f.path === path);
   if (i < 0) return;
@@ -197,7 +203,9 @@ export async function restoreSession() {
   await openFolder(s.root);
   const pending = new Map(buffers.map((b) => [b.file, b.text]));
   for (const p of s.open ?? []) if (await api.fs.exists(p)) await openFile(p, undefined, pending.get(p));
-  for (const [p, text] of pending) if (!states.has(p) && p.startsWith(s.root) && (await api.fs.exists(p))) await openFile(p, undefined, text);
+  const prefix = `${s.root.replace(/[\\/]+$/, '')}/`;
+  const inRoot = (p: string) => p.startsWith(prefix);
+  for (const [p, text] of pending) if (!states.has(p) && inRoot(p) && (await api.fs.exists(p))) await openFile(p, undefined, text);
   if (s.active && states.has(s.active)) setFiles('active', s.active);
   if (pending.size) flash(`restored ${pending.size} unsaved file${pending.size > 1 ? 's' : ''} from the last session`);
   return true;

@@ -1,6 +1,3 @@
-// The error repair engine in the editor: under each C/C++ error, the fixes clangd confirmed (src/main/main.ts
-// repair:check, src/shared/repair.ts), each with its own ✓ and ✗. Nothing in the code changes until ✓, and each ✓ is
-// one edit that ⌘/Ctrl Z undoes. Hovering a fix shows why it is suggested there.
 import { createSignal } from 'solid-js';
 import { EditorView, Decoration, DecorationSet, WidgetType, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder, EditorState } from '@codemirror/state';
@@ -12,15 +9,12 @@ import { t } from './i18n';
 export interface Fix { id: number; error: string; at: number; from: number; to: number; insert: string; src: string; why: string; key: string }
 interface Repair { fixes: Fix[]; applied: number | null; deco: DecorationSet }
 
-/** The note in the status line for the file shown: checking, or how many errors and checked fixes. */
 export const [repairNote, setRepairNote] = createSignal<{ file: string; text: string }>({ file: '', text: '' });
 
 const setFixes = StateEffect.define<Fix[]>();
 const dropFix = StateEffect.define<number>();
-const applied = StateEffect.define<number>();   // where a fix was applied (offset before it)
-/** ✗: per file, the fixes the user turned down, so a later check doesn't show them again. */
+const applied = StateEffect.define<number>();
 const dismissed = new Map<string, Set<string>>();
-/** Per file, how many errors the last check found. */
 const errorsIn = new Map<string, number>();
 function noteFor(file: string, n: number, fixes: number) {
   setRepairNote({ file, text: n ? `${n} ${n === 1 ? t('error') : t('errors')} · ${fixes ? `${fixes} ${fixes === 1 ? t('fix') : t('fixes')} ${t('found, each checked with clangd')}` : t('no fix found')}` : '' });
@@ -29,7 +23,6 @@ let nextId = 1;
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** The line as it reads with the fix: what goes in green, what goes out faded red and struck. */
 function preview(state: EditorState, f: Fix): string {
   const doc = state.doc, l = doc.lineAt(f.from);
   if (f.insert.includes('\n') || f.to > l.to) return `<span class="add">${esc(f.insert.replace(/\n+$/, ''))}</span>`;
@@ -38,7 +31,6 @@ function preview(state: EditorState, f: Fix): string {
   return `${esc(before.slice(lead))}${gone ? `<span class="del">${esc(gone)}</span>` : ''}${f.insert ? `<span class="add">${esc(f.insert)}</span>` : ''}${esc(after)}`;
 }
 
-// ---------- the reason, on hover ----------
 let tip: HTMLElement | null = null;
 const hideTip = () => { tip?.remove(); tip = null; };
 function showTip(row: HTMLElement, why: string) {
@@ -47,7 +39,6 @@ function showTip(row: HTMLElement, why: string) {
   tip.className = 'cm-tooltip hov rtip';
   tip.textContent = why;
   document.body.appendChild(tip);
-  // beside the fix, so it covers no code; under it when the window is too narrow
   const r = (row.querySelector('.src') ?? row).getBoundingClientRect(), w = tip.offsetWidth;
   const beside = r.right + 24 + w <= window.innerWidth - 8;
   tip.style.left = `${beside ? r.right + 24 : Math.max(8, row.getBoundingClientRect().left + 40)}px`;
@@ -119,12 +110,10 @@ function decorate(state: EditorState, fixes: Fix[], appliedAt: number | null): D
 const repairField = StateField.define<Repair>({
   create: () => ({ fixes: [], applied: null, deco: Decoration.none }),
   update(v, tr) {
-    // nothing shown and nothing asked: typing in a file without errors costs nothing here
     if (!v.fixes.length && v.applied === null && !tr.effects.length) return v;
     let { fixes, applied: at } = v;
     let changed = false;
     if (tr.docChanged) {
-      // a fix whose error line or text was edited is no longer known to work: it waits for the next check
       fixes = fixes.flatMap((f) => {
         const l = tr.startState.doc.lineAt(f.at);
         if (tr.changes.touchesRange(Math.min(l.from, f.from), Math.max(l.to, f.to))) return [];
@@ -144,11 +133,10 @@ const repairField = StateField.define<Repair>({
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
 
-/** Asks for checked fixes once the errors settle: after clangd publishes them, or a pause in typing. */
 const checker = (file: string) => ViewPlugin.fromClass(class {
   timer = 0;
   sent = '';
-  dead = false;   // the editor moved to another file while a check was under way
+  dead = false;
   off: () => void;
   constructor(readonly view: EditorView) {
     this.off = onDiagnostics((f) => { if (f === file) this.soon(); });
@@ -164,12 +152,12 @@ const checker = (file: string) => ViewPlugin.fromClass(class {
       if (repairNote().file === file) setRepairNote({ file, text: '' });
       return;
     }
-    if (text === this.sent) return;   // this text is checked, or being checked
+    if (text === this.sent) return;
     this.sent = text;
     setRepairNote({ file, text: t('checking fixes…') });
     let r: Awaited<ReturnType<typeof api.repair.check>>;
     try { r = await api.repair.check(file, fileToUri(file), text); } catch { r = { ok: false }; }
-    if (this.dead || this.sent !== text) return;   // another file is shown, or a newer check is under way
+    if (this.dead || this.sent !== text) return;
     if (!r.ok || view.state.doc.toString() !== text) { this.sent = ''; if (repairNote().file === file) setRepairNote({ file, text: '' }); return; }
     const doc = view.state.doc, gone = dismissed.get(file) ?? new Set<string>();
     const fixes: Fix[] = (r.suggestions ?? []).map((s) => {
@@ -183,7 +171,5 @@ const checker = (file: string) => ViewPlugin.fromClass(class {
   destroy() { this.dead = true; clearTimeout(this.timer); this.off(); hideTip(); }
 });
 
-/** The repair engine for a C/C++ file in the editor. */
 export const repairFor = (file: string) => [fileOf.init(() => file), repairField, checker(file)];
-/** The fixes shown now (smoke checks). */
 export const fixesIn = (state: EditorState) => state.field(repairField, false)?.fixes ?? [];

@@ -1,4 +1,3 @@
-// Typed access to the preload bridge.
 import type { LithoApi } from '../../preload/preload';
 import { normPath } from '../../shared/paths';
 export { normPath };
@@ -14,7 +13,7 @@ export interface DocSymbol { name: string; detail?: string; kind: number; range:
 export interface Diagnostic { range: Range; severity?: number; message: string; source?: string; code?: string | number }
 export interface DirEntry { name: string; path: string; dir: boolean }
 
-export const FN_KINDS = new Set([6, 9, 12]); // method, constructor, function
+export const FN_KINDS = new Set([6, 9, 12]);
 
 export function fileToUri(p: string): string {
   const norm = p.replace(/\\/g, '/');

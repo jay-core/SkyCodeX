@@ -1,32 +1,24 @@
-// Connector lines between call sites and the cards they lead to.
 import { createSignal } from 'solid-js';
 
-/**
- * The card colours, in order (cards take them in turn); each call is outlined in its card's colour. Cool, clear hues
- * that stand apart from the syntax colours and from each other — no reds, which read as errors. Settings → appearance
- * can change each one.
- */
 export const PAL = ['#86a8e7', '#79c9ae', '#bc9fe6', '#d4c26a', '#6fc0dc', '#a6cf82', '#e2dccb', '#9c96f0'];
 const [palette, setPaletteSig] = createSignal<string[]>(PAL);
-/** The colour of card k, following the settings. */
 export const pal = (k: number) => { const p = palette(); return p[k % p.length]; };
 export const setPalette = (p: string[]) => setPaletteSig(p.length ? p : PAL);
 
 export interface LinePoint { x: number; y: number }
 export interface Link {
-  from: LinePoint;       // the call site (right edge of the name)
-  lead: number;          // x where the dashed lead ends: the source pane's right edge
-  textEnd: number;       // x of the end of the call site's line text
-  to: LinePoint;         // card header, left edge
+  from: LinePoint;
+  lead: number;
+  textEnd: number;
+  to: LinePoint;
   color: string;
-  edge: 0 | -1 | 1;      // target scrolled above (-1) or below (1) its column
+  edge: 0 | -1 | 1;
   name: string;
-  onDot?: boolean;      // ends on the card's own colour dot, so no end marker is drawn
-  hot?: boolean;        // the call under a cursor: drawn thicker, with a soft halo
-  dim?: boolean;        // another call is under the cursor: this one steps back
+  onDot?: boolean;
+  hot?: boolean;
+  dim?: boolean;
 }
 
-/** SVG markup for a set of links, in the coordinate space of the overlay. */
 export function linkSvg(links: Link[]): string {
   let out = '';
   for (const l of links) {
@@ -40,14 +32,13 @@ export function linkSvg(links: Link[]): string {
     out += `<path d="${d}" stroke="${l.color}" stroke-width="${l.hot ? 2 : l.edge ? 0.8 : 0.9}" opacity="${(l.hot ? 1 : l.edge ? 0.5 : 0.75) * fade}" fill="none"${l.edge ? ' stroke-dasharray="4 4"' : ''}/>`;
     if (l.edge) {
       const e = l.edge;
-      if (!l.name) continue;   // folded into an "N more" note
+      if (!l.name) continue;
       out += edgeStub(x2, y2, e, l.color, l.name);
     } else if (!l.onDot) out += `<circle cx="${x2}" cy="${y2}" r="${l.hot ? 2.6 : 1.6}" fill="${l.color}" opacity="${0.8 * fade}"/>`;
   }
   return out;
 }
 
-/** Marker for a card scrolled out of its column: a chevron pointing toward it and its name on a plate. */
 export function edgeStub(x: number, y: number, e: number, color: string, label: string): string {
   const w = Math.round(label.length * 6.4) + 26;
   return `<rect x="${x}" y="${y - 7}" width="${w}" height="14" fill="#151615" opacity=".92"/>`
@@ -55,7 +46,6 @@ export function edgeStub(x: number, y: number, e: number, color: string, label: 
     + `<text x="${x + 17}" y="${y + 4}" fill="${color}" font-size="11.5" font-weight="300" font-family="Selawik, sans-serif">${escapeXml(label)}</text>`;
 }
 
-/** A plain connector from the call index to a card's colour dot. */
 export function curveSvg(a: number, ya: number, b: number, yb: number, color: string, hot = false, dim = false): string {
   const k = Math.max(22, (b - a) * 0.5);
   const d = `M${a} ${ya} C${a + k} ${ya} ${b - k} ${yb} ${b} ${yb}`;

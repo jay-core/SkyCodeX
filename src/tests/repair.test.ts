@@ -110,7 +110,7 @@ describe('repair: verdict', () => {
     expect(v).toEqual({ cleared: 1, revealed: [rout] });
     expect(reason({ edit: fix, src: '', why: 'Why.' }, v)).toBe("Why. With it, this error is gone. clangd then reads the code it had skipped, and finds 1 more problem there, not made by this fix: use of undeclared identifier 'rout' (line 3).");
     expect(verdict([paren], [diag('Invalid operands', 1, 4)], paren, fix, t).cleared).toBe(0);
-    expect(verdict([target], [rout], target, fix, t).cleared).toBe(0);   // not after the fix of another kind of error
+    expect(verdict([target], [rout], target, fix, t).cleared).toBe(0);
   });
 });
 

@@ -1,4 +1,3 @@
-// The entry point the flow page opens on, among many mains: ranked from paths alone.
 import { describe, it, expect } from 'vitest';
 import { rankEntries, entryScore } from '../shared/entries';
 

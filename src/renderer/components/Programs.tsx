@@ -1,11 +1,8 @@
-// Every program in the folder (each main, and each interrupt handler), the most likely first, then by folder — a project with several opens on
-// this list. Nothing is traced until one is picked (the most likely one is already being traced, so it opens at once).
-// Type to find one (any case); ↑ ↓ choose, ↵ or a click shows its flow; "← all programs" (or Backspace) comes back.
 import { For, Show, createMemo, createSignal } from 'solid-js';
 import { entries, lane, setLane, setPrograms, status, isChosen, exclusive } from '../lib/flowstore';
 import { connectPrograms, resolveEntry } from '../lib/flow';
 import { root } from '../lib/store';
-import { basename } from '../lib/api';
+import { api, basename } from '../lib/api';
 import { matchesIn } from '../../shared/search';
 import { Marked } from './FilesPane';
 
@@ -17,7 +14,7 @@ export default function Programs(props: { switcher: unknown }) {
   const groups = createMemo(() => {
     const qq = q().trim(), g = new Map<string, number[]>();
     entries().forEach((e, i) => {
-      if (!qq && i === lane()) return;   // shown on its own, first
+      if (!qq && i === lane()) return;
       if (qq && !matchesIn(`${e.label} ${e.rel}`, qq, 1).length) return;
       const k = top(e.rel);
       g.set(k, [...(g.get(k) ?? []), i]);
@@ -26,16 +23,22 @@ export default function Programs(props: { switcher: unknown }) {
   });
   const flat = createMemo(() => [...(q().trim() ? [] : [lane()]), ...groups().flatMap((g) => g.shown)]);
   const pick = (i: number) => { setPrograms(false); setLane(i); };
-  // how the listed programs connect (the first 20, or those the search finds): traced on request
   const CONNECT_MAX = 20;
-  const [links, setLinks] = createSignal<{ busy: string; starts: string[]; shared: { file: string; by: string[] }[]; of: number } | null>(null);
+  const [links, setLinks] = createSignal<{ busy: string; starts: string[]; shared: { file: string; by: string[] }[]; of: number; error?: string } | null>(null);
   async function connect() {
     const qq = q().trim();
     const list = entries().map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'interrupt' && (!qq || matchesIn(`${e.label} ${e.rel}`, qq, 1).length)).slice(0, CONNECT_MAX);
     if (list.length < 2) { setLinks({ busy: '', starts: [], shared: [], of: list.length }); return; }
     setLinks({ busy: `tracing ${list.length} programs…`, starts: [], shared: [], of: list.length });
-    const starts = await Promise.all(list.map(({ e }) => resolveEntry(e)));
-    const g = await exclusive(() => connectPrograms(root(), starts, (n) => setLinks((l) => l && { ...l, busy: `tracing ${list.length} programs… ${n} functions` })));
+    let g: Awaited<ReturnType<typeof connectPrograms>>;
+    try {
+      const starts = await Promise.all(list.map(({ e }) => resolveEntry(e)));
+      g = await exclusive(() => connectPrograms(root(), starts, (n) => setLinks((l) => l && { ...l, busy: `tracing ${list.length} programs… ${n} functions` })));
+    } catch (e) {
+      setLinks({ busy: '', starts: [], shared: [], of: list.length, error: String((e as Error)?.message ?? e).split('\n')[0] });
+      void api.log(`how they connect: ${String((e as Error)?.stack ?? e)}`);
+      return;
+    }
     const name = (id: string) => g.lanes.find((l) => l.id === id)?.label ?? id;
     setLinks({
       busy: '', of: list.length,
@@ -74,13 +77,13 @@ export default function Programs(props: { switcher: unknown }) {
           </div>
           <Show when={links()}>{(l) => (
             <div class="plinks">
-              <Show when={l().busy} fallback={<>
+              <Show when={l().busy || l().error} fallback={<>
                 <div class="grp"><b>how {l().of} programs connect</b><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
                 <For each={l().starts}>{(t) => <div class="pl">{t}</div>}</For>
                 <Show when={l().shared.length}><div class="pl sub">{l().shared.length} file{l().shared.length > 1 ? 's' : ''} shared:</div></Show>
                 <For each={l().shared.slice(0, 12)}>{(x) => <div class="pl"><span class="f">{basename(x.file)}</span><span class="by">{x.by.length} programs · {x.by.slice(0, 4).join(', ')}{x.by.length > 4 ? ' …' : ''}</span></div>}</For>
                 <Show when={l().shared.length > 12}><div class="pl sub">+{l().shared.length - 12} more</div></Show>
-              </>}><div class="grp">{l().busy}</div></Show>
+              </>}><div class="grp">{l().error ? `couldn't trace them: ${l().error}` : l().busy}</div></Show>
             </div>
           )}</Show>
           <Show when={!q().trim()}>

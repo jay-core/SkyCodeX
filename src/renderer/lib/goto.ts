@@ -1,7 +1,3 @@
-// Going to a definition, the same in every code view (the editor, preview cards, the flow's code preview):
-// hold ⌘/Ctrl and the name under the pointer is underlined with a tag saying where it leads (nothing underlined
-// when there is nowhere to go); ⌘/Ctrl-click goes there; ⌥-click shows the definition inline under the line;
-// a click that finds nothing always says why.
 import { EditorView, Decoration, DecorationSet, WidgetType, keymap } from '@codemirror/view';
 import { EditorState, StateField, StateEffect, Extension, Prec } from '@codemirror/state';
 import { definitionAt, lspState, indexing, indexEpoch, diagnosticsFor, Loc } from './lsp';
@@ -9,7 +5,7 @@ import { openFile, flash, states } from './store';
 import { api, basename } from './api';
 import { cardExtensions } from './cm';
 
-export interface GotoSource { file: () => string; base: () => number }   // base: the file line of the view's first line
+export interface GotoSource { file: () => string; base: () => number }
 
 const MOD = (e: MouseEvent | KeyboardEvent) => e.metaKey || e.ctrlKey;
 const setLink = StateEffect.define<{ from: number; to: number; tag: string } | null>();
@@ -50,8 +46,9 @@ const field = StateField.define<{ link: DecorationSet; peek: DecorationSet; peek
         ? Decoration.set([Decoration.mark({ class: 'gt-link' }).range(e.value.from, e.value.to), Decoration.widget({ widget: new TagWidget(e.value.tag), side: 1 }).range(e.value.to)])
         : Decoration.none;
       if (e.is(setPeek)) {
-        peekAt = e.value ? { line: e.value.line } : null;
-        peek = e.value ? Decoration.set([Decoration.widget({ widget: new PeekWidget(e.value), block: true, side: 1 }).range(tr.state.doc.line(e.value.line).to)]) : Decoration.none;
+        const ok = !!e.value && e.value.line >= 1 && e.value.line <= tr.state.doc.lines;
+        peekAt = ok ? { line: e.value!.line } : null;
+        peek = ok ? Decoration.set([Decoration.widget({ widget: new PeekWidget(e.value!), block: true, side: 1 }).range(tr.state.doc.line(e.value!.line).to)]) : Decoration.none;
       }
     }
     return { link, peek, peekAt };
@@ -59,12 +56,11 @@ const field = StateField.define<{ link: DecorationSet; peek: DecorationSet; peek
   provide: (f) => [EditorView.decorations.from(f, (v) => v.link), EditorView.decorations.from(f, (v) => v.peek)],
 });
 
-// a lookup per name and clangd index: hovering the same name again costs nothing
 const cache = new Map<string, Promise<Loc | null>>();
 let cacheEpoch = -1;
-function lookup(file: string, line: number, character: number): Promise<Loc | null> {
+function lookup(file: string, line: number, character: number, name: string): Promise<Loc | null> {
   if (cacheEpoch !== indexEpoch()) { cache.clear(); cacheEpoch = indexEpoch(); }
-  const k = `${file}:${line}:${character}`;
+  const k = `${file}:${line}:${character}:${name}`;
   if (!cache.has(k)) cache.set(k, definitionAt(file, { line, character }).then((l) => { if (!l) cache.delete(k); return l; }).catch(() => { cache.delete(k); return null; }));
   return cache.get(k)!;
 }
@@ -75,7 +71,6 @@ async function fileText(file: string): Promise<string[]> {
   try { return (await api.fs.read(file)).split('\n'); } catch { return []; }
 }
 
-/** Why there is nothing to go to: said plainly, from what clangd and the code show. */
 const KEYWORDS = new Set('alignas alignof auto bool break case catch char class const constexpr const_cast continue decltype default delete do double dynamic_cast else enum explicit extern false float for friend goto if inline int long mutable namespace new noexcept nullptr operator private protected public register reinterpret_cast return short signed sizeof static static_assert static_cast struct switch template this throw true try typedef typeid typename union unsigned using virtual void volatile while'.split(' '));
 export async function whyNoDefinition(file: string, line: number, character: number, name: string): Promise<string> {
   if (KEYWORDS.has(name)) return `“${name}” is part of the language itself: there is no definition to go to.`;
@@ -83,7 +78,6 @@ export async function whyNoDefinition(file: string, line: number, character: num
   if (indexing()) return `No definition for ${name} yet: clangd is still indexing (${indexing()}). Try again when it finishes.`;
   const d = diagnosticsFor(file).find((x) => x.severity === 1 && x.range.start.line <= line && x.range.end.line >= line && (x.range.start.line < line || x.range.start.character <= character) && (x.range.end.line > line || x.range.end.character >= character));
   if (d) return `No definition for ${name}: the compiler reports “${d.message}”.`;
-  // inside #if … #endif: the condition may be off for this build, and then the name isn't compiled at all
   const lines = await fileText(file), open: { text: string; line: number }[] = [];
   for (let i = 0; i < Math.min(line, lines.length); i++) {
     const t = lines[i].trim();
@@ -95,7 +89,6 @@ export async function whyNoDefinition(file: string, line: number, character: num
   return `No definition for ${name}: clangd found none (a macro it can’t follow, or a name declared without a body in this project).`;
 }
 
-/** The definition's text for an inline peek: from its line to the end of its body (or 40 lines). */
 async function peekText(loc: Loc): Promise<string> {
   const lines = await fileText(loc.file);
   let depth = 0, seen = false, end = loc.line;
@@ -127,8 +120,8 @@ export function gotoDefinition(src: GotoSource): Extension {
         last = k; clearTimeout(hoverTimer);
         if (!w) { v.dispatch({ effects: setLink.of(null) }); return false; }
         hoverTimer = window.setTimeout(async () => {
-          const loc = await lookup(src.file(), w.line, w.character);
-          if (last !== k) return;
+          const loc = await lookup(src.file(), w.line, w.character, w.name);
+          if (last !== k || !v.dom.isConnected) return;
           v.dispatch({ effects: setLink.of(loc ? { from: w.from, to: w.to, tag: `↗ ${basename(loc.file)}:${loc.line + 1}` } : null) });
         }, 70);
         return false;
@@ -140,12 +133,14 @@ export function gotoDefinition(src: GotoSource): Extension {
         if (!w) return false;
         e.preventDefault();
         const peek = !MOD(e);
-        void lookup(src.file(), w.line, w.character).then(async (loc) => {
+        void lookup(src.file(), w.line, w.character, w.name).then(async (loc) => {
           if (!loc) { flash(await whyNoDefinition(src.file(), w.line, w.character, w.name), 7000); return; }
           if (!peek) { openFile(loc.file, { line: loc.line, character: loc.character }); return; }
+          const text = await peekText(loc);
+          if (!v.dom.isConnected || w.from > v.state.doc.length) return;
           const line = v.state.doc.lineAt(w.from).number, cur = v.state.field(field).peekAt;
-          v.dispatch({ effects: setPeek.of(cur && cur.line === line ? null : { line, loc, name: w.name, text: await peekText(loc) }) });
-          v.focus();   // so Esc closes it
+          v.dispatch({ effects: setPeek.of(cur && cur.line === line ? null : { line, loc, name: w.name, text }) });
+          v.focus();
         });
         return true;
       },

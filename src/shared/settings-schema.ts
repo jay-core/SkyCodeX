@@ -1,21 +1,18 @@
-// The single source of truth for every setting: its default, type, limits and the
-// comment written into settings.toml. The settings page and the file are generated from it.
-
 import { isColor } from './color';
 
 export type SettingType = 'string' | 'number' | 'boolean' | 'enum' | 'string[]' | 'color';
 
 export interface SettingDef {
-  key: string;            // "section.name"
+  key: string;
   type: SettingType;
   default: unknown;
   doc: string;
   min?: number;
   max?: number;
-  values?: string[];      // for enums
-  unit?: string;          // shown beside a number
-  css?: string;           // colours: the CSS variable it sets
-  label?: string;         // the name on the settings page, when the key's own name is not clear enough
+  values?: string[];
+  unit?: string;
+  css?: string;
+  label?: string;
 }
 
 export const SECTIONS: { name: string; doc: string }[] = [
@@ -70,7 +67,6 @@ export const SETTINGS: SettingDef[] = [
   { key: 'power.saver', type: 'enum', default: 'auto', values: ['auto', 'always', 'never'], doc: '"auto" calms animations and background work while on battery' },
 ];
 
-/** The colour settings, with the CSS variable each one sets. The defaults are the charcoal theme (styles.css :root). */
 function colors(): SettingDef[] {
   const c = (key: string, css: string, def: string, doc: string, label?: string): SettingDef => ({ key: `colors.${key}`, type: 'color', default: def, doc, css, label });
   return [
@@ -107,7 +103,6 @@ function colors(): SettingDef[] {
   ];
 }
 
-/** Settings of features that were removed: still found in older settings.toml files, and skipped without a warning. */
 export const RETIRED = /^(terminal\.|memory\.)|^(ui\.language|editor\.spellcheck|editor\.todo_words)$/;
 
 export type Settings = Record<string, unknown>;
@@ -124,7 +119,6 @@ function tomlValue(v: unknown): string {
   return String(v);
 }
 
-/** The settings.toml written on first run: every option, with its default and a comment. */
 export function defaultFileText(): string {
   const lines = [
     '# SkyCodeX settings — save to apply. Delete a line to get its default back.',
@@ -144,11 +138,10 @@ export function defaultFileText(): string {
 
 export interface SettingProblem {
   key: string;
-  line: number;           // 1-based, 0 when unknown
+  line: number;
   message: string;
 }
 
-/** Validates one raw value; returns the accepted value or a problem message. */
 export function validate(def: SettingDef, raw: unknown): { ok: true; value: unknown } | { ok: false; message: string } {
   switch (def.type) {
     case 'string':

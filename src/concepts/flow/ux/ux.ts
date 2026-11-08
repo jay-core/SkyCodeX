@@ -1,7 +1,3 @@
-// The UX-ideas demo, played inside the real app (record-ux.cjs injects it): the real sequence view of samples/tinyhttp
-// is driven with its own keys and clicks; each idea is drawn over it from the same run (recorded from clangd, see
-// data.ts), so every name, number, loop and condition shown is the analyser's own. Nothing here is part of the app.
-// build: npx esbuild src/concepts/flow/ux/ux.ts --bundle --format=iife --alias:@data=<run.json> --outfile=<ux.js>
 import ELK from 'elkjs/lib/elk.bundled.js';
 // @ts-ignore: the run, written by data.ts
 import D from '@data';
@@ -14,7 +10,6 @@ const FILES: Record<string, string[]> = D.files;
 const s = buildSeq(run);
 const R = run.rows, N = s.items.length;
 let SLOW = 1;
-/** the whole demo's pace: every wait and every scene's length */
 const PACE = 0.86;
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms * SLOW * PACE));
 const raw = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -26,7 +21,6 @@ const itemOfRow = (i: number) => s.itemOf[i];
 const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
 const label = (it: number) => `${num(it)}|${rowOf(it).kind === 'indirect' ? rowOf(it).text : short(rowOf(it).name)}`;
 
-// ---------- code, coloured as in the app ----------
 const KW = /^(if|for|while|return|auto|const|void|bool|int|char|static|true|false|size_t|std|else|break|continue|struct|using|noexcept)$/;
 function hl(t: string): string {
   let out = '';
@@ -44,7 +38,6 @@ function hl(t: string): string {
 const codeLines = (file: string, from: number, to: number, mark = -1) =>
   FILES[file].slice(from, to + 1).map((t, k) => `<div class="${from + k === mark ? 'hl' : ''}"><span class="ln">${from + k + 1}</span><span>${hl(t) || ' '}</span></div>`).join('');
 
-// ---------- the real view ----------
 const seqv = () => document.querySelector('.seqv') as HTMLElement;
 const seqin = () => seqv().querySelector('.seqin') as HTMLElement;
 const prevPane = () => seqv().closest('.body')!.querySelector('.pane.prev') as HTMLElement;
@@ -71,17 +64,14 @@ async function jumpTo(it: number) {
   inp.value = String(rowOf(k).n);
   inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 }
-/** The box under the selected row is as tall as its content, measured when the view's width changes. */
 let nudge = false;
 function remeasure() { nudge = !nudge; seqv().style.marginRight = nudge ? '1px' : '0px'; }
 const rect = (el: Element) => el.getBoundingClientRect();
 
-// ---------- the demo's own layer, moving with the view's scroll ----------
-let L!: HTMLElement;   // in .seqin's coordinates
+let L!: HTMLElement;
 function mk(cls: string, parent: HTMLElement, html = '', tag = 'div'): HTMLElement { const e = document.createElement(tag); e.className = cls; e.innerHTML = html; parent.appendChild(e); return e; }
 function syncLayer() { if (L && seqin()) L.style.transform = getComputedStyle(seqin()).transform; requestAnimationFrame(syncLayer); }
 
-// ---------- cursor, title, captions ----------
 let cursorEl!: HTMLElement, cx = 700, cy = 500;
 function cursorTo(x: number, y: number, ms = 520) {
   cursorEl.style.opacity = '1';
@@ -111,7 +101,6 @@ function toast(html: string, ms = 1800) {
   setTimeout(() => t.remove(), ms * SLOW);
 }
 
-// ---------- breadcrumbs (sequence 5), kept on from that scene ----------
 let crumbsEl: HTMLElement | null = null, crumbHot = '';
 function chainNames(it: number): { name: string; it: number }[] {
   if (it < 0 || it >= N) return [];
@@ -128,7 +117,6 @@ function drawCrumbs() {
   if (crumbsEl.innerHTML !== html) crumbsEl.innerHTML = html;
 }
 
-// ---------- collapsing a span of rows (fold, what-if) ----------
 interface Saved { el: HTMLElement; transform: string; opacity: string; height: string; transition: string }
 let saved: Saved[] = [];
 function collapse(a: number, b: number, stripH: number) {
@@ -157,7 +145,6 @@ function expand() {
   setTimeout(() => { for (const v of list) v.el.style.transition = v.transition; }, 500 * SLOW);
 }
 
-// ---------- the boxes view, built from the run ----------
 type Level = 'functions' | 'files' | 'folders';
 const stepRows = R.map((_, i) => i).filter((i) => R[i].kind === 'step');
 const fileList: string[] = [];
@@ -166,7 +153,6 @@ const rowsOfFile = (f: string) => stepRows.filter((i) => R[i].file === f).sort((
 const loopsOwned = (i: number) => run.frames.map((f, k) => ({ f, k })).filter(({ f }) => f.kind === 'loop' && f.owner === i);
 const dirOf = (f: string) => (f.includes('/') ? f.replace(/\/[^/]+$/, '') : '.');
 const targetOf = (i: number) => (R[i].kind === 'step' ? i : R[i].kind === 'ref' ? R[i].ref! : null);
-/** caller step → callee step, once per pair, with how many calls it stands for */
 const calls: { a: number; b: number; n: number }[] = [];
 for (let i = 0; i < R.length; i++) {
   const t = targetOf(i), c = R[i].caller;
@@ -200,7 +186,7 @@ async function layout(level: Level): Promise<Lay> {
   const edges: any[] = [], meta: any[] = [], seen = new Set<string>();
   for (const c of calls) {
     const fa = R[c.a].file, fb = R[c.b].file;
-    if (fa === fb) continue;   // calls inside one box need no line: the numbers show them
+    if (fa === fb) continue;
     if (level === 'functions') { edges.push({ id: `e${edges.length}`, sources: [`out${c.a}`], targets: [`in${c.b}`] }); meta.push({ ...c, fa, fb }); }
     else { const k = `${fa}>${fb}`; if (seen.has(k)) continue; seen.add(k); edges.push({ id: `e${edges.length}`, sources: [fa], targets: [fb] }); meta.push({ ...c, fa, fb }); }
   }
@@ -243,7 +229,6 @@ function boxRowsHTML(f: string, level: Level) {
   }
   return h;
 }
-/** The numbers of the calls a line stands for: 15, →12 ×2 … (the first four, then +n) */
 function edgeNums(e: { a: number; b: number; fa: string; fb: string }, level: Level) {
   const out: string[] = [];
   for (let i = 0; i < R.length; i++) {
@@ -271,13 +256,11 @@ function drawEdges(level: Level) {
     ah.setAttribute('d', `M${q.x - 6} ${q.y - 3.5} L${q.x} ${q.y} L${q.x - 6} ${q.y + 3.5} Z`);
     ah.setAttribute('class', 'ah'); ah.dataset.a = String(e.a); ah.dataset.b = String(e.b); ah.dataset.fa = e.fa; ah.dataset.fb = e.fb;
     B.svg.appendChild(ah);
-    // the call numbers, on every line by default (as in the app's boxes view)
-    // lines that end at the same place share one label
     const at = `${Math.round(q.x)},${Math.round(q.y)}`, key = `${e.a}>${e.b}`;
     const same = B.world.querySelector<HTMLElement>(`.ux-lab[data-at="${at}"]`);
     if (same) { same.textContent += ` · ${edgeNums(e, level)}`; same.dataset.keys += `,${key}`; continue; }
     const lab = mk('ux-lab', B.world, esc(edgeNums(e, level)));
-    lab.style.left = `${q.x - 12}px`; lab.style.top = `${q.y}px`;   // its right edge just before the arrowhead
+    lab.style.left = `${q.x - 12}px`; lab.style.top = `${q.y}px`;
     lab.dataset.at = at; lab.dataset.keys = key;
   }
   for (const g of lay.groups) { const r = mk('ux-grp', B.world, `<span>${g.dir}</span>`); r.style.cssText = `left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px`; r.dataset.grp = '1'; }
@@ -347,7 +330,6 @@ function drawMini() {
   h += `<b style="left:${vx * k}px;top:${vy * k}px;width:${Math.min(W, vw * k)}px;height:${Math.min(H, vh * k)}px"></b>`;
   B.mini.innerHTML = h;
 }
-/** screen point of a world point */
 function scr(x: number, y: number) { const B = BX!, r = rect(B.scroll); return { x: r.left + PAD + x * B.sc - B.scroll.scrollLeft, y: r.top + PAD + y * B.sc - B.scroll.scrollTop }; }
 const rowWorld = (i: number) => { const lay = lays.functions!, f = R[i].file, p = lay.pos[f], g = boxGeom(f, 'functions').rows.find((r) => r.type === 'fn' && r.i === i)!; return { x: p.x, y: p.y + g.y, w: p.w }; };
 
@@ -376,7 +358,6 @@ function resetMarks() {
 }
 function edgeEls(a: number, b: number) { return [...BX!.svg.querySelectorAll<SVGElement>(`[data-a="${a}"][data-b="${b}"]`)]; }
 
-/** Every route from function row A to function row B through the run's calls: [rows], with how often it is taken. */
 function routes(a: number, bName: string) {
   const out: { rows: number[]; n: number; at: number[] }[] = [];
   for (let i = 0; i < R.length; i++) {
@@ -444,19 +425,16 @@ function setViewChips(boxes: boolean) {
   document.querySelectorAll<HTMLElement>('.pane .ph .chip').forEach((c) => { const t = c.textContent!.trim(); if (t === 'sequence') c.classList.toggle('on', !boxes); if (t === 'boxes') c.classList.toggle('on', boxes); });
 }
 
-// ---------- the scenes ----------
 interface Step { d: number; run: () => Promise<void> | void }
 const visited = new Set<number>();
 let noteEl: HTMLElement | null = null, footer: HTMLElement | null = null;
 const S: Step[] = [];
 const add = (d: number, run: Step['run']) => S.push({ d, run });
 
-// intro
 add(2.4, async () => {
   title('ideas', 'for the flow page', 'drawn on the real run of samples/tinyhttp · nothing here is built yet');
   await wait(600); press('ArrowRight'); await wait(700); press('ArrowRight');
 });
-// sequence 1 + 10
 add(4.2, async () => {
   title('sequence 1 · 10', 'quieter structure, readable dimming', 'only the chain you are in keeps its bars · rows off it stay readable');
   const r = rowEl(13)!;
@@ -466,7 +444,6 @@ add(4.2, async () => {
   say('', 'bars: only main › start › handle › parse_headers › trim', '· far rows at .55 instead of .42', 2000);
   await wait(400); hideCursor();
 });
-// sequence 2 + 13
 add(4.6, async () => {
   title('sequence 2 · 13', 'the return route, with motion', 'a dashed line back through the caller · glide into a call, arc out of it');
   press('ArrowRight'); await wait(650); press('ArrowRight'); await wait(900);
@@ -485,7 +462,6 @@ add(4.6, async () => {
   await wait(1500);
   sv.remove(); lab.remove();
 });
-// sequence 3
 let codeBox: HTMLElement | null = null;
 function putCode(it: number) {
   codeBox?.remove(); codeBox = null;
@@ -503,7 +479,6 @@ add(3.8, async () => {
   title('sequence 3', 'code in the box', 'the lines around the call, inside the step itself');
   await wait(300); putCode(16); await wait(3000);
 });
-// sequence 4
 add(3.6, async () => {
   title('sequence 4', 'peek', 'hover any row to read its code · the selected step stays where it is');
   const r = rowEl(22)!, nm = r.el.querySelector('.nm')!;
@@ -518,7 +493,6 @@ add(3.6, async () => {
   await cursorTo(cx + 260, cy + 120, 400);
   pk.remove(); hideCursor();
 });
-// sequence 5
 add(4, async () => {
   title('sequence 5', 'breadcrumbs', 'the whole call chain above the run · click a name to go there');
   crumbsEl = mk('ux-crumbs', document.body); document.body.classList.add('ux-crumbs-on'); drawCrumbs();
@@ -530,7 +504,6 @@ add(4, async () => {
   crumbHot = ''; await jumpTo(4); remeasure();
   await wait(1200); hideCursor();
 });
-// sequence 6
 add(4, async () => {
   title('sequence 6', 'chapters on the spine', 'the run’s parts, from main’s own calls and loops · click one to go there');
   const sp = seqv().querySelector('.sspine')!, b = rect(sp), v = rect(seqv());
@@ -548,7 +521,6 @@ add(4, async () => {
   await jumpTo(8); remeasure();
   await wait(500); list.remove(); box.remove(); hideCursor();
 });
-// sequence 7
 add(4.4, async () => {
   title('sequence 7', 'fold a big call', 'handle’s steps fold into one row with a mini spine of its own · Enter unfolds');
   const r = rowEl(9)!;
@@ -565,7 +537,6 @@ add(4.4, async () => {
   say('Enter', 'unfold', '', 1200);
   st.remove(); expand(); hideCursor();
 });
-// sequence 8
 add(6.4, async () => {
   title('sequence 8', 'search and paths', 'find a function, pick one of its paths from main · → then follows that path');
   const pal = mk('ux-pal', seqv(), '<div class="in"><span class="q">/</span><span class="tx"></span><span class="caret"></span></div><div class="res"></div>');
@@ -589,7 +560,6 @@ add(6.4, async () => {
   for (const it of [4, 9, 16, 17, 18]) { await wait(560); await jumpTo(it); await raw(30); mark(); }
   await wait(500); document.body.classList.remove('ux-nocap');
 });
-// sequence 11
 add(3.4, async () => {
   title('sequence 11', 'share a walk', 'a link reopens this exact walk · or export it as a walkthrough');
   seqv().classList.remove('ux-path'); domRows().forEach((d) => d.el.classList.remove('ux-on'));
@@ -605,7 +575,6 @@ add(3.4, async () => {
   toast('link copied <span>skycodex://walk/tinyhttp/main?at=→12&amp;path=2&amp;pass=1</span>', 1700);
   await wait(1400); share.remove(); hideCursor();
 });
-// sequence 12
 add(7.2, async () => {
   title('sequence 12', 'tour', 'plays on its own, names each step and who called it, and waits at each loop and decision');
   document.body.classList.add('ux-nocap');
@@ -622,7 +591,6 @@ add(7.2, async () => {
   await wait(1700);
   capEl?.remove(); capEl = null; document.body.classList.remove('ux-nocap');
 });
-// boxes 1 + 2
 add(4.2, async () => {
   title('boxes 1 · 2 · 7', 'built from the run, one selected step', 'Tab: rows glide into their files · numbered lines go row to row · entry points left, helpers right');
   say('Tab', 'boxes', '', 1200);
@@ -649,7 +617,6 @@ add(4.2, async () => {
   lightRow(s.items[curIt()]);
   await wait(2600);
 });
-// boxes: scale
 add(7.6, async () => {
   title('boxes', 'fit width, fit all or any scale · scroll for the rest', 'presets or ⌥ wheel · scrollbars and a minimap when it is larger than the view');
   const z100 = chipEl('100');
@@ -670,7 +637,6 @@ add(7.6, async () => {
   await cursorAt(zw, 0.5, 0.6, 500); await clickFx(); activeChip('width'); await zoomTo(fitScale('width'), 520);
   await wait(400); hideCursor();
 });
-// boxes 3
 add(5.4, async () => {
   title('boxes 3', 'semantic zoom', 'functions → files → folders as you zoom out · every level stays readable');
   const minus = chipEl('-');
@@ -693,7 +659,6 @@ add(5.4, async () => {
   lightRow(s.items[curIt()]);
   await wait(500); hideCursor();
 });
-// boxes 4: routes between two functions
 add(11, async () => {
   title('boxes 4', 'every route between two functions', 'numbers stay on every line · pick a start and an end: its routes light, the rest steps back');
   lightRow(null);
@@ -729,7 +694,6 @@ add(11, async () => {
   await wait(900);
   bar.remove(); uncoverPreview(); resetMarks(); lightRow(s.items[curIt()]);
 });
-// boxes 5
 add(4, async () => {
   title('boxes 5', 'focus', 'one function and two levels around it · the rest fades');
   const B = BX!, me = 10;
@@ -750,7 +714,6 @@ add(4, async () => {
   await wait(2600);
   resetMarks(); lightRow(s.items[curIt()]); hideCursor();
 });
-// boxes 6
 add(4, async () => {
   title('boxes 6', 'how often', 'a row’s shade comes from the loops around it: once · a known count · one, two or three loops deep');
   const B = BX!;
@@ -766,7 +729,6 @@ add(4, async () => {
   await wait(3400);
   lg.remove(); resetMarks(); lightRow(s.items[curIt()]);
 });
-// boxes 9
 add(4.6, async () => {
   title('boxes 9', 'follow a line', 'click a line: the view glides to the other end and the call site lights');
   const B = BX!;
@@ -785,7 +747,6 @@ add(4.6, async () => {
   await wait(1800);
   e.classList.remove('on'); B.rows[22].classList.remove('hot');
 });
-// boxes 10
 add(3, async () => {
   title('boxes 10', 'export', 'the view as a picture for docs and reviews');
   const ex = chipEl('export');
@@ -797,7 +758,6 @@ add(3, async () => {
   toast('saved <span>tinyhttp-flow.svg · 8 boxes, 7 lines</span>', 1500);
   await wait(1200); hideCursor();
 });
-// new: loupe
 add(4.6, async () => {
   title('new', 'loupe', 'hold ⌥ over a small diagram to read it at full size, without zooming');
   const B = BX!;
@@ -824,7 +784,6 @@ add(4.6, async () => {
   await wait(500);
   live = false; lens.remove(); hideCursor();
 });
-// back to the sequence
 add(1.4, async () => {
   title('', 'back to the sequence', 'Tab');
   say('Tab', 'sequence', '', 1000);
@@ -833,7 +792,6 @@ add(1.4, async () => {
   setViewChips(false);
   await jumpTo(9);
 });
-// new: what if (+ sequence 9, compare)
 add(6.6, async () => {
   title('new · sequence 9', 'what if · compare', 'flip a condition: what it skips folds away · compare both shapes side by side');
   await wait(200);
@@ -859,7 +817,6 @@ add(6.6, async () => {
   await wait(2400);
   pan.remove(); st.remove(); expand();
 });
-// new: depth skyline
 add(5, async () => {
   title('new', 'depth skyline', 'the whole run as a profile of call depth · drag along it to scrub');
   document.body.classList.add('ux-nocap');
@@ -891,7 +848,6 @@ add(5, async () => {
   hideCursor();
   document.body.classList.remove('ux-nocap');
 });
-// new: jump letters
 add(4, async () => {
   title('new', 'jump letters', 'press F: every row in view gets two letters · type them to go there');
   footer?.remove(); footer = null;
@@ -910,7 +866,6 @@ add(4, async () => {
   await jumpTo(tgt.d.it);
   await wait(1200);
 });
-// new: what you have read
 add(3.6, async () => {
   title('new', 'what you’ve read', 'steps you have been to are ticked · the count says what is left');
   readNote = `read ${[...visited].filter((it) => it < N && rowOf(it).kind === 'step').length} of 23 steps`;
@@ -919,7 +874,6 @@ add(3.6, async () => {
   await wait(3200);
   ticks.forEach((t) => t.remove()); readNote = '';
 });
-// new: margin notes
 add(4.4, async () => {
   title('new', 'margin notes', 'a note pinned to a step · it travels with the walk’s link');
   say('N', 'note', '', 900);
@@ -937,7 +891,6 @@ add(4.4, async () => {
   await wait(1400);
   noteEl.remove(); ld.remove(); pin.remove(); noteEl = null;
 });
-// new: change ripple
 add(5, async () => {
   title('new', 'change ripple', 'after an edit, where the changed function runs and every chain that reaches it');
   await jumpTo(12); await wait(500);
@@ -955,12 +908,10 @@ add(5, async () => {
   await wait(3800);
   marks.forEach((m) => m.remove()); tinted.forEach((e) => e.classList.remove('ux-chg-row', 'ux-chain-row')); card.remove(); capEl?.remove(); capEl = null;
 });
-// end
 add(2.6, () => {
   title('that’s the set', 'sequence 1–13 · boxes 1–10 · seven new ideas', 'tell me what to build first');
 });
 
-// ---------- styles ----------
 function styles() {
   const k = SLOW, T = `cubic-bezier(.16,1,.3,1)`;
   const css = `

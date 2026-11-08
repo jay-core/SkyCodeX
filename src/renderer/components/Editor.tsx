@@ -11,10 +11,8 @@ import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
 import { repairFor } from '../lib/repair';
 import { gotoDefinition } from '../lib/goto';
 
-/** C and C++ sources and headers the repair engine checks (not fragments such as .inc tables). */
 const REPAIRABLE = /\.(c|cc|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|ipp|inl|tpp|tcc)$/i;
 
-// ---- decorations: focus dimming, ⌘/Ctrl-hover link (call outlines come from the preview: lib/callmarks.ts) ----
 interface Marks { dim: [number, number] | null; link: [number, number] | null }
 export const setMarks = StateEffect.define<Partial<Marks>>();
 const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
@@ -35,10 +33,8 @@ const marksField = StateField.define<{ m: Marks; deco: DecorationSet }>({
   provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
 });
 
-/** Toolchain and SDK locations: files there are shown read-only. */
 export const SYSTEM_PATH = /^(\/usr\/|\/Library\/Developer\/|\/Applications\/Xcode|\/opt\/homebrew\/|[A-Za-z]:[\\/]Program Files)|[\\/](c\+\+|include)[\\/]v\d[\\/]/;
 
-/** Focus dimming: only the lines on screen are decorated, so a huge file costs the same as a small one. */
 const dimLine = Decoration.line({ class: 'cm-dimmed' });
 const dimPlugin = ViewPlugin.fromClass(class {
   decorations: DecorationSet;
@@ -76,7 +72,7 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
       setCursorPos({ line: p.line + 1, col: p.character + 1 });
       refreshForCursor(current, p);
       props.onCursor();
-    }, saver() ? 260 : 100);   // calmer on battery
+    }, saver() ? 260 : 100);
   };
 
   const makeState = (file: string, text: string) => {
@@ -85,12 +81,10 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
       doc: text,
       extensions: [
         editorExtensions({ tabSize: s['editor.tab_size'] ?? (langOf(file) === 'go' ? 8 : 4), wrap: !!s['editor.word_wrap'] || langOf(file) === 'markdown', language: syntaxFor(file) }),
-        // C and C++ talk to clangd; Rust, Python and Go to their pack's engine; other files only get colouring
         langOf(file) === 'cpp' ? [completionFor(() => file), hoverFor(() => file)]
           : serverLang(file) ? [completionFor(() => file, sender(file), flushOther), hoverFor(() => file, sender(file))] : [],
         lintSupport, marksField, dimPlugin, gotoDefinition({ file: () => file, base: () => 0 }),
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
-        // standard-library and SDK headers open read-only; the project's own C and C++ get checked fixes for their errors
         SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : langOf(file) === 'cpp' && REPAIRABLE.test(file) ? repairFor(file) : [],
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onDocChanged(file, u.state);
@@ -112,7 +106,6 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
   });
   onCleanup(() => { setMainView(null); view?.destroy(); });
 
-  // switch documents
   createEffect(on(() => files.active, (active) => {
     if (!view) return;
     if (current) attachView(current, null);
@@ -123,13 +116,11 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
     else setCrumb('');
   }));
 
-  // when clangd finishes indexing, rebuild the previews with the complete call graph
   createEffect(on(indexEpoch, () => {
     if (!view || !current) return;
     refreshForCursor(current, offsetToPos(view.state.doc, view.state.selection.main.head), true);
   }, { defer: true }));
 
-  // crumb and focus dimming follow the preview state
   createEffect(() => {
     const fn = mainFn(), s = settings();
     levels(); win();

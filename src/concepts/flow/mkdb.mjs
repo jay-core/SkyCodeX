@@ -1,5 +1,3 @@
-// Writes a compile_commands.json for a folder without one, the way SkyCodeX does (every header folder an include path).
-// usage: node mkdb.mjs <root> <out dir>
 import fs from 'node:fs';
 import path from 'node:path';
 const [root, out] = process.argv.slice(2);

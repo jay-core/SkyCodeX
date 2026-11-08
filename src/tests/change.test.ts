@@ -1,5 +1,3 @@
-// What a change does (FLOW-DESIGN §8b): samples/change/v1 (before) and v2 (after), each recorded from clangd with
-// src/tests/fixtures/record-flow.mjs. What changed is worked out by hand from the two files.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +32,6 @@ describe('what a change does (samples/change v1 → v2)', () => {
   it('a removed call stands in place, where the older version made it', () => {
     expect((m.run.ghosts ?? []).map((g) => `${R[g.after].name}: ${g.names.join(', ')} | ${g.why} | ${g.kind}`)).toEqual(['start: log_request | removed · in v1 | removed']);
   });
-  // (every function of v2 sits a line lower than in v1: main, accept, route and send_response say nothing above)
   it('a version compared with itself changes nothing', () => {
     const same = alignChange(v2, v2, 'v2');
     expect(same.summary).toBe('no change to what this run does since v2');

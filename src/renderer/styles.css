@@ -32,7 +32,6 @@ input, select { font: inherit; color: var(--bright); }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 
-/* header: typography is the chrome */
 .hdr { height: 56px; flex: none; display: flex; align-items: flex-end; padding: 0 22px 8px; gap: 24px; -webkit-app-region: drag; position: relative; z-index: 5; }
 .hdr button, .hdr .nodrag { -webkit-app-region: no-drag; }
 .pivot { display: flex; align-items: baseline; gap: 24px; font: 300 27px var(--ui); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; min-width: 0; }
@@ -52,12 +51,10 @@ input, select { font: inherit; color: var(--bright); }
 .wctl button.x:hover { color: var(--err); }
 .wctl svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; vertical-align: middle; overflow: visible; }
 
-/* panes */
 .body { flex: 1; min-height: 0; display: flex; }
 .pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .ph { height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; font: 300 15px var(--ui); color: #4f564f; white-space: nowrap; }
 .ph .grow { flex: 1; }
-/* the flow pages' headers carry many controls: in a narrow window they wrap onto a second line rather than hide */
 .ph.wrap { height: auto; min-height: 36px; flex-wrap: wrap; row-gap: 2px; }
 .chip { font: 300 12.5px var(--ui); color: var(--faint); }
 .chip.on { color: var(--bright); }
@@ -66,7 +63,6 @@ input, select { font: inherit; color: var(--bright); }
 .split:hover, .split.drag { background: rgba(115, 150, 150, .12); }
 .empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--ghost); font: 300 14px/1.6 var(--ui); padding: 24px; }
 
-/* files */
 .files { background: var(--side); }
 .tree { overflow: auto; flex: 1; padding: 2px 0 12px; font: 300 13px var(--ui); }
 .ti { display: flex; align-items: center; gap: 6px; height: 23px; padding-right: 12px; color: #777e76; white-space: nowrap; cursor: default; }
@@ -75,7 +71,6 @@ input, select { font: inherit; color: var(--bright); }
 .ti .ic { width: 10px; color: var(--dim); font-size: 9px; flex: none; }
 .ti .dot { width: 6px; height: 6px; border-radius: 50%; margin-left: auto; }
 
-/* editor */
 .code { flex: 1; min-height: 0; }
 .cm-editor { height: 100%; background: var(--bg); color: var(--fg); font-family: var(--mono); }
 .cm-editor.cm-focused { outline: none; }
@@ -105,7 +100,6 @@ input, select { font: inherit; color: var(--bright); }
 .cm-foldPlaceholder { background: #222422 !important; border: 0 !important; color: var(--dim) !important; }
 .cm-foldGutter .cm-gutterElement { color: var(--faint); }
 .cm-dimmed { opacity: .38; }
-/* the error repair engine: checked fixes under an error line, each with ✓ and ✗ (lib/repair.ts) */
 .rp { display: flex; flex-direction: column; gap: 2px; padding: 3px 0 6px; }
 .rp .why0 { font: 300 11.5px var(--ui); color: var(--faint); padding-left: 1px; }
 .rs { display: flex; align-items: center; gap: 8px; min-height: 21px; }
@@ -121,7 +115,6 @@ input, select { font: inherit; color: var(--bright); }
 .cm-line .applied { color: var(--ty); font: 300 11.5px var(--ui); }
 .hdr .status .rnote { color: var(--dim); }
 .cmd-link { text-decoration: underline var(--kw); text-underline-offset: 4px; cursor: pointer; }
-/* go to definition, the same in every code view: a distinct underline, a faint wash, a tag saying where it leads */
 .gt-link { color: #e3e6df; text-decoration: underline 2px #7fa3a3; text-underline-offset: 4px; background: rgba(127, 163, 163, .10); cursor: pointer; }
 .gt-tag { display: inline-block; margin-left: 10px; padding: 0 7px; font: 300 11px/1.6 var(--ui); color: #171817; background: #7fa3a3; vertical-align: 1px; pointer-events: none; }
 .gt-peek { margin: 4px 0 8px; border: 1px solid #ad9b6f; background: #141514; box-shadow: 0 10px 26px rgba(0, 0, 0, .45); }
@@ -132,7 +125,6 @@ input, select { font: inherit; color: var(--bright); }
 .gt-peek .cm-editor { max-height: 320px; }
 .call-mark { text-underline-offset: 4px; }
 
-/* previews */
 .prev { background: var(--prev); overflow: hidden; }
 .pcol { position: absolute; top: 36px; bottom: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .pcol::-webkit-scrollbar { display: none; }
@@ -140,7 +132,6 @@ input, select { font: inherit; color: var(--bright); }
 .card { background: var(--card); flex: none; position: relative; }
 .card.focus { background: var(--card-hi); box-shadow: inset 2px 0 #4e6a6a; }
 .card.flash { background: #202220; }
-/* the header follows the preview size (0.9 is the default): it never clips at any size, scale or typeface */
 .card-h { --hk: calc(var(--preview-scale) / .9); display: flex; align-items: center; gap: 7px; padding: calc(7px * var(--hk)) 10px 0; min-height: calc(24px * var(--hk)); line-height: 1.3; font: calc(10.5px * var(--hk)) var(--mono); white-space: nowrap; overflow: hidden; }
 .card-h .sw { width: 5px; height: 5px; border-radius: 50%; flex: none; }
 .card-h .nm { color: #727971; overflow: hidden; text-overflow: ellipsis; }
@@ -158,7 +149,6 @@ input, select { font: inherit; color: var(--bright); }
 .shiftbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; display: flex; align-items: center; gap: 24px; padding: 0 22px; background: var(--prev); font: 300 13.5px var(--ui); color: #4f564f; z-index: 3; }
 .shiftbar button:disabled { opacity: .35; cursor: default; }
 .shiftbar button:not(:disabled):hover { color: var(--accent); }
-/* the start window: in the middle of the app when no folder is open */
 .startv { position: fixed; inset: 0; z-index: 32; background: rgba(10, 11, 10, .55); display: grid; place-items: center; }
 .startw { width: min(860px, calc(100vw - 48px)); background: var(--pop); box-shadow: 0 30px 80px rgba(0, 0, 0, .65); padding: 30px 34px 24px; animation: st-in .28s cubic-bezier(.16, 1, .3, 1); }
 @keyframes st-in { from { opacity: 0; transform: translateY(10px) scale(.985); } }
@@ -198,19 +188,16 @@ input, select { font: inherit; color: var(--bright); }
 .st-foot b { font-weight: 400; color: var(--dim); }
 .st-foot .r { margin-left: auto; }
 @media (max-width: 760px) { .st-cols { grid-template-columns: 1fr; } .st-foot .r { display: none; } }
-/* back / next: one hairline box, visible but quiet */
 .shiftbar .pnav { display: flex; height: 26px; border: 1px solid #343834; }
 .shiftbar .pnav:hover { border-color: #4a504a; }
 .shiftbar .pnav button { padding: 0 13px; color: #7b8279; }
 .shiftbar .pnav button + button { border-left: 1px solid #343834; }
 
-/* full pages */
 .page { position: absolute; inset: 56px 0 0 0; background: var(--bg); display: flex; flex-direction: column; }
 .big { font: 300 38px/1 var(--ui); color: var(--bright); letter-spacing: -.02em; }
 .label { font: 300 15px var(--ui); color: #4f564f; margin: 0 0 10px; }
 .sub { font: 300 12.5px var(--ui); color: #4f564f; }
 
-/* settings */
 .set { position: absolute; inset: 0; background: var(--bg); z-index: 20; padding: 26px 44px; overflow: auto; }
 .set .app-title { font: 600 11px var(--ui); letter-spacing: .14em; color: #4f564f; }
 .set .pv { display: flex; gap: 30px; margin: 4px 0 26px; white-space: nowrap; overflow: hidden; }
@@ -262,7 +249,6 @@ input, select { font: inherit; color: var(--bright); }
 .choices.weights button.synth { opacity: .6; }
 .problem { background: #1f1a18; color: #c9a49c; padding: 10px 14px; font: 300 13.5px/1.5 var(--ui); margin-bottom: 18px; max-width: 900px; }
 
-/* the boxes view (components/FlowBoxes.tsx): files as boxes, the functions that run as rows, lines row to row */
 .flow { position: relative; flex: 1; min-height: 0; overflow: hidden; outline: none; }
 .bxs { position: absolute; left: 0; top: 0; right: 0; bottom: 34px; overflow: auto; cursor: default; }
 .bxs.drag { cursor: grabbing; }
@@ -280,14 +266,12 @@ input, select { font: inherit; color: var(--bright); }
 .bxed .walk { fill: none; stroke: #e8d9ad; stroke-width: 2; opacity: .35; }
 @keyframes bxflow { from { stroke-dashoffset: 10; } to { stroke-dashoffset: 0; } }
 .fbox { position: absolute; background: #1a1b1a; border: 1px solid #2e322e; cursor: default; transition: opacity .3s, border-color .3s; }
-/* the box holding the current step: an amber edge and a warm tint, at every zoom */
 .fbox.cur { border-color: var(--flow-now); background: #1f1e19; box-shadow: 0 0 0 1px rgba(173,155,111,.25); } .fbox.cur .t { color: #f0eadb; } .fbox.fade { opacity: .28; }
 .fbox .t { position: absolute; left: 12px; top: 8px; right: 34px; font: 300 15px var(--ui); color: #c9cdc5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fbox .t i { font-style: normal; color: #4f564f; font-size: 11.5px; margin-left: 6px; }
 .fbox .lc { position: absolute; right: 10px; top: 10px; font: 300 11.5px var(--ui); color: #4f7a7a; }
 .fbox .s { position: absolute; left: 12px; top: 42px; font: 300 15px var(--ui); color: #5f665f; white-space: nowrap; }
 .fbox .start { position: absolute; right: calc(100% + 10px); top: 9px; font: 300 12px var(--ui); color: var(--accent); white-space: nowrap; }
-/* zoomed out, a box's words keep their size on screen: --inv is 1 / the scale */
 .lv-files .fbox .t, .lv-folders .fbox .t { font-size: calc(14px * var(--inv)); left: calc(12px * var(--inv)); top: calc(8px * var(--inv)); right: calc(34px * var(--inv)); }
 .lv-files .fbox .t i, .lv-folders .fbox .t i { font-size: calc(11px * var(--inv)); }
 .lv-files .fbox .s, .lv-folders .fbox .s { font-size: calc(11.5px * var(--inv)); left: calc(12px * var(--inv)); right: calc(8px * var(--inv)); top: calc(30px * var(--inv)); overflow: hidden; text-overflow: ellipsis; }
@@ -343,12 +327,9 @@ input, select { font: inherit; color: var(--bright); }
 .psplit:hover, .psplit.drag { background: rgba(115, 150, 150, .12); }
 .pnote .lnk { color: var(--link); }
 .pnote .lnk:hover { text-decoration: underline; }
-/* the call under a cursor: its card and index entry carry the card's own colour, quietly */
 .card { transition: background .18s, box-shadow .18s; }
-/* the lit card: tinted in its colour, a bold edge, its header as a coloured band; the others in its column step back */
 .card { transition: background .18s, box-shadow .18s, opacity .22s; }
 .card.lit { --tint: color-mix(in srgb, var(--c) 9%, #1b1c1b); background: var(--tint); box-shadow: inset 4px 0 var(--c), inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
-/* one soft ring as it lights up: only opacity and scale move, so it stays on the compositor */
 .card.lit::after { content: ''; position: absolute; inset: 0; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 40%, transparent); opacity: 0; pointer-events: none; animation: lit-ring .6s cubic-bezier(.16, 1, .3, 1); }
 .card.lit .cm-editor, .card.lit .cm-gutters { background: var(--tint) !important; }
 .card.lit .card-h { background: color-mix(in srgb, var(--c) 17%, #1b1c1b); }
@@ -358,7 +339,6 @@ input, select { font: inherit; color: var(--bright); }
 .pcol.haslit .card:not(.lit):hover { opacity: .85; }
 @keyframes lit-ring { from { opacity: 1; transform: scale(1.012); } to { opacity: 0; transform: none; } }
 
-/* the call index: one colour square per call, the name on hover */
 .pdiv { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; font: 300 11px var(--ui); color: #3f453f; white-space: nowrap; overflow: hidden; }
 .pdiv::before { content: ''; flex: 0 0 18px; height: 1px; background: rgba(255, 255, 255, .09); }
 .pdiv::after { content: ''; flex: 1; height: 1px; background: rgba(255, 255, 255, .09); }
@@ -391,7 +371,6 @@ input, select { font: inherit; color: var(--bright); }
 .appbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px; }
 .appbar .gear { margin-top: 0; height: 22px; width: 24px; }
 
-/* the compiler window: floats over the app, moved by its title bar, closed only by its own buttons */
 .cwin { position: fixed; z-index: 35; width: 600px; max-width: calc(100vw - 32px); background: var(--pop); box-shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04); }
 .cwin-h { display: flex; align-items: center; height: 36px; padding-left: 16px; cursor: grab; user-select: none; background: #1c1e1c; }
 .cwin-h:active { cursor: grabbing; }
@@ -443,10 +422,8 @@ input, select { font: inherit; color: var(--bright); }
 .fbox .pin { position: absolute; right: 6px; top: -19px; font: 300 11.5px var(--ui); color: #6f786f; }
 .fbox .pin:hover { color: var(--bright); }
 @media (prefers-reduced-motion: reduce) { .tour-spot, .tour-note { transition: none; } }
-/* accessibility: a visible ring for keyboard focus only, high contrast, and calm motion */
 :where(button, [role=button], input, select, [tabindex]):focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; }
 .cm-editor:focus-visible, .cm-content:focus-visible, .help-body:focus-visible { outline: none; }
-/* the flow canvases take the keys themselves and show where you are; no ring around the whole diagram */
 .flow.bxv:focus-visible, .seqv:focus-visible { outline: none; }
 .flow.bxv .scap { bottom: 48px; }
 html.hc { --fg: #d4d8d0; --bright: #f2f4ef; --dim: #a3aaa0; --faint: #7c847a; --ghost: #5a615a; --gut: #6a716a; --accent: #e3c77e; --link: #9fd0d0; }
@@ -466,14 +443,11 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .clang .cpack { padding: 2px 0; }
 .clang .dim b { font-weight: 400; color: var(--fg); }
 
-/* ---------- the sequence view (components/Sequence.tsx): amber is "now", teal is repetition, red is risk ---------- */
 .seqv { position: relative; flex: 1; overflow: hidden; outline: none; --now: var(--flow-now); --rep: var(--flow-rep); --risk: var(--flow-risk); }
 .seqin { position: absolute; left: 0; top: 0; right: 0; transition: transform .5s cubic-bezier(.16,1,.3,1); }
 .seqk { font: 300 15px var(--ui); color: var(--now); font-variant-numeric: tabular-nums; }
 .seqloop { font: 300 13px var(--ui); color: #7fb0b0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .seqpath { font: 300 15px var(--ui); color: #9aa094; overflow: hidden; white-space: nowrap; display: flex; align-items: baseline; justify-content: flex-end; gap: 7px; flex: 0 1 auto; min-width: min-content; }
-/* crowded: the current function stays in view, the start of the chain fades out on the left */
-/* when space is short, the callers shrink to … and the current function keeps its whole name */
 .seqpath .crumb { font: inherit; color: #9aa094; padding: 0; margin: 0; white-space: nowrap; flex: 0 1 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
 .seqpath .crumb.last { flex: none; min-width: auto; }
 .seqpath .crumb:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
@@ -481,14 +455,12 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .seqpth { font: 300 13px var(--ui); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .shr { position: relative; } .smenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; background: #202220; box-shadow: 0 16px 36px rgba(0,0,0,.55); padding: 6px 0; display: grid; }
 .smenu button { padding: 5px 16px; font: 300 12.5px var(--ui); color: #c9cdc5; text-align: left; white-space: nowrap; } .smenu button:hover { background: rgba(173,155,111,.12); color: #f0eadb; }
-/* quoted code in the flow views (lib/hlcode.ts) */
 .scall .kw, .speek .kw { color: var(--kw); } .scall .fn, .speek .fn { color: var(--fn); } .scall .st, .speek .st { color: var(--str); } .scall .cm, .speek .cm { color: var(--cm); }
 .slane { position: absolute; top: 6px; z-index: 2; font: 300 12.5px var(--ui); color: #4f564f; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .srow { position: absolute; display: flex; align-items: baseline; gap: 8px; height: 23px; line-height: 23px; font: 12px var(--mono); color: #8b9189; white-space: nowrap; overflow: hidden; cursor: default;
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
   transition: top .42s cubic-bezier(.16,1,.3,1), left .42s cubic-bezier(.16,1,.3,1), opacity .42s, color .42s; }
 .srow .n { color: #6f6650; min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
-/* metro: the line on the left, one station per step; rows in four columns: step and ƒ · who → the call as written · result · notes */
 .seqv.metro .sbar, .seqv.metro .sarw { display: none; }
 .mtrack { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .mlegend { position: absolute; left: 0; top: 0; right: 30px; z-index: 4; height: 44px; padding: 5px 16px 0; background: var(--bg); border-bottom: 1px solid #202220; font: 300 11px var(--ui); color: var(--dim); pointer-events: none; white-space: nowrap; overflow: hidden; }
@@ -498,11 +470,9 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .mhead > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mhead .h1 { flex: none; width: 82px; } .mhead .h2 { flex: 1 1 0; min-width: 0; } .mhead .h3 { flex: 0 0 clamp(96px, 16%, 150px); padding-left: 10px; } .mhead .h4 { flex: 0 0 30%; padding-left: 8px; }
 .seqv.metro .srow { gap: 0; transition: top .42s cubic-bezier(.16,1,.3,1), left .42s cubic-bezier(.16,1,.3,1), opacity .42s, color .42s, background-color .12s; }
-/* the step under the pointer: a light highlight while its code peeks (the selected step keeps its own look) */
 .seqv.metro .srow:not(.sel):hover { background-color: rgba(227, 214, 173, .055); box-shadow: inset 2px 0 rgba(227, 214, 173, .35); }
 .seqv.metro .srow .n { min-width: 26px; padding-right: 6px; }
 .seqv.metro .srow .fno { flex: none; width: 50px; height: 23px; line-height: 23px; overflow: hidden; white-space: nowrap; font: 400 11px/23px var(--mono); color: #6f766f; }
-/* ↻ comes from a fallback font with taller metrics: kept to one line inside the row */
 .seqv.metro .srow .fno .rp { display: inline-block; line-height: 1; margin-right: 2px; font: 400 10px var(--ui); vertical-align: 0; }
 .seqv .scap, .gview .scap { bottom: 74px; }
 .seqv.metro .srow .mmain { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: baseline; gap: 6px; }
@@ -525,12 +495,10 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .srow .u { font: 300 11px var(--ui); color: #464c46; }
 .srow .tag { font: 300 11px var(--ui); color: #8a7f5f; }
 .srow.far { opacity: .55; }
-/* ways out (E): the usual path dims, steps that can leave early keep full strength with their ways out in the error colour */
 .seqv.waysout .srow.wq { opacity: .18 !important; }
 .seqv.waysout .srow.wx { opacity: 1 !important; }
 .srow .sx { font: 300 11.5px var(--ui); color: var(--err); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .srow .sx .ln { color: #7a5a54; }
-/* a value followed (W, V): the steps that touch it keep full strength, with how; the rest dims */
 .seqv.following .srow.fq { opacity: .18 !important; }
 .seqv.following .srow.fw { opacity: 1 !important; }
 .srow.sdead { opacity: .32; }
@@ -551,7 +519,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .setm .mr .mi { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setm .lnk { color: var(--link); text-decoration: underline dotted; text-underline-offset: 3px; }
 .setc .csum { margin-left: 8px; font: 300 12px var(--ui); color: var(--bright); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
-/* what a change does: added in green at full strength, removed as faded red ghosts, changed marked */
 .srow.cadd .nm, .srow.cadd .n { color: #8fb98a; } .srow .nt.cadd, .srow.cadd .nt { color: #7fa57a; }
 .srow.cchg .nt { color: #ab9070; }
 .sline .gh.gone { color: #b8766b; border-color: #6b4a44; opacity: .55; }
@@ -601,30 +568,24 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .schip:hover { color: var(--accent); }
 .sep { color: #464c46; }
 .sspine { position: absolute; right: 3px; top: 8px; width: 9px; cursor: pointer; }
-/* the return route: a dashed line back up through the caller's bar, drawn once and gone */
 .sret { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; z-index: 4; }
 .sret path { fill: none; stroke: var(--flow-return); stroke-width: 1; }
-/* a folded call: one row under it says what runs inside, with a mini spine of call depths */
 .srow.sfold { color: #c9c2ac; cursor: pointer; } .srow.sfold .pl { color: var(--accent); width: 12px; text-align: center; }
 .srow.sfold .nt { color: #6f766e; } .srow.sfold .mini { display: inline-flex; align-items: flex-end; gap: 1px; height: 14px; margin-left: 8px; } .srow.sfold .mini i { width: 2px; background: #4a504a; }
-/* the lines around the call, inside the step's box */
 .scall { margin-top: 8px; font: 12px/1.6 var(--mono); color: #8b9189; }
 .scall .from { font: 300 11.5px var(--ui); color: #5f665f; margin-bottom: 2px; }
 .scall > div:not(.from) { display: flex; white-space: pre; overflow: hidden; }
 .scall .ln, .speek .ln { width: 34px; flex: none; text-align: right; padding-right: 12px; color: #3a3f3a; }
 .scall .hit { background: rgba(173,155,111,.13); box-shadow: inset 3px 0 #ad9b6f; color: #e3e6df; } .scall .hit .ln { color: #8a7f5f; }
-/* peek: a row's code on hover */
 .speek { position: absolute; z-index: 6; min-width: 420px; max-width: 560px; background: #202220; box-shadow: 0 16px 36px rgba(0,0,0,.55); padding: 8px 14px 8px 0; pointer-events: none; animation: speek-in .18s ease-out; }
 .speek.up { transform: translateY(-100%); }
 .speek .h { font: 300 12px var(--ui); color: #c9cdc5; padding: 0 0 5px 14px; } .speek .h i { font-style: normal; color: #5f665f; margin-left: 8px; } .speek .h .lk { float: right; color: #4f564f; }
 .speek .l { display: flex; white-space: pre; overflow: hidden; font: 12px/1.6 var(--mono); color: #9ea39b; } .speek .more { padding-left: 46px; color: #4f564f; font: 12px var(--mono); }
 @keyframes speek-in { from { opacity: 0; } }
-/* chapters: the run's parts, from the spine */
 .schap { position: absolute; z-index: 21; background: #1f201f; box-shadow: 0 16px 36px rgba(0,0,0,.5); padding: 7px 0; display: grid; min-width: 260px; max-width: 520px; }
 .schap button { display: flex; gap: 12px; align-items: baseline; padding: 3px 16px; font: 300 12.5px var(--ui); color: #9aa094; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .schap button b { min-width: 46px; font: 11.5px var(--mono); font-weight: 400; color: var(--accent); }
 .schap button.sub { padding-left: 34px; } .schap button.on { color: #e3e6df; background: rgba(173,155,111,.1); } .schap button:hover { color: #f0eadb; }
-/* search: a function, then one of its paths from the start */
 .sfind { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 22; width: min(640px, calc(100% - 60px)); background: #1f201f; box-shadow: 0 18px 40px rgba(0,0,0,.55); padding-bottom: 6px; }
 .sfind .in { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #2a2d2a; font: 13px var(--mono); }
 .sfind .q { color: var(--accent); } .sfind .fn { color: #e3e6df; font: 300 13px var(--ui); }
@@ -633,7 +594,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .sfind .opt { display: flex; gap: 12px; align-items: baseline; width: 100%; padding: 5px 16px; text-align: left; font: 12.5px var(--mono); color: #9ea39b; white-space: nowrap; overflow: hidden; }
 .sfind .opt b { color: var(--accent); font-weight: 400; } .sfind .opt .w { margin-left: auto; font: 300 11.5px var(--ui); color: #5f665f; }
 .sfind .opt.on { background: rgba(173,155,111,.12); color: #e3e6df; } .sfind .none { padding: 8px 16px; font: 300 12.5px var(--ui); color: #5f665f; }
-/* what if: a condition's note is a question; its skipped rows fold into one row; compare side by side */
 .srow .nt.ask { cursor: pointer; text-decoration: underline dotted #4a5a5a; text-underline-offset: 3px; pointer-events: auto; } .srow .nt.ask:hover { color: #9ac0c0; }
 .srow.swhat { color: #c9cdc5; } .srow.swhat .pl { color: #8a7f5f; width: 12px; text-align: center; } .srow.swhat .nt { color: #6f766e; } .srow.swhat .chip { margin-left: 8px; color: var(--accent); }
 .swmenu { position: absolute; z-index: 8; background: #202220; box-shadow: 0 16px 36px rgba(0,0,0,.55); padding: 6px 0; display: grid; }
@@ -642,7 +602,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scmp .col { padding: 10px 18px 12px; min-width: 180px; font: 12px/1.7 var(--mono); color: #9ea39b; } .scmp .col + .col { border-left: 1px solid #2a2d2a; max-width: 280px; }
 .scmp .h { font: 300 12.5px var(--ui); color: var(--accent); margin-bottom: 4px; } .scmp .n { display: inline-block; min-width: 32px; color: #6f6650; }
 .scmp .rt { font: 300 13px var(--ui); color: #c9cdc5; } .scmp .no { font: 300 12px/1.8 var(--ui); color: #6f766e; }
-/* the depth skyline along the bottom; read ticks; notes; jump letters; the change ripple */
 .ssky { position: absolute; left: 0; right: 16px; bottom: 0; height: 62px; padding: 3px 22px 4px; background: var(--bg); border-top: 1px solid #222522; z-index: 9; display: flex; flex-direction: column; }
 .ssky canvas { display: block; cursor: pointer; }
 .skyk { display: flex; align-items: center; gap: 12px; height: 18px; flex: none; font: 300 10.5px var(--ui); color: var(--dim); white-space: nowrap; overflow: hidden; }
@@ -653,7 +612,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .skyk .zb { min-width: 20px; height: 16px; padding: 0 5px; font: 400 12px var(--mono); color: var(--dim); background: var(--card); } .skyk .zb:hover:not(:disabled) { color: var(--bright); } .skyk .zb:disabled { opacity: .35; cursor: default; }
 .skyk .zv { font: 400 10.5px var(--mono); color: var(--fg); min-width: 34px; text-align: center; }
 .skyw { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; } .skyw::-webkit-scrollbar { height: 5px; } .skyw::-webkit-scrollbar-thumb { background: #4a504a; }
-/* what a hovered bar holds: a small box above it */
 .sskytip { position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); background: var(--pop); box-shadow: 0 12px 32px rgba(0, 0, 0, .55); padding: 7px 12px 8px; pointer-events: none; white-space: nowrap; z-index: 10; animation: tip-up .12s ease-out; }
 .sskytip .w { font: 400 13.5px var(--mono); color: var(--bright); }
 .sskytip .d { font: 300 12px var(--ui); color: var(--dim); margin-top: 2px; }
@@ -661,7 +619,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .sskytip .d.k { color: var(--faint); margin-top: 4px; }
 @keyframes tip-up { from { opacity: 0; transform: translate(-50%, 3px); } }
 .calm .sskytip { animation: none; }
-/* a drawn check, centred on the row's line (a text glyph sits low in the interface font) */
 .stick { position: absolute; left: 9px; width: 4px; height: 8px; margin-top: 6px; border: solid #5f8f7a; border-width: 0 1.5px 1.5px 0; transform: rotate(40deg); pointer-events: none; font-size: 0; }
 .srow .snote { margin-left: auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; padding: 0 10px; font: 300 12px var(--ui); color: #c9c2ac; background: #1f201d; box-shadow: inset 2px 0 #8a7f5f; }
 .snoteedit { width: 380px; margin-left: 10px; background: #171817; border: 0; outline: 0; padding: 2px 8px; font: 300 13px var(--ui); color: #e3e6df; }
@@ -670,7 +627,6 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .srow.chgc .nm { color: #7fae9c; }
 .seqchg { font: 300 12.5px var(--ui); color: #79c9ae; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .seqread { position: absolute; right: 22px; top: 1px; font: 300 11px var(--ui); color: #5f8f7a; white-space: nowrap; }
-/* following a path: rows off it step back */
 .seqv.onpath .srow.off { opacity: .22 !important; }
 .seqv.onpath .srow.pathed .n { color: var(--accent); }
 .scap { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1f201f; padding: 7px 15px; font: 300 13.5px var(--ui); color: #c9cdc5; white-space: nowrap; z-index: 20; display: flex; align-items: baseline; gap: 10px; }
@@ -686,17 +642,13 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .lanes { display: flex; gap: 10px; margin-right: 12px; }
 .seqv.still .seqin, .seqv.still .srow, .seqv.still .sframe, .seqv.still .sbar, .seqv.still .sarw, .seqv.still .sband { transition: none; animation: none; }
 
-/* ---------- call outlines (lib/callmarks.ts): a thin box in the colour of the card each call leads to ---------- */
-/* a hairline (one device pixel on high-density screens), sharp, nearly solid so it stays crisp; it takes no space, so code never shifts */
 .callbox { outline: .5px solid color-mix(in srgb, var(--c) 85%, transparent); outline-offset: 1px; border-radius: 0; cursor: pointer; transition: outline-color .15s, background .15s; }
 .callbox:hover { outline-color: var(--c); background: color-mix(in srgb, var(--c) 10%, transparent); }
-/* how deep a call goes (shown after a click on its outline) */
 .card-h .depth { margin-left: auto; display: flex; align-items: center; gap: 6px; font: 300 10.5px var(--ui); color: #6f766e; padding-left: 10px; flex: none; }
 .card-h .depth + .loc { margin-left: 10px; }
 .card-h .depth .gauge { display: flex; gap: 2px; }
 .card-h .depth .gauge i { width: 3px; height: 3px; background: var(--c); }
 
-/* ---------- colour settings (components/Settings.tsx) ---------- */
 .sechead { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px; margin: 22px 0 2px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .04); }
 .sechead > span:first-child { font: 300 19px var(--ui); color: var(--bright); }
 .colorctl { display: grid; gap: 5px; margin: 4px 0 2px; }
@@ -707,14 +659,12 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .cslide input[type=range] { -webkit-appearance: none; appearance: none; height: 8px; margin: 0; }
 .cslide input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 16px; background: var(--bright); box-shadow: 0 0 0 1px #111; }
 
-/* the magnifier (components/Magnifier.tsx): a live, larger copy of the view under the pointer */
 .magnifier { position: fixed; z-index: 60; overflow: hidden; background: var(--bg); border: 1px solid #6a6248; box-shadow: 0 18px 44px rgba(0,0,0,.6); pointer-events: none; }
 .magnifier .mg-in { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .magnifier .mg-in * { transition: none !important; animation: none !important; }
 .magnifier .mg-z { position: absolute; right: 6px; bottom: 4px; font: 11px var(--mono); color: #8a7f5f; background: var(--bg); padding: 0 4px; }
 .mgchips { display: inline-flex; align-items: baseline; gap: 8px; } .mgz { font: 12px var(--mono); color: #8b9189; }
 
-/* searches: a file by name (folder tab), text in the whole folder (over the code pane) — both any case */
 .ffind { display: flex; align-items: center; gap: 8px; padding: 2px 12px 8px; flex: none; }
 .ffind input { flex: 1; min-width: 0; background: var(--card); border: 0; outline: none; padding: 5px 8px; font: 300 13px var(--ui); }
 .ffind input::placeholder, .csearch input::placeholder { color: var(--faint); }
@@ -734,13 +684,11 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .cres .hit { display: flex; gap: 14px; align-items: baseline; height: 23px; font: 12.5px var(--mono); color: var(--fg); cursor: default; }
 .cres .hit .ln { width: 46px; text-align: right; color: var(--faint); flex: none; }
 .cres .hit.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 var(--accent); color: var(--bright); }
-/* play controls, both flow views */
 .playc { display: inline-flex; gap: 2px; margin-right: 8px; }
 .playc button { min-width: 26px; height: 22px; padding: 0 6px; font: 300 12.5px var(--ui); color: var(--dim); background: var(--card); }
 .playc button:hover { color: var(--bright); }
 .playc button.on { color: #e8d9ad; background: color-mix(in srgb, var(--accent) 22%, var(--card)); }
 .playc .spd { min-width: 34px; }
-/* all programs: every main, most likely first, grouped by folder */
 .progs { flex: 1; overflow: auto; padding: 4px 22px 22px; }
 .progs .q { display: flex; align-items: center; gap: 12px; margin: 10px 0 6px; padding: 6px 12px; background: var(--card); }
 .progs .q input { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; font: 300 15px var(--ui); }
@@ -757,22 +705,18 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .progs .top { font-size: 17px; height: 32px; }
 .backp { font: 300 14px var(--ui); color: #ad9b6f; margin-right: 4px; }
 .backp:hover { color: #e8d9ad; }
-/* detail levels: the code a function runs between its calls, read-only rows in its column */
 .sline { position: absolute; height: 18px; display: flex; gap: 10px; align-items: baseline; font: 12px/18px var(--mono); color: #6c736b; white-space: pre; pointer-events: none; }
 .sline .ln { color: #3a3f3a; min-width: 30px; text-align: right; flex: none; }
 .sline .tx { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sline .kw { color: color-mix(in srgb, var(--kw) 70%, #1a1b1a); } .sline .fn { color: color-mix(in srgb, var(--fn) 70%, #1a1b1a); }
-/* the current step gliding between the two flow views */
 .glide { position: fixed; z-index: 50; pointer-events: none; overflow: hidden; white-space: nowrap; padding: 0 10px; display: flex; align-items: center;
   font: 13px var(--mono); color: #e8d9ad; background: color-mix(in srgb, var(--accent) 22%, #1a1b1a); box-shadow: inset 3px 0 var(--accent); }
-/* a much-called box: how many boxes call it (its lines appear when they matter) */
 .fbox .hubt { position: absolute; left: 0; top: -20px; font: 300 12px var(--ui); color: #6f9e9e; white-space: nowrap; }
 .lv-files .fbox .hubt, .lv-folders .fbox .hubt { font-size: calc(12px * var(--inv)); top: calc(-20px * var(--inv)); }
 .plinks { margin: 4px 0 10px; padding: 4px 12px 10px; background: color-mix(in srgb, var(--card) 70%, transparent); }
 .plinks .pl { display: flex; gap: 14px; font: 300 13px/24px var(--ui); color: var(--fg); }
 .plinks .pl.sub { color: var(--dim); }
 .plinks .f { font: 12.5px var(--mono); color: var(--bright); } .plinks .by { color: var(--dim); }
-/* findings: results thrown away, state two threads touch without a lock */
 .sfnd { position: relative; }
 .sfndl { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 560px; max-width: 70vw; background: #1f201f; box-shadow: 0 18px 40px rgba(0,0,0,.55); padding: 4px 0; display: grid; }
 .sfndl button { display: flex; gap: 12px; align-items: baseline; padding: 6px 14px; text-align: left; font: 300 13px/1.45 var(--ui); color: var(--fg); white-space: normal; }
@@ -780,7 +724,6 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .sfndl .g { flex: none; width: 58px; font-size: 11.5px; color: var(--dim); }
 .sfndl button.race .g { color: var(--err); }
 
-/* the code preview pane on the flow page: STEP counts up, ƒ is the function; the call that led here; the details box */
 .sprev .pstep { font: 300 13px var(--ui); color: var(--dim); white-space: nowrap; }
 .sprev .pstep b { font: 500 20px var(--mono); color: #e3e6df; margin: 0 5px; }
 .sprev .pfn { margin-left: 12px; font: 400 12.5px var(--mono); color: #e3d6ad; border: 1px solid #ad9b6f; padding: 1px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -800,7 +743,6 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .ibx .k .warn { color: #e0904f; }
 .ibx .src { margin-top: 7px; font: 300 11px var(--ui); color: var(--dim); }
 
-/* the grid: called functions down the side, calling functions across the top, both grouped by file */
 .gview { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; }
 .ghd { font: 300 17px var(--ui); color: var(--bright); white-space: nowrap; }
 .gtop { display: flex; align-items: center; gap: 16px; padding: 8px 22px 3px; font: 300 12px var(--ui); color: var(--dim); flex: none; white-space: nowrap; overflow: hidden; }
@@ -860,7 +802,6 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .gax.w2 { white-space: normal; width: 64px; line-height: 1.2; }
 .gtot .t { position: absolute; left: 6px; display: flex; align-items: center; gap: 6px; font: 400 11px var(--mono); color: #6f766f; }
 .gtot .t i { display: block; height: 4px; background: #4a504a; } .gtot .t.pk { color: #e3d6ad; } .gtot .t.pk i { background: #e3d6ad; }
-/* the footer's shadow (no scroll size) hides rows scrolled below it, down to the run bars */
 .gmk { position: absolute; left: 0; height: 40px; background: var(--bg); z-index: 4; box-shadow: 0 90px 0 0 var(--bg); }
 .gmk .m { position: absolute; top: 2px; height: 32px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; font: 400 11px var(--mono); color: #6f766f; }
 .gmk .m i { display: block; width: 5px; background: #4a504a; } .gmk .m.pk { color: #e3d6ad; } .gmk .m.pk i { background: #e3d6ad; }
@@ -868,10 +809,8 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .gnote { position: absolute; left: 20px; top: 4px; font: 300 12px var(--ui); color: var(--dim); white-space: nowrap; }
 .gview .ssky { right: 0; }
 
-/* the right pane: outlined calls, the divider, and the card that holds everything about the selection */
 .cbx { outline: 1.5px solid #7a90c4; outline-offset: 1px; border-radius: 2px; cursor: pointer; }
 .cbx.on { outline-color: #e3d6ad; color: #e3e6df; }
-/* a calling line quoted in the right pane or the card: room around the outlined name, so its outline is never clipped */
 .sfrom code, .ibx .cl code { padding: 3px 4px; }
 .sprev .clk { margin: 4px 14px 0; font: 300 11px var(--ui); color: #e3d6ad; flex: none; }
 .sprev .scodewrap { flex: 1 1 0; min-height: 110px; display: flex; flex-direction: column; }

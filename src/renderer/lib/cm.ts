@@ -1,4 +1,3 @@
-// CodeMirror setup: C/C++ language, the charcoal highlight style, and shared extensions.
 import { parser as cppParser } from '@lezer/cpp';
 import { LRLanguage, LanguageSupport, HighlightStyle, syntaxHighlighting, indentNodeProp, foldNodeProp, foldInside, continuedIndent, flatIndent, delimitedIndent, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -66,14 +65,13 @@ export function editorExtensions(opts: { tabSize: number; wrap: boolean; languag
   ];
 }
 
-/** Read-only card editor: same language and colours, line numbers starting at the definition's line. */
 export function cardExtensions(firstLine: number): Extension[] {
   return [
     lineNumbers({ formatNumber: (n) => String(n + firstLine - 1) }),
     drawSelection(), highlightActiveLine(),
     syntaxHighlighting(highlight), cpp(), baseTheme, callMarks,
     EditorState.readOnly.of(true), EditorView.editable.of(true), highlightSelectionMatches(),
-    keymap.of([...defaultKeymap, ...searchKeymap]),   // ⌘/Ctrl F finds inside this card, any case
+    keymap.of([...defaultKeymap, ...searchKeymap]),
   ];
 }
 

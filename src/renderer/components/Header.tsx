@@ -7,7 +7,6 @@ import { saver } from '../lib/power';
 import { langStatus } from '../lib/langlsp';
 import { repairNote } from '../lib/repair';
 
-// the long "install one from the compiler window" message stays in the tooltip
 const shortStatus = (s?: string) => (!s ? '' : s === 'starting' ? t('starting…') : s.endsWith(' ready') ? s : t('no language engine'));
 import { t } from '../lib/i18n';
 
@@ -25,7 +24,6 @@ export default function Header() {
       <div class="pivot nodrag">
         <Show when={root()}>
           <button classList={{ on: page() === 'flow' }} onClick={() => setPage('flow')}>{t('flow')}</button>
-          {/* the folder's files, reachable even before any file is open */}
           <button classList={{ on: page() === 'editor' && !files.active }} title={root()} onClick={() => { setPage('editor'); setFiles('active', ''); }}>{t('folder')}</button>
         </Show>
         <For each={files.list}>{(f) => (

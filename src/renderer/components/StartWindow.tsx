@@ -1,5 +1,3 @@
-// The start window: shown in the middle of the app when no folder is open, so the first step is never a guess.
-// Recent folders on the left (at most 5, newest first), the ways to start on the right.
 import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { api, basename } from '../lib/api';
 import { openFolder } from '../lib/store';

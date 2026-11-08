@@ -1,4 +1,3 @@
-/* ---------- scrolling previews, std summaries, ASM per ISA — driven by seek(t) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
 const SRC=R`Response Server::handle(const Request& req) {
@@ -129,7 +128,6 @@ window.seek=function(t){
   const press=t>7.85&&t<8.15;$('#cha').style.background=press?'rgba(255,255,255,.06)':'';
   $('#isa').style.opacity=$('#opt').style.opacity=clamp((t-8.2)/0.3);
   const isaPress=t>11.25&&t<11.55;$('#isa').style.color=isaPress?'#c9b98f':'';$('#isa').textContent=t<11.5?'arm64 ▾':'x86-64 ▾';
-  // set A: scrolling cards
   c1.style.transform=`translateY(${-scrollAt(t)}px)`;
   const hi=(id,a,b)=>{const c=document.querySelector(`#c1 [data-card="${id}"]`);c.style.background=t>a&&t<b?'#202220':'';c.style.boxShadow=t>a&&t<b?'inset 2px 0 '+colour[id]:'';};
   hi('record',4.35,5.5);hi('sort',6.1,6.8);
@@ -137,7 +135,6 @@ window.seek=function(t){
   else{setItems(itA,(e,k)=>{const p=inC(clamp((t-6.8-0.03*k)/0.25));it(e,-26*p,1-p,-72*p);});
     setItems(itB,(e,k)=>{const p=clamp((t-6.95-0.06*k)/0.55),q=expo(p);const outp=asmOn?inC(clamp((t-8.0-0.04*k)/0.25)):0;it(e,170*(1-q)-26*outp,Math.min(1,p*1.7)*(1-outp),-72*outp);});}
   $('#v2').style.opacity=asmOn?1-clamp((t-8.0)/0.2):1;
-  // asm
   const e=expo(clamp((t-9.6)/0.6));
   if(t<8.0){armR.concat(x86R).forEach(r=>r.style.opacity=0);}
   else{layoutRows(armR,e,{});layoutRows(x86R,e,{});
@@ -145,7 +142,6 @@ window.seek=function(t){
     if(t<11.62)x86R.forEach(r=>r.style.opacity=0);else feather(x86R,clamp((t-11.62)/0.9),1);
 }
   if(asmOn&&t>8.4){[[56,'g2'],[57,'g3'],[58,'g4'],[59,'g5'],[60,'g6']].forEach(([n,c])=>ln(n).classList.add(c));}
-  // lines
   const anc=id=>document.querySelector(`#codep .call[data-call="${id}"]`);
   let pairs=[],alpha=1;
   if(t<6.8){pairs=['parse_headers','route','apply_cors','keep_alive','compress','sort','send_response','record'].map(id=>[anc(id),document.querySelector(`#c1 [data-card="${id}"] .card-h`),colour[id],1]);alpha=t>6.7?clamp((6.8-t)/0.1):1;}

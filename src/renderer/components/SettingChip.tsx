@@ -1,12 +1,9 @@
-// The build setting chip (configurations): "as built", or another setting — one of the project's other build folders,
-// or macros defined or undefined — whose run is shown lined up with as built (src/renderer/lib/flowstore.ts).
 import { For, Show, createSignal } from 'solid-js';
 import { seq, setting, chooseSetting } from '../lib/flowstore';
 import { root } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { macrosTested } from '../../shared/flowalign';
 
-/** A macro's change: defined, undefined, or set to a value. */
 type Change = { kind: 'def' } | { kind: 'undef' } | { kind: 'value'; v: string };
 const flagOf = (k: string, c: Change) => (c.kind === 'def' ? `-D${k}` : c.kind === 'undef' ? `-U${k}` : `-D${k}=${c.v}`);
 const wordOf = (k: string, c: Change) => (c.kind === 'def' ? k : c.kind === 'undef' ? `no ${k}` : `${k}=${c.v}`);
@@ -20,7 +17,6 @@ export default function SettingChip() {
     const s = seq();
     if (!s) return;
     const o = await api.setting.options(root());
-    // the macros the conditions in the run's own files test (any other can be typed)
     const all = new Map<string, Set<string>>();
     for (const f of [...new Set(s.run.rows.filter((r) => r.kind === 'step').map((r) => r.file))]) {
       const t = (await api.fs.read(f).catch(() => '')) as string;
@@ -34,7 +30,6 @@ export default function SettingChip() {
     setPending(m);
   };
   const isOn = (k: string, c: Change) => JSON.stringify(pending().get(k)) === JSON.stringify(c);
-  /** The flags typed by hand: -DNAME, -DNAME=value, -UNAME. */
   const typedFlags = () => typed().split(/\s+/).filter((x) => /^-[DU][A-Za-z_]\w*(=\S*)?$/.test(x));
   function apply() {
     const flags = [...[...pending()].map(([k, c]) => flagOf(k, c)), ...typedFlags()];

@@ -1,9 +1,3 @@
-// Packages SkyCodeX as a portable app for the system it runs on: `npm run package`.
-//   macOS   release/SkyCodeX-<version>-mac-<arch>/SkyCodeX.app        → .zip
-//   Windows release/SkyCodeX-<version>-win-<arch>/SkyCodeX.exe        → .zip
-//   Linux   release/SkyCodeX-<version>-linux-<arch>/skycodex          → .tar.gz
-// Each is Electron's own build, renamed, with SkyCodeX's built files and the inbuilt clangd inside it. data/ and language_packs/ are created beside the app on first run. Nothing is signed with a
-// paid certificate (macOS gets a free ad-hoc signature).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -31,7 +25,6 @@ fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 const electronDist = path.join(root, 'node_modules', 'electron', 'dist');
 
-/** SkyCodeX's own files and the inbuilt clangd, into Electron's resources folder. */
 function addSkyCodeX(res) {
   step('copying SkyCodeX');
   fs.rmSync(path.join(res, 'default_app.asar'), { force: true });
@@ -60,24 +53,21 @@ Based on SkyCodeX by ${AUTHOR}. See LICENSE.txt.
 
 let artifact = '', appPath = '';
 if (platform === 'darwin') {
-  // ---------- macOS: SkyCodeX.app ----------
   step('assembling the app from Electron');
   const app = (appPath = path.join(outDir, `${NAME}.app`));
   run('ditto', [path.join(electronDist, 'Electron.app'), app]);
   const C = path.join(app, 'Contents');
   const plist = (file, key, value) => run('plutil', ['-replace', key, '-string', value, file]);
-  const drop = (file, key) => { try { execFileSync('plutil', ['-remove', key, file], { stdio: 'ignore' }); } catch { /* not there */ } };
+  const drop = (file, key) => { try { execFileSync('plutil', ['-remove', key, file], { stdio: 'ignore' }); } catch {  } };
   fs.renameSync(path.join(C, 'MacOS', 'Electron'), path.join(C, 'MacOS', NAME));
   const info = path.join(C, 'Info.plist');
   for (const [k, v] of [['CFBundleName', NAME], ['CFBundleDisplayName', NAME], ['CFBundleExecutable', NAME], ['CFBundleIdentifier', ID],
     ['CFBundleIconFile', 'skycodex.icns'], ['CFBundleShortVersionString', VERSION], ['CFBundleVersion', VERSION],
     ['NSHumanReadableCopyright', `Copyright © 2026 ${AUTHOR}. Based on SkyCodeX by ${AUTHOR}.`]]) plist(info, k, v);
-  // nothing in SkyCodeX uses the camera, microphone or Bluetooth; the asar check is for Electron's demo app, which is removed
   for (const k of ['ElectronAsarIntegrity', 'NSCameraUsageDescription', 'NSMicrophoneUsageDescription', 'NSBluetoothAlwaysUsageDescription', 'NSBluetoothPeripheralUsageDescription', 'NSAudioCaptureUsageDescription']) drop(info, k);
-  // the helper apps must carry the app's name: "SkyCodeX Helper (GPU).app" and so on
   const fw = path.join(C, 'Frameworks');
   for (const h of fs.readdirSync(fw).filter((n) => n.startsWith('Electron Helper'))) {
-    const suffix = h.slice('Electron Helper'.length, -'.app'.length);   // "", " (GPU)", " (Plugin)", " (Renderer)"
+    const suffix = h.slice('Electron Helper'.length, -'.app'.length);
     const newName = `${NAME} Helper${suffix}`, tag = suffix.replace(/[^A-Za-z]/g, '').toLowerCase();
     const hc = path.join(fw, h, 'Contents');
     fs.renameSync(path.join(hc, 'MacOS', `Electron Helper${suffix}`), path.join(hc, 'MacOS', newName));
@@ -88,7 +78,6 @@ if (platform === 'darwin') {
   }
   const res = path.join(C, 'Resources');
   fs.rmSync(path.join(res, 'electron.icns'), { force: true });
-  // the icon comes from assets/icon/skycodex-1024.png (any 1024 × 1024 PNG): every size macOS wants is made from it
   const iconset = path.join(outDir, 'skycodex.iconset');
   fs.mkdirSync(iconset);
   for (const n of [16, 32, 128, 256, 512]) for (const [k, sfx] of [[1, ''], [2, '@2x']])
@@ -105,13 +94,10 @@ if (platform === 'darwin') {
   fs.rmSync(artifact, { force: true });
   run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', outDir, artifact]);
 } else if (platform === 'win32') {
-  // ---------- Windows: SkyCodeX.exe in a folder ----------
   step('assembling the app from Electron');
   fs.cpSync(electronDist, outDir, { recursive: true });
   appPath = path.join(outDir, `${NAME}.exe`);
   fs.renameSync(path.join(outDir, 'electron.exe'), appPath);
-  // the icon and the names Windows shows (Task Manager, file properties), with Electron's rcedit
-  // (installed for the build only: npm install --no-save rcedit@5.0.2)
   try {
     const m = await import('rcedit');
     const rcedit = m.rcedit ?? m.default;
@@ -128,7 +114,6 @@ if (platform === 'darwin') {
   fs.rmSync(artifact, { force: true });
   run('tar', ['-a', '-c', '-f', artifact, '-C', path.join(root, 'release'), folder]);
 } else {
-  // ---------- Linux: skycodex in a folder ----------
   step('assembling the app from Electron');
   fs.cpSync(electronDist, outDir, { recursive: true, verbatimSymlinks: true });
   appPath = path.join(outDir, 'skycodex');

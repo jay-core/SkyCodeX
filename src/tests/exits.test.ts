@@ -1,5 +1,3 @@
-// "Errors only": every way out of each function, on real clangd output (samples/exits, recorded with
-// src/tests/fixtures/record-flow.mjs) and on tinyhttp. Expected values worked out by hand from the sources.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';
@@ -46,10 +44,9 @@ describe('every way out (tinyhttp)', () => {
 });
 
 describe('every way out (ThreadX\'s _tx_thread_create, recorded from clangd)', () => {
-  // calls a macro writes are placed after the last statement (approx): its closing return is still its normal end
   it('the closing return(TX_SUCCESS) is the normal end, not an early way out', () => {
     const T = '/private/tmp/claude-501/-Users-jfalcon-Desktop-Lithograph-editor/c1841425-f45f-484d-b67c-7ad673cdcc99/scratchpad/ext/threadx';
-    if (!fs.existsSync(T)) return;   // the ThreadX checkout used on this machine
+    if (!fs.existsSync(T)) return;
     const { infos } = loadFixture(path.join(ROOT, 'src/tests/fixtures/txcreate-flow.json'), T);
     const f = [...infos.values()][0];
     expect(f.flow.body.at(-1)).toMatchObject({ t: 'call', approx: true });

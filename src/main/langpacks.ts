@@ -1,6 +1,3 @@
-// Language packs beyond C/C++: Rust, Python and Go, their language servers, and the offline C++ reference.
-// Each comes from the project's own official release, with a published checksum, into language_packs/<id>.
-// Anything a pack writes later (Cargo's registry, Go's module cache, pip's cache) is pointed inside the pack too.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -43,8 +40,6 @@ async function headSize(url: string): Promise<number> {
   return r.ok ? Number(r.headers.get('content-length') ?? 0) : 0;
 }
 
-// ---------- where each one comes from, for this OS and processor ----------
-/** Rust's name for this machine. Windows on x64 uses the GNU target, which links without Visual Studio. */
 export function rustTarget(platform: NodeJS.Platform, arch: string): string | null {
   const cpu = arch === 'arm64' ? 'aarch64' : arch === 'x64' ? 'x86_64' : null;
   if (!cpu) return null;
@@ -53,7 +48,6 @@ export function rustTarget(platform: NodeJS.Platform, arch: string): string | nu
   if (platform === 'win32') return cpu === 'x86_64' ? 'x86_64-pc-windows-gnu' : 'aarch64-pc-windows-msvc';
   return null;
 }
-/** python-build-standalone's name for this machine. */
 export function pythonTriple(platform: NodeJS.Platform, arch: string): string | null {
   const cpu = arch === 'arm64' ? 'aarch64' : arch === 'x64' ? 'x86_64' : null;
   if (!cpu) return null;
@@ -65,7 +59,6 @@ export function goPlatform(platform: NodeJS.Platform, arch: string): { os: strin
   return os && a ? { os, arch: a } : null;
 }
 
-/** The newest python-build-standalone build of each Python version, from one GitHub release's assets. */
 export function pythonReleases(assets: { name: string; size: number; digest?: string; browser_download_url: string }[], triple: string): Release[] {
   const re = new RegExp(`^cpython-(\\d+\\.\\d+\\.\\d+)\\+(\\d{8})-${triple.replace(/[-.]/g, '\\$&')}-install_only\\.tar\\.gz$`);
   const best = new Map<string, Release>();
@@ -80,7 +73,6 @@ export function pythonReleases(assets: { name: string; size: number; digest?: st
   return [...best.values()].sort((a, b) => compareVersions(b.version, a.version));
 }
 
-/** Go's own download list (go.dev/dl), which publishes a SHA-256 for every file. */
 export function goReleases(list: any[], plat: { os: string; arch: string }): Release[] {
   const out: Release[] = [];
   for (const rel of list) {
@@ -113,7 +105,6 @@ export async function releasesFor(kind: PackKind, platform = process.platform, a
   if (kind === 'rust') return cached(kind, async () => {
     const t = rustTarget(platform, arch);
     if (!t) return [];
-    // versions from GitHub's release list; the archive and its checksum file from static.rust-lang.org
     const rels = await json('https://api.github.com/repos/rust-lang/rust/releases?per_page=5', { Accept: 'application/vnd.github+json' });
     const out: Release[] = [];
     for (const r of rels) {
@@ -145,13 +136,8 @@ export async function releasesFor(kind: PackKind, platform = process.platform, a
   return [];
 }
 
-// ---------- unpacking steps for each kind ----------
 const has = (...p: string[]) => fs.existsSync(path.join(...p));
 
-/**
- * Rust's standalone installer holds one folder per component, each listing its files in manifest.in.
- * Those files are merged into the pack's own bin/, lib/ and share/; install.sh is never run.
- */
 export function mergeRustComponents(root: string, skip = new Set(['rust-docs', 'rust-docs-json'])): string[] {
   const comps = fs.readFileSync(path.join(root, 'components'), 'utf8').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const merged: string[] = [];
@@ -175,14 +161,12 @@ export function mergeRustComponents(root: string, skip = new Set(['rust-docs', '
   return merged;
 }
 
-/** Environment for anything run from Go: caches, modules and settings stay in the pack. */
 export function goEnv(pack: string): Record<string, string> {
   return {
     GOROOT: pack, GOPATH: path.join(pack, 'gopath'), GOMODCACHE: path.join(pack, 'gopath', 'pkg', 'mod'), GOCACHE: path.join(pack, 'cache', 'build'),
     GOENV: path.join(pack, 'cache', 'env'), GOTOOLCHAIN: 'local', GOFLAGS: '-modcacherw', GOTELEMETRY: 'off',
   };
 }
-/** HOME and the config folders, moved into the pack for programs SkyCodeX itself runs (gopls's build and the server). */
 const homeInside = (pack: string): Record<string, string> => {
   const h = path.join(pack, 'cache', 'home');
   fs.mkdirSync(h, { recursive: true });
@@ -210,7 +194,7 @@ export function stepsFor(kind: PackKind): InstallSteps {
   if (kind === 'rust-analyzer') return {
     program: 'rust-analyzer',
     check: (root) => has(root, 'bin', exe('rust-analyzer')) || has(root, exe('rust-analyzer')),
-    prepare: async (root) => {   // the Windows zip holds the program at its top
+    prepare: async (root) => {
       if (!has(root, 'bin', exe('rust-analyzer'))) { fs.mkdirSync(path.join(root, 'bin'), { recursive: true }); fs.renameSync(path.join(root, exe('rust-analyzer')), path.join(root, 'bin', exe('rust-analyzer'))); }
     },
   };
@@ -224,7 +208,6 @@ export function stepsFor(kind: PackKind): InstallSteps {
     check: (root) => has(root, 'bin', exe('go')),
     prepare: async (root, onProgress, signal) => {
       onProgress({ phase: 'unpack', done: 0, total: 0, note: 'building gopls' });
-      // GOBIN is the pack's own bin; CGO off so the build needs no C compiler
       const env = { ...goEnv(root), ...homeInside(root), GOBIN: path.join(root, 'bin'), CGO_ENABLED: '0', GOPROXY: 'https://proxy.golang.org', GOSUMDB: 'sum.golang.org' };
       try {
         await run(path.join(root, 'bin', exe('go')), ['install', 'golang.org/x/tools/gopls@latest'], env, root, signal);
@@ -238,10 +221,8 @@ export function stepsFor(kind: PackKind): InstallSteps {
   return {};
 }
 
-// ---------- using installed packs ----------
 const newest = (packs: PackManifest[], kind: PackKind) => packs.filter((m) => m.kind === kind).sort((a, b) => compareVersions(b.version, a.version))[0] ?? null;
 
-/** bin folders of every installed language pack except C/C++ toolchains (those follow compiler.toolchain). */
 export function languageBins(dir: string): string[] {
   const packs = listPacks(dir), out: string[] = [];
   for (const k of ['rust', 'rust-analyzer', 'python', 'go'] as PackKind[]) {
@@ -253,7 +234,6 @@ export function languageBins(dir: string): string[] {
   return out;
 }
 
-/** Variables for SkyCodeX's terminals that keep Cargo, Go and pip writing inside their packs. */
 export function languageEnv(dir: string): Record<string, string> {
   const packs = listPacks(dir), env: Record<string, string> = {};
   const rust = newest(packs, 'rust'), go = newest(packs, 'go'), py = newest(packs, 'python');
@@ -270,7 +250,6 @@ const onPath = (prog: string) => {
   return null;
 };
 
-/** The language server for a language: an installed pack first, then one already on the system. */
 export function serverFor(lang: Lang, dir: string): ServerCmd | null {
   const packs = listPacks(dir);
   const binOf = (k: PackKind, prog: string) => { const m = newest(packs, k); const p = m ? path.join(dir, m.id, m.bin, exe(prog)) : ''; return p && fs.existsSync(p) ? p : null; };

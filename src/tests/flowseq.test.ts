@@ -1,5 +1,3 @@
-// The sequence view's model (src/shared/flowseq.ts) on tinyhttp's real run: rows shown, every move, the layout's
-// no-overlap guarantee in every state, and the selected step's facts. Expectations worked out by hand from the source.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,12 +20,12 @@ describe('rows shown', () => {
   it('a one-line helper that runs unconditionally folds into its caller; one inside an if keeps its row', () => {
     const stop = run.rows.findIndex((r) => r.name === 'stop');
     expect(s.uses.get(stop)?.map((i) => run.rows[i].kind + ' ' + run.rows[i].name)).toEqual(['ref close']);
-    expect(itemNamed('close')).toBeGreaterThan(0);   // close itself: only when !keep_alive(headers)
-    expect(itemNamed('is_space')).toBeGreaterThan(0);   // inside a loop and an &&
+    expect(itemNamed('close')).toBeGreaterThan(0);
+    expect(itemNamed('is_space')).toBeGreaterThan(0);
     expect(s.items.length).toBe(run.rows.length - 1);
   });
   it('helpers with no conditions fold, with their numbers kept', () => {
-    const rules = loadFixture(path.join(FIX, 'rules-flow.json'), path.join(FIX, 'rules')).run('rules.cpp#13');   // nested: d(a())
+    const rules = loadFixture(path.join(FIX, 'rules-flow.json'), path.join(FIX, 'rules')).run('rules.cpp#13');
     const q = buildSeq(rules);
     expect(q.items).toEqual([0]);
     expect(q.uses.get(0)?.map((i) => `${rules.rows[i].n} ${rules.rows[i].name}`)).toEqual(['2 a', '3 d']);
@@ -64,7 +62,7 @@ describe('stepping', () => {
     const prev = walk(['prevPass'], p3.trail);
     expect(prev.cur.at).toBe(p3.cur.at);
     expect(Object.values(prev.cur.passes)).toEqual([2]);
-    expect(walk(['prevPass', 'prevPass'], p3.trail).note).toBeUndefined();   // 3 → 2 → 1
+    expect(walk(['prevPass', 'prevPass'], p3.trail).note).toBeUndefined();
     expect(walk(['prevPass', 'prevPass', 'prevPass'], p3.trail).note).toBe('this is its first pass');
     expect(walk(['back']).note).toBe('this is where the walk started');
   });
@@ -72,13 +70,13 @@ describe('stepping', () => {
     const over = walk([{ goto: 5 }, 'over']);
     expect(name(s, over.cur.at)).toBe('stop');
     expect(over.cur.why).toBe('skipped 17 steps inside start');
-    const out = walk([{ goto: 9 }, 'out']);   // accept, inside start's loop
+    const out = walk([{ goto: 9 }, 'out']);
     expect(name(s, out.cur.at)).toBe('stop');
     expect(out.cur.why).toBe('finished start · back in main');
     expect(walk(['out']).note).toBe('main is where the run starts');
   });
   it('siblings: the next and previous call made by the same function', () => {
-    const r = walk([{ goto: 15 }]);   // route, called by handle
+    const r = walk([{ goto: 15 }]);
     expect(run.rows[s.items[walk(['nextSibling'], r.trail).cur.at]]).toMatchObject({ kind: 'indirect', text: 'handler' });
     expect(name(s, walk(['prevSibling'], r.trail).cur.at)).toBe('parse_headers');
     expect(walk([{ goto: 23 }, 'nextSibling']).note).toBe('nothing else runs after this in main');
@@ -91,11 +89,11 @@ describe('stepping', () => {
     expect(walk([{ goto: 99 }]).note).toBe('there is no step 99');
   });
   it('passes reset when a loop is entered anew', () => {
-    const t = walk([{ goto: 10 }]);   // handle, inside start's while
+    const t = walk([{ goto: 10 }]);
     const outer = loopsAt(s, t.cur.at)[0];
     const twice = walk(['again'], t.trail);
     expect(twice.cur.passes[outer]).toBe(2);
-    expect(name(s, twice.cur.at)).toBe('accept');   // the loop's first row: its condition
+    expect(name(s, twice.cur.at)).toBe('accept');
     expect(walk(['next', 'next', 'next', 'next'], twice.trail).cur.passes[outer]).toBe(2);
   });
   it('the ember trail: the last four places, newest first, without the current one', () => {
@@ -116,7 +114,6 @@ describe('layout', () => {
         for (const [f, y] of g.slotY) bands.push([y, y + 15, `slot ${f}`]);
         bands.sort((p, q) => p[0] - q[0]);
         for (let i = 1; i < bands.length; i++) expect(bands[i][0], `${bands[i - 1][2]} overlaps ${bands[i][2]} at state ${a}`).toBeGreaterThanOrEqual(bands[i - 1][1]);
-        // every loop label sits right above its loop's first row
         for (const [f, y] of g.slotY) expect(y).toBeLessThan(g.y[s.span.get(f)![0]]);
         expect(g.h[a]).toBe(23 + 120);
       }
@@ -214,7 +211,7 @@ describe('sharing a walk', () => {
   });
   it('a link naming places this run does not have is refused', () => {
     expect(decodeWalk(s, 'skycodex:walk?entry=x&at=999')).toBeNull();
-    expect(decodeWalk(s, `skycodex:walk?entry=x&at=${at('read_env')}.0-9`)).toBeNull();   // the loop runs 4 times
+    expect(decodeWalk(s, `skycodex:walk?entry=x&at=${at('read_env')}.0-9`)).toBeNull();
     expect(decodeWalk(s, 'https://example.com')).toBeNull();
   });
   it('a walkthrough states each place, its caller and what is around it', () => {
@@ -306,7 +303,6 @@ describe('step numbers', () => {
     const { stepNumbers, ordinal } = await import('../shared/flowseq');
     const ns = stepNumbers(s);
     expect(ns.map((n) => n.step)).toEqual(s.items.map((_, i) => i + 1));
-    // a function keeps one ƒ number every time it runs, and its calls are counted 1, 2, 3 …
     const byFn = new Map<number, number[]>();
     ns.forEach((n) => { if (n.fn) byFn.set(n.fn, [...(byFn.get(n.fn) ?? []), n.call]); });
     for (const calls of byFn.values()) expect(calls).toEqual(calls.map((_, i) => i + 1));

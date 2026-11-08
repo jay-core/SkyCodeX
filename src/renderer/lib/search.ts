@@ -1,4 +1,3 @@
-// The folder-wide content search: one query at a time, results streamed from the main process (src/main/search.ts).
 import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { api } from './api';
@@ -12,7 +11,6 @@ export const [result, setResult] = createStore<{ hits: Hit[]; running: boolean; 
 let id = 0, timer: number | undefined;
 api.search.onHits((sid, hits) => { if (sid === id) setResult('hits', (h) => [...h, ...hits]); });
 
-/** Searches the folder for q (any case), after a short pause in typing. */
 export function runSearch(q: string) {
   setQuery(q);
   clearTimeout(timer);
@@ -25,7 +23,6 @@ export function runSearch(q: string) {
   }, 180);
 }
 
-/** Opens the search over the code pane, with q if given (else the last query). */
 export function openSearch(q?: string) {
   setPage('editor');
   setSearchOpen(true);

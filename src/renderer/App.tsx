@@ -10,6 +10,9 @@ import Flow from './components/Flow';
 import { api } from './lib/api';
 import { settings, files, page, setPage, settingsOpen, setSettingsOpen, toast, info, setInfo, applySettings, restoreSession, openFolder, onDiskChange, saveAll, root, flash } from './lib/store';
 import { invalidateText } from './lib/preview';
+import { invalidateFlowText } from './lib/flow';
+import { invalidateSeqText } from './lib/seqtext';
+import { forgetDefinitionsIn } from './lib/lsp';
 import { runSmoke } from './smoke';
 import Palette from './components/Palette';
 import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences, newFile, openFileDialog, saveAs, closeActive } from './lib/actions';
@@ -28,13 +31,11 @@ export default function App() {
   let body!: HTMLDivElement, overlay!: SVGSVGElement, code!: HTMLDivElement;
   let redraw = () => {};
   const previewOn = () => settings()['preview.enabled'] !== false;
-  // lines belong to the preview: clear them when it is hidden
   createEffect(on(previewOn, (on) => { if (!on && overlay) overlay.innerHTML = ''; }, { defer: true }));
 
   onMount(async () => {
     preloadFonts();
     watchPower();
-    // interface errors go to the log
     window.addEventListener('error', (e) => api.log(`${e.message} at ${e.filename}:${e.lineno}`));
     window.addEventListener('unhandledrejection', (e) => api.log(`unhandled: ${String((e.reason as Error)?.stack ?? e.reason)}`));
     const i = await api.info();
@@ -42,14 +43,13 @@ export default function App() {
     const s = (await api.settings.get()) as any;
     applySettings(s.settings, s.problems);
     api.settings.onChange((x: any) => applySettings(x.settings, x.problems));
-    api.fs.onChange((paths) => { for (const p of paths) { invalidateText(p); onDiskChange(p); } refreshTree(); });
+    api.fs.onChange((paths) => { for (const p of paths) { invalidateText(p); invalidateFlowText(p); invalidateSeqText(p); forgetDefinitionsIn(p); onDiskChange(p); } refreshTree(); });
     if (s.problems.length) flash(`settings.toml: ${s.problems[0].message}${s.problems.length > 1 ? ` (+${s.problems.length - 1} more)` : ''}`, 8000);
     if ((i as any).fallbackReason) flash((i as any).fallbackReason, 12000);
-    // the 'start' smoke scenario opens no folder: it shows the start window, as a first launch does
     if ((i as any).smoke && (i as any).scenario === 'start') { setStartOpen(true); return; }
     if ((i as any).smoke) { await openFolder((i as any).smoke); runSmoke(); return; }
     await restoreSession();
-    if (!root()) setStartOpen(true);   // nothing to restore: the start window says what to do first
+    if (!root()) setStartOpen(true);
   });
 
   const onKey = (e: KeyboardEvent) => {
@@ -72,7 +72,7 @@ export default function App() {
   };
   onMount(() => window.addEventListener('keydown', onKey));
   onCleanup(() => window.removeEventListener('keydown', onKey));
-  window.addEventListener('beforeunload', () => { /* unsaved buffers are already mirrored to data/state */ });
+  window.addEventListener('beforeunload', () => {  });
 
   return (
     <div class="app">
@@ -90,7 +90,6 @@ export default function App() {
         </Show>
         <Split onDrag={(dx) => { setFilesW(Math.max(140, filesW() - dx)); redraw(); }} />
         <div style={{ width: `${filesW()}px`, flex: 'none' }}><FilesPane /></div>
-        {/* the folder-wide search covers the code and preview panes, leaving the folder column beside it */}
         <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `${filesW() + 5}px`, 'z-index': 6 }}><SearchPanel /></div></Show>
         <svg class="links" ref={overlay} />
       </div>

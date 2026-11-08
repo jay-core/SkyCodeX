@@ -1,4 +1,3 @@
-// Renderer side of clangd: document sync, diagnostics, completion, hover, definitions, call hierarchy.
 import { createSignal } from 'solid-js';
 import { EditorView, hoverTooltip, Tooltip } from '@codemirror/view';
 import { CompletionContext, CompletionResult, autocompletion } from '@codemirror/autocomplete';
@@ -12,18 +11,20 @@ import * as other from './langlsp';
 export const [lspState, setLspState] = createSignal<'off' | 'starting' | 'ready' | 'failed'>('off');
 export const [lspMessage, setLspMessage] = createSignal('');
 export const [indexing, setIndexing] = createSignal<string | null>(null);
-/** Bumps whenever clangd's index finishes, so previews and flow can refresh. */
 export const [indexEpoch, setIndexEpoch] = createSignal(0);
 
 const versions = new Map<string, number>();
 const diags = new Map<string, Diagnostic[]>();
-const views = new Map<string, EditorView>();   // file → the editor showing it (for diagnostics)
+const views = new Map<string, EditorView>();
 let root = '';
 
 export async function startLsp(folder: string) {
   root = folder;
   other.resetLanguages(folder);
   versions.clear(); diags.clear();
+  for (const t of changeTimers.values()) clearTimeout(t);
+  changeTimers.clear();
+  background.length = 0;
   setLspState('starting');
   const r = (await api.lsp.start(folder)) as { ok: boolean; message?: string; clangd?: string };
   setLspState(r.ok ? 'ready' : 'failed');
@@ -43,7 +44,6 @@ api.lsp.onNotify((method, params) => {
     else if (v.kind === 'report') setIndexing(`${v.title ?? 'indexing'}${v.percentage != null ? ` ${v.percentage}%` : ''}${v.message ? ` · ${v.message}` : ''}`);
     else if (v.kind === 'end') { setIndexing(null); defCache.clear(); setIndexEpoch((n) => n + 1); }
   } else if (method === '$/exit') {
-    // clangd crashed: start it again (twice a minute at most) and hand it the open files, saying so meanwhile
     const now = Date.now();
     while (stops.length && now - stops[0] > 60_000) stops.shift();
     stops.push(now);
@@ -57,10 +57,8 @@ api.lsp.onNotify((method, params) => {
 });
 const stops: number[] = [];
 let restartHook: (() => Promise<void>) | null = null;
-/** What to run when clangd stops by itself (the store starts it again and reopens the open files). */
 export const onClangdStopped = (f: () => Promise<void>) => { restartHook = f; };
 
-// C and C++ files, including standard headers that have no extension (<ostream>, <ios>, <thread> …)
 const isCpp = (f: string) => langOf(f) === 'cpp';
 
 export function openDoc(file: string, text: string): void {
@@ -71,7 +69,6 @@ export function openDoc(file: string, text: string): void {
   api.lsp.notify('textDocument/didOpen', { textDocument: { uri: fileToUri(file), languageId: /\.c$/i.test(file) ? 'c' : 'cpp', version: 1, text } });
 }
 const changeTimers = new Map<string, number>();
-/** Text may be passed lazily, so a burst of keystrokes costs one copy of the document, when it is actually sent. */
 export function changeDoc(file: string, text: string | (() => string)): void {
   const get = typeof text === 'function' ? text : () => text;
   if (serverLang(file)) return other.changeDoc(file, get);
@@ -79,16 +76,18 @@ export function changeDoc(file: string, text: string | (() => string)): void {
   clearTimeout(changeTimers.get(file));
   changeTimers.set(file, window.setTimeout(() => {
     changeTimers.delete(file);
+    if (!versions.has(file)) return;
     const v = versions.get(file)! + 1;
     versions.set(file, v);
+    forgetDefinitionsIn(file);
     api.lsp.notify('textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text: get() }] });
   }, 150));
 }
-/** Sends any pending change immediately (before a request that depends on the latest text). */
 export function flushDoc(file: string, text: string) {
   if (!changeTimers.has(file) || !versions.has(file)) return;
   clearTimeout(changeTimers.get(file)); changeTimers.delete(file);
   const v = versions.get(file)! + 1; versions.set(file, v);
+  forgetDefinitionsIn(file);
   api.lsp.notify('textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text }] });
 }
 export function savedDoc(file: string) { if (serverLang(file)) return other.savedDoc(file); if (versions.has(file)) api.lsp.notify('textDocument/didSave', { textDocument: { uri: fileToUri(file) } }); }
@@ -99,7 +98,6 @@ export function attachView(file: string, view: EditorView | null) {
 
 function pushDiagnostics(view: EditorView, file: string) {
   const doc = view.state.doc;
-  // "Unable to handle compilation" only says clangd has no command for a fragment such as an .inc table: not the code's fault
   const out: CmDiagnostic[] = (diags.get(file) ?? []).filter((d) => !/^Unable to handle compilation/.test(d.message)).map((d) => {
     const from = posToOffset(doc, d.range.start.line, d.range.start.character);
     let to = posToOffset(doc, d.range.end.line, d.range.end.character);
@@ -110,13 +108,10 @@ function pushDiagnostics(view: EditorView, file: string) {
   view.dispatch(setDiagnostics(view.state, out));
 }
 export const diagnosticsFor = (file: string) => diags.get(file) ?? [];
-/** Told the file each time clangd publishes its diagnostics (the repair engine checks fixes then); returns a stop. */
 const diagWatchers = new Set<(file: string) => void>();
 export const onDiagnostics = (cb: (file: string) => void) => { diagWatchers.add(cb); return () => { diagWatchers.delete(cb); }; };
 export const lintSupport = linter(null, { delay: 0 });
 
-// clangd answers call-hierarchy and symbol requests only for open documents; files explored by the
-// preview and flow views are opened in the background, at most BG_MAX at a time.
 const BG_MAX = 40;
 const background: string[] = [];
 export async function ensureOpen(file: string): Promise<void> {
@@ -138,12 +133,10 @@ export async function ensureOpen(file: string): Promise<void> {
     api.lsp.notify('textDocument/didClose', { textDocument: { uri: fileToUri(old) } });
   }
 }
-/** A file the user opened in the editor is no longer a background document. */
 export function promote(file: string) { const i = background.indexOf(file); if (i >= 0) background.splice(i, 1); }
 
 const req = <T>(method: string, params: unknown) => (lspState() === 'ready' ? (api.lsp.request(method, params) as Promise<T>) : Promise.reject(new Error('clangd not ready')));
 
-// ---------- completion ----------
 const KIND: Record<number, string> = { 2: 'method', 3: 'function', 4: 'function', 5: 'property', 6: 'variable', 7: 'class', 8: 'interface', 9: 'namespace', 10: 'property', 13: 'enum', 14: 'keyword', 21: 'constant', 22: 'class', 25: 'type' };
 type Send = (method: string, params: unknown) => Promise<any>;
 export function completionFor(file: () => string, send: Send = req, flush: (file: string, text: string) => void = flushDoc) {
@@ -172,7 +165,6 @@ export function completionFor(file: () => string, send: Send = req, flush: (file
   });
 }
 
-// ---------- hover ----------
 export function hoverFor(file: () => string, send: Send = req) {
   return hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
     let res: any;
@@ -198,11 +190,10 @@ export function hoverFor(file: () => string, send: Send = req) {
   }, { hoverTime: 350 });
 }
 
-// ---------- navigation ----------
 export interface Loc { file: string; line: number; character: number }
 export async function definitionAt(file: string, pos: Pos): Promise<Loc | null> {
   if (serverLang(file)) return other.definitionAt(file, pos);
-  if (!isCpp(file)) return null;   // plain text, JSON, Markdown …: no language engine
+  if (!isCpp(file)) return null;
   await ensureOpen(file);
   let res: any;
   try { res = await req('textDocument/definition', { textDocument: { uri: fileToUri(file) }, position: pos }); } catch { return null; }
@@ -212,7 +203,6 @@ export async function definitionAt(file: string, pos: Pos): Promise<Loc | null> 
   return { file: fromClangd(uri), line: range.start.line, character: range.start.character };
 }
 
-/** A file clangd points to is C or C++, whatever its name (.tcc, .inc, .def, no extension …). */
 function fromClangd(uri: string): string {
   const f = uriToFile(uri);
   if (langOf(f) === 'text') markCpp(f);
@@ -226,12 +216,11 @@ export async function symbols(file: string): Promise<DocSymbol[]> {
   if (hit && hit.v === v && !changeTimers.has(file)) return hit.syms;
   try {
     const syms = ((await req('textDocument/documentSymbol', { textDocument: { uri: fileToUri(file) } })) as DocSymbol[]) ?? [];
-    if (syms.length) symCache.set(file, { v, syms });   // an empty answer may just mean clangd is still parsing
+    if (syms.length) symCache.set(file, { v, syms });
     return syms;
   } catch { return []; }
 }
 
-/** The innermost function, method or constructor whose body contains pos. */
 export function enclosingFunction(syms: DocSymbol[], pos: Pos): DocSymbol | null {
   const inside = (r: { start: Pos; end: Pos }) =>
     (pos.line > r.start.line || (pos.line === r.start.line && pos.character >= r.start.character)) &&
@@ -261,15 +250,12 @@ export async function workspaceSymbols(query: string): Promise<{ name: string; k
 export const projectRoot = () => root;
 export const inProject = (file: string) => !!root && file.startsWith(root) && !/[\\/](build|third_party|external)[\\/]/.test(file.slice(root.length));
 
-/** Call-hierarchy items often point at a declaration in a header; follow them to the definition with its body. */
 const defCache = new Map<string, CallItem>();
 export async function resolveDefinition(item: CallItem): Promise<CallItem> {
   const k = `${item.uri}#${item.selectionRange.start.line}:${item.selectionRange.start.character}`;
   const hit = defCache.get(k);
   if (hit) return hit;
   let out = item;
-  // A source-file item already is the definition. Asking clangd for the "definition" of a definition
-  // returns its declaration, so only header items are followed.
   if (HEADER.test(item.uri)) {
     const loc = await definitionAt(uriToFile(item.uri), item.selectionRange.start);
     if (loc && !HEADER.test(loc.file)) {
@@ -279,12 +265,11 @@ export async function resolveDefinition(item: CallItem): Promise<CallItem> {
   }
   out = await withBody(out);
   const hasBody = out.range.end.line > out.range.start.line || !HEADER.test(out.uri);
-  if (hasBody) defCache.set(k, out);   // never remember a failed lookup: the index may still be loading
+  if (hasBody) defCache.set(k, out);
   return out;
 }
 const HEADER = /\.(h|hh|hpp|hxx|inl|ipp)$/i;
 
-/** Widens an item's range to the whole function definition (signature to closing brace) using the parser. */
 const parsedLib = new Map<string, { text: string; tree: ReturnType<typeof parseCpp> }>();
 export async function withBody(item: CallItem): Promise<CallItem> {
   const file = uriToFile(item.uri);
@@ -306,3 +291,8 @@ export async function withBody(item: CallItem): Promise<CallItem> {
   return item;
 }
 export const clearDefinitionCache = () => { defCache.clear(); parsedLib.clear(); };
+export function forgetDefinitionsIn(file: string) {
+  const u = fileToUri(file);
+  for (const [k, v] of defCache) if (v.uri === u || k.startsWith(`${u}#`)) defCache.delete(k);
+  parsedLib.delete(file);
+}

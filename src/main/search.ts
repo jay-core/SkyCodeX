@@ -1,6 +1,3 @@
-// Folder-wide content search: every text file under the project, read a few at a time so the window stays
-// responsive, matches sent in batches as they are found. Case-free (src/shared/search.ts). A newer search cancels
-// the one running.
 import fs from 'node:fs/promises';
 import { listFiles } from './files';
 import { hitsIn, Hit } from '../shared/search';
@@ -18,7 +15,7 @@ export async function searchFolder(root: string, q: string, id: number, send: (h
   const one = async (f: string) => {
     let buf: Buffer;
     try { const st = await fs.stat(f); if (st.size > MAX_BYTES) return; buf = await fs.readFile(f); } catch { return; }
-    if (buf.subarray(0, 8000).includes(0)) return;   // binary
+    if (buf.subarray(0, 8000).includes(0)) return;
     searched++;
     const hits = hitsIn(f, buf.toString('utf8'), q, MAX_HITS - matches);
     if (!hits.length) return;

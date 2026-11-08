@@ -1,5 +1,3 @@
-// Executable targets named in a project's build files, so the flow view can call each program by its real name
-// and notice when one program starts another.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -8,7 +6,6 @@ export interface Target { name: string; sources: string[] }
 const BUILD_FILE = /^(CMakeLists\.txt|meson\.build)$/;
 const SKIP = /^(\.|node_modules$|build$|out$|cmake-build-)/i;
 
-/** add_executable(name a.cpp b.cpp) in CMake, executable('name', 'a.cpp', …) in Meson; sources resolved against their folder. */
 export function buildTargets(root: string): Target[] {
   const out: Target[] = [];
   let level = [root];

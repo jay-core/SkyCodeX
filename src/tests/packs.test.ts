@@ -1,4 +1,3 @@
-// Language packs: safe unpacking, release matching, terminal PATH, and a full offline install.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,7 +12,6 @@ import { sourceFor, compareVersions, installRelease, listPacks, removePack, Rele
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-packs-'));
 
-// ---- tiny archive writers, so the tests can build hostile archives ----
 function tarEntry(name: string, body: string | Buffer, type = '0', link = '', mode = 0o644): Buffer {
   const data = Buffer.isBuffer(body) ? body : Buffer.from(body);
   const h = Buffer.alloc(512);
@@ -131,7 +129,7 @@ describe('release matching', () => {
     expect(m('clangd', 'darwin', 'arm64', 'clangd-mac-23.1.0.zip')?.version).toBe('23.1.0');
     expect(m('clangd', 'darwin', 'arm64', 'clangd_indexing_tools-mac-23.1.0.zip')).toBeNull();
     expect(m('clangd', 'win32', 'x64', 'clangd-windows-23.1.0.zip')?.version).toBe('23.1.0');
-    expect(sourceFor('clangd', 'linux', 'arm64')).toBeNull();   // no official build
+    expect(sourceFor('clangd', 'linux', 'arm64')).toBeNull();
   });
   it('compares versions part by part', () => {
     expect(compareVersions('23.1.10', '23.1.4')).toBeGreaterThan(0);
@@ -140,7 +138,6 @@ describe('release matching', () => {
   });
 });
 
-// a real install, offline: a clangd release zip on disk (LITHO_TEST_CLANGD_ZIP), served from localhost
 const ZIP = process.env.LITHO_TEST_CLANGD_ZIP ?? '';
 const zipHere = process.platform === 'darwin' && fs.existsSync(ZIP);
 describe.skipIf(!zipHere)('installing a pack end to end (local server)', () => {

@@ -1,14 +1,12 @@
-// The grid view's data: called functions as rows, calling functions as columns, both grouped by file; each square
-// holds the steps (items) where that call happens. Built from the same run as the metro, so the numbers always agree.
 import type { Seq, StepNumber } from './flowseq';
 
 export interface GridFn { key: string; name: string; file: string; fn: number; first: number; count: number }
 export interface GridModel {
-  rows: GridFn[];                      // called
-  cols: GridFn[];                      // calling
-  cells: Map<string, number[]>;        // `${colKey}>${rowKey}` → items, in run order
-  cellOf: string[];                      // item → its cell key ('' for the entry, which nothing calls)
-  files: string[];                     // in order of first appearance
+  rows: GridFn[];
+  cols: GridFn[];
+  cells: Map<string, number[]>;
+  cellOf: string[];
+  files: string[];
 }
 export type GridOrder = 'file' | 'run' | 'count';
 
@@ -21,7 +19,6 @@ export function buildGrid(s: Seq, nums: StepNumber[], order: GridOrder = 'file')
     const r = R[row];
     if (r.kind === 'ref' && r.ref != null) return { key: R[r.ref].key, name: short(R[r.ref].name), file: R[r.ref].file };
     if (r.kind === 'step') return { key: r.key, name: short(r.name), file: r.file };
-    // a call through a pointer, or a value: kept in its caller's file, under the text it is written as
     const at = r.caller != null ? R[r.caller].file : r.file;
     return { key: `${r.kind}:${r.text ?? r.name}@${at}`, name: r.kind === 'indirect' ? (r.text ?? r.name) : short(r.name), file: at };
   };
@@ -41,7 +38,6 @@ export function buildGrid(s: Seq, nums: StepNumber[], order: GridOrder = 'file')
     (cells.get(k) ?? cells.set(k, []).get(k)!).push(it);
     cellOf.push(k);
   });
-  // a column's count is how many calls it makes; its ƒ number is its own (from its first step)
   for (const c of cols.values()) { c.count = 0; const st = s.items.findIndex((row) => fnOf(row).key === c.key); if (st >= 0) { c.fn = nums[st]?.fn ?? c.fn; c.first = st; } }
   for (const [k, v] of cells) cols.get(k.slice(0, k.indexOf('>')))!.count += v.length;
   const sort = (a: GridFn, b: GridFn) => order === 'count' ? b.count - a.count || a.first - b.first

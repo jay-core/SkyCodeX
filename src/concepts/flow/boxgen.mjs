@@ -1,7 +1,3 @@
-// The boxes view, perfected: files as boxes laid out by ELK (as in the app); zoomed in, each box lists its functions in
-// execution order with their loops, and every function row is a port, so ELK routes call lines around boxes. Stepping
-// lights the current row (amber), keeps an ember trail, draws the return route through the caller, and the cold look.
-// usage: node boxgen.mjs <data.json> <root> <out.html> <options.json>   (options: see the boxes-*.json examples)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,7 +14,6 @@ for (const r of d.rows) {
   r.code = L.slice(i, end + 1).slice(0, 16).map((t, k) => [i + k + 1, t]);
   r.sig = L[i].replace(/\s*\{.*$/, '').trim();
 }
-// files never reached (large projects): counted from the folder, listed only on request
 let unreachedFiles = 0;
 if (O.countUnreached) {
   const reached = new Set(d.rows.map((r) => r.file));

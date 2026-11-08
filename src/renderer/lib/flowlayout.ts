@@ -1,4 +1,3 @@
-// Geometry for the flow view: arrows between boxes, and where each arrow's label goes so it never sits on a box.
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface BoxAt { id: string; x: number; y: number; w: number; h: number; extra?: { left?: number; top?: number; bottom?: number } }
 export interface EdgeIn { from: string; to: string; text: string; thread: boolean }
@@ -19,14 +18,12 @@ const tangent = (p0: P, p1: P, p2: P, p3: P, t: number): P => {
 export const overlap = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
-/** The area a box really covers on screen, with its notes around it (start marker, thread tag, loop note). */
 export const footprint = (b: BoxAt, pad = 4): Rect => {
   const l = b.extra?.left ?? 0, t = b.extra?.top ?? 0, bo = b.extra?.bottom ?? 0;
   return { x: b.x - l - pad, y: b.y - t - pad, w: b.w + l + 2 * pad, h: b.h + t + bo + 2 * pad };
 };
 export const labelSize = (text: string, thread: boolean) => ({ w: text.length * (thread ? 6.4 : 7.6) + 16, h: 19 });
 
-/** Arrow paths between placed boxes; labels slide along their arrow, then sideways, until they are clear of boxes and other labels. */
 export function routeEdges(boxes: BoxAt[], edges: EdgeIn[]): Route[] {
   const at = new Map(boxes.map((b) => [b.id, b]));
   const blocked = boxes.map((b) => footprint(b));
@@ -36,7 +33,7 @@ export function routeEdges(boxes: BoxAt[], edges: EdgeIn[]): Route[] {
     const a = at.get(e.from), b = at.get(e.to);
     if (!a || !b) continue;
     let x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, ang = 0;
-    if (b.x <= a.x + a.w / 2) {   // same column or backwards: leave from the bottom (or top)
+    if (b.x <= a.x + a.w / 2) {
       x1 = a.x + a.w / 2; y1 = a.y + a.h; x2 = b.x + b.w / 2; y2 = b.y - 2; ang = 90;
       if (b.y < a.y) { y1 = a.y; y2 = b.y + b.h + 2; ang = -90; }
     }
@@ -55,7 +52,7 @@ export function routeEdges(boxes: BoxAt[], edges: EdgeIn[]): Route[] {
         let cost = 0;
         for (const o of blocked) cost += overlap(r, o) * 4;
         for (const o of taken) cost += overlap(r, o);
-        cost += Math.abs(s) * 0.5 + Math.abs(t - 0.5);   // prefer the middle of the arrow when everything is clear
+        cost += Math.abs(s) * 0.5 + Math.abs(t - 0.5);
         if (!best || cost < best.cost) best = { x, y, cost };
         if (cost < 5) break search;
       }
@@ -66,7 +63,6 @@ export function routeEdges(boxes: BoxAt[], edges: EdgeIn[]): Route[] {
   return out;
 }
 
-/** Frames drawn around each folder's boxes when the view is grouped by folder. */
 export function folderFrames(boxes: (BoxAt & { folder: string })[], pad = 22): (Rect & { folder: string })[] {
   const by = new Map<string, Rect>();
   for (const b of boxes) {

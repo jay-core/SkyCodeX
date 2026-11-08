@@ -1,4 +1,3 @@
-// Bundles the Electron main process and the preload script.
 import { build } from 'esbuild';
 
 const common = {

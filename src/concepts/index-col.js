@@ -1,4 +1,3 @@
-/* ---------- concept: thin call index between the code and the preview cards ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const SRC=R`Response Server::handle(const Request& req) {
     auto headers = «c:i0|parse_headers»(req.raw);
@@ -16,7 +15,7 @@ const SRC=R`Response Server::handle(const Request& req) {
     return res;
 }`;
 const NAMES=['parse_headers','route','apply_cors','keep_alive','compress','send_response','record','close'];
-const VISIBLE=new Set([2,3,4,5]);   // the column is scrolled so cards 3–6 are in view
+const VISIBLE=new Set([2,3,4,5]);
 const COL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b','#8f9aa8','#9aa86f'];
 const CARDS={2:[`apply_cors`,'http/cors.cpp:8',R`void apply_cors(Response& r, const Origins& o) {
     if (o.empty()) return;
@@ -60,7 +59,6 @@ document.getElementById('root').innerHTML=`<div class="win" style="position:abso
   <svg id="lk" style="position:absolute;left:0;top:0;pointer-events:none;overflow:visible" width="1440" height="900"></svg>
  </div>
  <div class="term" style="height:30px;border:0"><div class="tt"><span class="on">zsh</span><span>+</span><span class="grow"></span><span>hide terminal</span><span style="font-size:16px">···</span></div></div></div>`;
-// connectors: call site → its name in the index → its card (when the card is in view)
 const B=document.getElementById('body').getBoundingClientRect(), rel=(r)=>({l:r.left-B.left,r:r.right-B.left,t:r.top-B.top,b:r.bottom-B.top,cy:(r.top+r.bottom)/2-B.top});
 const codeR=rel(document.getElementById('codep').getBoundingClientRect()), idxR=rel(document.getElementById('index').getBoundingClientRect());
 let svg='';
@@ -74,7 +72,6 @@ NAMES.forEach((n,i)=>{
   svg+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${COL[i]}" stroke-width="0.8" stroke-dasharray="1.5 4" opacity=".45" fill="none"/><circle cx="${x1}" cy="${y1}" r="1.8" fill="${COL[i]}"/>`;
   svg+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${COL[i]}" stroke-width="0.9" opacity=".7" fill="none"/><circle cx="${x2}" cy="${y2}" r="1.6" fill="${COL[i]}" opacity=".8"/>`;
   if (VISIBLE.has(i)) {
-    // the line ends on the card's own colour dot, so the eye lands on the right card at once
     const sw=rel(document.querySelector(`#cd${i} .card-h .sw`).getBoundingClientRect());
     const a=dot.r+22, b=sw.l-1, yb=sw.cy, kk=Math.max(22,(b-a)*.5);
     svg+=`<path d="M${a} ${y2} C${a+kk} ${y2} ${b-kk} ${yb} ${b} ${yb}" stroke="${COL[i]}" stroke-width="1" opacity=".75" fill="none"/>`;

@@ -24,7 +24,6 @@ describe('call grid', () => {
     expect(made).toBe([...g.cells.values()].flat().length);
     const fi = g.rows.map((r) => g.files.indexOf(r.file));
     expect(fi).toEqual([...fi].sort((a, b) => a - b));
-    // tinyhttp: parse_headers calls trim twice, and that cell holds both steps
     const ph = g.cols.find((c) => c.name === 'parse_headers')!, tr = g.rows.find((r) => r.name === 'trim')!;
     expect(g.cells.get(`${ph.key}>${tr.key}`)!.length).toBe(2);
   });

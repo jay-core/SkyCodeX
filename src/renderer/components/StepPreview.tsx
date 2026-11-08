@@ -1,5 +1,3 @@
-// The flow page's preview pane, the same in both views: the selected step's code with the line that leads on marked,
-// where it was called from, and the moves that work here.
 import { For, Show, createMemo, createSignal, onMount, onCleanup, JSX } from 'solid-js';
 import Split from './Split';
 import { seq, trail, runStatus, stepMove } from '../lib/flowstore';
@@ -12,28 +10,22 @@ import SeqCode, { CodeCall } from './SeqCode';
 
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 const escH = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-/** The calling line with the called name outlined, as calls are in the folder tab's preview panes (escaped; first match). */
 const underlineCall = (text: string, name: string) => { const e = escH(text), n = escH(name), i = e.indexOf(n); return i < 0 ? e : `${e.slice(0, i)}<span class="cbx on">${n}</span>${e.slice(i + n.length)}`; };
 
-/** A grid square chosen in the grid view: the call it holds (its first item) and every item in it. */
 export const [gridPick, setGridPick] = createSignal<{ at: number; cell: number[] } | null>(null);
 
-// the card's height on the flow page, kept between sessions; it never shrinks below what shows the call comfortably
 const CARD_KEY = 'flow.cardH', CARD_MIN = 170, CODE_MIN = 110;
 const savedCard = (() => { try { const v = Number(localStorage.getItem(CARD_KEY)); return v >= CARD_MIN ? v : 260; } catch { return 260; } })();
 const [cardH, setCardH] = createSignal(savedCard);
 
-// the code pane's width on the flow page, shared by both views and kept between sessions
 const WIDTH_KEY = 'litho.flow.codeW';
 const savedW = (() => { try { const v = Number(localStorage.getItem(WIDTH_KEY)); return v >= 280 ? v : 440; } catch { return 440; } })();
 export const [stepW, setStepW] = createSignal(savedW);
-/** The divider before the code pane: dragging left widens the pane; the diagram keeps at least 420 px. */
 export function StepSplit() {
   return <Split onDrag={(dx) => setStepW(Math.round(Math.max(280, Math.min(window.innerWidth - 420, stepW() - dx))))}
-    onEnd={() => { try { localStorage.setItem(WIDTH_KEY, String(stepW())); } catch { /* not kept */ } }} />;
+    onEnd={() => { try { localStorage.setItem(WIDTH_KEY, String(stepW())); } catch {  } }} />;
 }
 
-/** Opens the editor at the selected step: the function, or for a call through a pointer the line making it. */
 export function openStep() {
   const s = seq(), c = trail()[trail().length - 1];
   if (!s || !c || c.at >= s.items.length) return;
@@ -47,7 +39,6 @@ export default function StepPreview() {
   const cur = () => trail()[trail().length - 1];
   const S = () => seq();
   const atEnd = () => !!S() && !!cur() && cur()!.at >= S()!.items.length;
-  // STEP only counts up (its place in the run); ƒ is the function's own number, with which call of it this is
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const here = createMemo(() => {
     const s = S(), c = cur();
@@ -55,7 +46,6 @@ export default function StepPreview() {
     const r = s.run.rows[s.items[c.at]], n = nums()[c.at], fnRow = r.kind === 'ref' && r.ref != null ? s.run.rows[r.ref] : r;
     return { step: c.at + 1, of: s.items.length, fn: n?.fn ?? 0, call: n?.call ?? 1, name: short(r.kind === 'indirect' ? (r.text ?? r.name) : fnRow.name) };
   });
-  // the card: the grid's chosen square, else the current step
   const card = createMemo((): (DetailCard & { tag: string }) | null => {
     const s = S(), c = cur(), g = gridPick();
     if (!s || !c || c.at >= s.items.length) return null;
@@ -69,7 +59,6 @@ export default function StepPreview() {
     const c = cur(), s = S();
     if (!c || !s || c.at >= s.items.length) return null;
     const r = s.run.rows[s.items[c.at]];
-    // an indirect call or a named function: its caller's code, at that line
     const fnRow = r.kind === 'indirect' || r.kind === 'value' ? r.caller! : r.kind === 'ref' ? r.ref! : s.items[c.at];
     const f = s.run.rows[fnRow];
     const L = lines(f.file);
@@ -77,7 +66,6 @@ export default function StepPreview() {
     let hl = -1;
     if (r.kind === 'indirect' || r.kind === 'value') hl = r.at!.line;
     else if (c.at + 1 < s.items.length) { const nx = s.run.rows[s.items[c.at + 1]]; if (nx.caller === fnRow && nx.at) hl = nx.at.line; }
-    // the calls this function makes in the run, outlined in its code: a click goes to that step
     const calls: CodeCall[] = [];
     s.items.forEach((row, i) => {
       const x = s.run.rows[row];
@@ -98,7 +86,6 @@ export default function StepPreview() {
   });
   const ways = createMemo(() => (S() ? stepWays(S()!, trail()) : []));
   let box: HTMLDivElement | undefined, link!: SVGSVGElement, raf = 0;
-  // the selected step (a metro row, or a grid square) is joined to its details by a fine dotted gold line
   const drawLink = () => {
     raf = requestAnimationFrame(drawLink);
     const picked = gridPick() ? (document.querySelector('.gview .gcell.pk') as HTMLElement | null) : null;
@@ -112,11 +99,7 @@ export default function StepPreview() {
     if (link.dataset.d !== d) { link.dataset.d = d; link.innerHTML = `<path d="${d}" fill="none" stroke="#e3d6ad" stroke-width="0.9" stroke-dasharray="1.5 4" stroke-linecap="round"/><circle cx="${x1}" cy="${y1}" r="2.2" fill="#e3d6ad"/><circle cx="${x2}" cy="${y2}" r="2" fill="#e3d6ad"/>`; }
   };
   onMount(() => { raf = requestAnimationFrame(drawLink); });
-  // the divider between the code and the card: up grows the card until all of it shows, down grows the code until
-  // the card is at its comfortable minimum
   let inner: HTMLDivElement | undefined, pane!: HTMLDivElement;
-  // the card's tallest: all of its content (plus its 1 px border, top and bottom), and never so tall that the code
-  // falls below CODE_MIN; measured from the code's top to the card's bottom, less what sits between them
   const maxCard = () => {
     const wrap = pane?.querySelector('.scodewrap') as HTMLElement | null, br = box?.getBoundingClientRect();
     if (!wrap || !br || !inner) return cardH();
@@ -127,10 +110,10 @@ export default function StepPreview() {
   const dragCard = (e: PointerEvent) => {
     e.preventDefault();
     const el = e.currentTarget as HTMLElement, y0 = e.clientY, h0 = cardH();
-    try { el.setPointerCapture(e.pointerId); } catch { /* the window listeners still follow it */ }
+    try { el.setPointerCapture(e.pointerId); } catch {  }
     el.classList.add('drag');
     const move = (m: PointerEvent) => setCardH(Math.round(Math.max(CARD_MIN, Math.min(maxCard(), h0 - (m.clientY - y0)))));
-    const up = () => { el.classList.remove('drag'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); try { localStorage.setItem(CARD_KEY, String(cardH())); } catch { /* not kept */ } };
+    const up = () => { el.classList.remove('drag'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); try { localStorage.setItem(CARD_KEY, String(cardH())); } catch {  } };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
   onCleanup(() => cancelAnimationFrame(raf));
@@ -207,7 +190,6 @@ export default function StepPreview() {
   );
 }
 
-/** One titled section of the card. */
 function Sec(props: { t: string; children: JSX.Element }) {
   return <div class="sec"><h6>{props.t}</h6>{props.children}</div>;
 }

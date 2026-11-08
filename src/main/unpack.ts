@@ -1,5 +1,3 @@
-// Unpacks .zip and .tar(.zst) archives in-process. Every entry must land inside the destination:
-// absolute paths, ".." segments and links that point outside are refused, never written.
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -9,7 +7,6 @@ import { pipeline } from 'node:stream/promises';
 export interface UnpackStats { files: number; dirs: number; links: number; refused: string[] }
 export type UnpackProgress = (files: number) => void;
 
-/** The absolute path for an archive entry inside dest, or null when it would escape. */
 export function safeJoin(dest: string, name: string): string | null {
   const clean = name.replace(/\\/g, '/').replace(/^(\.\/)+/, '');
   if (!clean || clean.startsWith('/') || /^[A-Za-z]:/.test(clean)) return null;
@@ -19,34 +16,56 @@ export function safeJoin(dest: string, name: string): string | null {
   return out === root || out.startsWith(root + path.sep) ? out : null;
 }
 
-/** A link is kept only when what it points at is inside dest too. */
+function realOf(p: string): string | null {
+  const rest: string[] = [];
+  let d = path.resolve(p);
+  for (;;) {
+    let there = true;
+    try { fs.lstatSync(d); } catch { there = false; }
+    if (there) { try { return path.join(fs.realpathSync(d), ...rest.slice().reverse()); } catch { return null; } }
+    const up = path.dirname(d);
+    if (up === d) return null;
+    rest.push(path.basename(d));
+    d = up;
+  }
+}
+const within = (root: string, p: string) => p === root || p.startsWith(root + path.sep);
+
 function linkInside(dest: string, at: string, target: string): boolean {
   if (path.isAbsolute(target) || /^[A-Za-z]:/.test(target)) return false;
-  const to = path.resolve(path.dirname(at), target), root = path.resolve(dest);
-  return to === root || to.startsWith(root + path.sep);
+  const segs = target.replace(/\\/g, '/').split('/').filter((s) => s && s !== '.');
+  const named = segs.findIndex((s) => s !== '..');
+  if (named >= 0 && segs.slice(named).includes('..')) return false;
+  const root = realOf(dest), parent = realOf(path.dirname(at));
+  return !!root && !!parent && within(root, path.resolve(parent, ...segs));
+}
+
+function landsInside(dest: string, at: string): boolean {
+  const root = realOf(dest), parent = realOf(path.dirname(at));
+  if (!root || !parent || !within(root, parent)) return false;
+  try { if (fs.lstatSync(at).isSymbolicLink()) fs.rmSync(at, { force: true }); } catch {  }
+  return true;
 }
 
 function writeLink(dest: string, at: string, target: string, stats: UnpackStats, name: string) {
-  if (!linkInside(dest, at, target)) { stats.refused.push(`${name} → ${target}`); return; }
+  if (!linkInside(dest, at, target) || !landsInside(dest, at)) { stats.refused.push(`${name} → ${target}`); return; }
   fs.mkdirSync(path.dirname(at), { recursive: true });
   try { fs.rmSync(at, { force: true }); fs.symlinkSync(target, at); stats.links++; }
   catch { stats.refused.push(`${name} (links not allowed here)`); }
 }
 
-const fileMode = (mode: number) => ((mode & 0o777) || 0o644) | 0o600;   // the owner can always read and write
+const fileMode = (mode: number) => ((mode & 0o777) || 0o644) | 0o600;
 
-// ---------- zip ----------
 interface ZipEntry { name: string; method: number; csize: number; usize: number; offset: number; mode: number; unix: boolean }
 
 function zipEntries(fd: number, size: number): ZipEntry[] {
-  // end of central directory: last 22 bytes + up to 64 KB of comment
   const tail = Math.min(size, 22 + 65535), buf = Buffer.alloc(tail);
   fs.readSync(fd, buf, 0, tail, size - tail);
   let e = -1;
   for (let i = tail - 22; i >= 0; i--) if (buf.readUInt32LE(i) === 0x06054b50) { e = i; break; }
   if (e < 0) throw new Error('not a zip archive');
   let count = buf.readUInt16LE(e + 10), cdSize = buf.readUInt32LE(e + 12), cdOff = buf.readUInt32LE(e + 16);
-  if (cdOff === 0xffffffff || count === 0xffff) {   // zip64
+  if (cdOff === 0xffffffff || count === 0xffff) {
     const loc = e - 20;
     if (loc < 0 || buf.readUInt32LE(loc) !== 0x07064b50) throw new Error('zip64 archive without its locator');
     const z64 = Number(buf.readBigUInt64LE(loc + 8)), rec = Buffer.alloc(56);
@@ -64,7 +83,6 @@ function zipEntries(fd: number, size: number): ZipEntry[] {
     const attrs = cd.readUInt32LE(p + 38);
     let offset = cd.readUInt32LE(p + 42);
     const name = cd.toString('utf8', p + 46, p + 46 + nlen);
-    // zip64 sizes and offset live in extra field 0x0001, in this order, only for the fields that overflowed
     for (let x = p + 46 + nlen; x < p + 46 + nlen + xlen;) {
       const id = cd.readUInt16LE(x), len = cd.readUInt16LE(x + 2);
       if (id === 1) {
@@ -89,7 +107,7 @@ export async function extractZip(file: string, dest: string, onProgress?: Unpack
     for (const en of entries) {
       if (signal?.aborted) throw new Error('cancelled');
       const at = safeJoin(dest, en.name);
-      if (!at) { stats.refused.push(en.name); continue; }
+      if (!at || !landsInside(dest, at)) { stats.refused.push(en.name); continue; }
       const hdr = Buffer.alloc(30);
       fs.readSync(fd, hdr, 0, 30, en.offset);
       if (hdr.readUInt32LE(0) !== 0x04034b50) throw new Error(`damaged entry: ${en.name}`);
@@ -101,7 +119,7 @@ export async function extractZip(file: string, dest: string, onProgress?: Unpack
         const s = fs.createReadStream('', { fd, start, end: start + en.csize - 1, autoClose: false });
         return en.method === 8 ? s.pipe(zlib.createInflateRaw()) : s;
       };
-      if (kind === 0o120000) {   // a symbolic link: its content is the target
+      if (kind === 0o120000) {
         const chunks: Buffer[] = [];
         for await (const c of en.csize ? raw() : Readable.from([])) chunks.push(c as Buffer);
         writeLink(dest, at, Buffer.concat(chunks).toString('utf8'), stats, en.name);
@@ -117,9 +135,8 @@ export async function extractZip(file: string, dest: string, onProgress?: Unpack
   return stats;
 }
 
-// ---------- tar ----------
 const octal = (b: Buffer, a: number, n: number) => {
-  if (b[a] & 0x80) {   // base-256 for very large sizes
+  if (b[a] & 0x80) {
     let v = 0;
     for (let i = a + 1; i < a + n; i++) v = v * 256 + b[i];
     return v;
@@ -145,7 +162,6 @@ function paxPath(data: Buffer): { path?: string; linkpath?: string; size?: numbe
   return out;
 }
 
-/** Streams a tar archive (already decompressed) into dest. */
 export async function extractTar(input: Readable, dest: string, onProgress?: UnpackProgress, signal?: AbortSignal): Promise<UnpackStats> {
   const stats: UnpackStats = { files: 0, dirs: 0, links: 0, refused: [] };
   let buf: Buffer = Buffer.alloc(0), ended = false;
@@ -159,7 +175,6 @@ export async function extractTar(input: Readable, dest: string, onProgress?: Unp
     return buf.length >= n;
   };
   const take = (n: number) => { const out = buf.subarray(0, n); buf = buf.subarray(n); return out; };
-  /** Moves `size` bytes (plus padding to 512) to a sink, chunk by chunk. */
   const body = async (size: number, sink?: (c: Buffer) => void | Promise<void>) => {
     let left = size;
     while (left > 0) {
@@ -174,7 +189,7 @@ export async function extractTar(input: Readable, dest: string, onProgress?: Unp
   let longName: string | undefined, longLink: string | undefined, pax: ReturnType<typeof paxPath> = {};
   while (await need(512)) {
     const h = take(512);
-    if (h.every((x) => x === 0)) break;   // end of archive
+    if (h.every((x) => x === 0)) break;
     const type = String.fromCharCode(h[156] || 48);
     let size = octal(h, 124, 12);
     const ustar = h.toString('ascii', 257, 262) === 'ustar';
@@ -195,47 +210,49 @@ export async function extractTar(input: Readable, dest: string, onProgress?: Unp
     if (pax.size !== undefined) size = pax.size;
     longName = longLink = undefined; pax = {};
     const at = safeJoin(dest, name);
-    if (!at) { stats.refused.push(name); await body(size); continue; }
+    if (!at || !landsInside(dest, at)) { stats.refused.push(name); await body(size); continue; }
     if (type === '5') { fs.mkdirSync(at, { recursive: true }); stats.dirs++; await body(size); continue; }
     if (type === '2') { writeLink(dest, at, link, stats, name); await body(size); continue; }
-    if (type === '1') {   // hard link: a copy of a file already unpacked
+    if (type === '1') {
       const from = safeJoin(dest, link);
       if (from && fs.existsSync(from)) { fs.mkdirSync(path.dirname(at), { recursive: true }); fs.copyFileSync(from, at); stats.files++; }
       else stats.refused.push(`${name} ⇒ ${link}`);
       await body(size); continue;
     }
-    if (type !== '0' && type !== '7') { await body(size); continue; }   // devices, fifos: never needed
+    if (type !== '0' && type !== '7') { await body(size); continue; }
     fs.mkdirSync(path.dirname(at), { recursive: true });
     const out = fs.createWriteStream(at, { mode: fileMode(octal(h, 100, 8)) });
-    await body(size, (c) => new Promise<void>((res, rej) => { out.write(c, (e) => (e ? rej(e) : res())); }));
-    await new Promise<void>((res, rej) => out.end((e?: Error | null) => (e ? rej(e) : res())));
+    out.on('error', () => {  });
+    try {
+      await body(size, (c) => new Promise<void>((res, rej) => { out.write(c, (e) => (e ? rej(e) : res())); }));
+      await new Promise<void>((res, rej) => out.end((e?: Error | null) => (e ? rej(e) : res())));
+    } catch (e) { out.destroy(); throw e; }
     fs.chmodSync(at, fileMode(octal(h, 100, 8)));
     stats.files++; onProgress?.(stats.files);
   }
   return stats;
 }
 
-/** .tar.zst through Node's own zstd decoder. */
 export function extractTarZst(file: string, dest: string, onProgress?: UnpackProgress, signal?: AbortSignal) {
   const z = (zlib as unknown as { createZstdDecompress?: () => Transform }).createZstdDecompress;
   if (!z) throw new Error('this build cannot read .zst archives');
-  return extractTar(fs.createReadStream(file).pipe(z()), dest, onProgress, signal);
+  return extractTar(decoded(file, z()), dest, onProgress, signal);
 }
 
-/** .tar.gz / .tgz through Node's gzip decoder. */
 export function extractTarGz(file: string, dest: string, onProgress?: UnpackProgress, signal?: AbortSignal) {
-  return extractTar(fs.createReadStream(file).pipe(zlib.createGunzip()), dest, onProgress, signal);
+  return extractTar(decoded(file, zlib.createGunzip()), dest, onProgress, signal);
 }
 
-/** A single gzipped program (rust-analyzer ships this way): written to dest/bin/<name>, executable. */
+function decoded(file: string, dec: Transform): Transform {
+  const src = fs.createReadStream(file);
+  src.on('error', (e) => dec.destroy(e));
+  return src.pipe(dec);
+}
+
 export async function extractGzProgram(file: string, dest: string, name: string, signal?: AbortSignal): Promise<UnpackStats> {
   const out = path.join(dest, 'bin', name);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  await new Promise<void>((resolve, reject) => {
-    const src = fs.createReadStream(file), w = fs.createWriteStream(out, { mode: 0o755 });
-    const stop = () => { src.destroy(new Error('cancelled')); };
-    signal?.addEventListener('abort', stop, { once: true });
-    src.pipe(zlib.createGunzip()).on('error', reject).pipe(w).on('error', reject).on('finish', () => { signal?.removeEventListener('abort', stop); resolve(); });
-  });
+  try { await pipeline(fs.createReadStream(file), zlib.createGunzip(), fs.createWriteStream(out, { mode: 0o755 }), { signal }); }
+  catch (e) { throw signal?.aborted ? new Error('cancelled') : e; }
   return { files: 1, dirs: 1, links: 0, refused: [] };
 }

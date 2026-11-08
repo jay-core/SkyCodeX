@@ -1,6 +1,3 @@
-// Feasibility check: a function's flow (calls in order, nested in their loops and branches) from clangd's syntax
-// tree and its index, expanded into callees and numbered in execution order.
-// usage: node flowtree.mjs <root> <compile-commands dir> <file> <function> [depth]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,12 +5,11 @@ import { startClangd, uri, file as fileOf } from './lsp.mjs';
 
 const [root, ccDir, startFile, startName, depthArg] = process.argv.slice(2);
 const MAX_DEPTH = Number(depthArg ?? 5);
-const REPO = fileURLToPath(new URL('../../..', import.meta.url));   // the repository, from this script's place
+const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const c = startClangd(path.join(REPO, 'tools/clangd/bin/clangd'), root, ccDir);
 const timing = { ast: [], calls: [], syms: [] };
 const time = async (k, p) => { const t = performance.now(); const r = await p; timing[k].push(performance.now() - t); return r; };
 
-// ---- wait for clangd's background index (index-based outgoing calls need it) ----
 let indexing = 0, indexed = false;
 c.on('window/workDoneProgress/create', () => {});
 c.on('$/progress', (p) => { if (p.value?.kind === 'begin') indexing++; if (p.value?.kind === 'end' && --indexing <= 0) indexed = true; });
@@ -29,7 +25,6 @@ const before = (a, b) => a.line < b.line || (a.line === b.line && a.character <=
 const inside = (p, r) => before(r.start, p) && before(p, r.end);
 const inProject = (f) => f.startsWith(root) && !/[\\/](build|third_party|external)[\\/]/.test(f.slice(root.length));
 
-// ---- symbols: a function's full range, from its file's outline ----
 const symCache = new Map();
 async function fnAt(f, pos) {
   if (!symCache.has(f)) {
@@ -41,13 +36,12 @@ async function fnAt(f, pos) {
   return symCache.get(f).filter((x) => inside(pos, x.range)).sort((a, b) => (a.range.end.line - a.range.start.line) - (b.range.end.line - b.range.start.line))[0] ?? null;
 }
 
-// ---- structure: loops and branches, from the syntax tree ----
 const LOOPS = { While: 'while', For: 'for', CXXForRange: 'for each', Do: 'do … while' };
 const BRANCHES = { If: 'if', Switch: 'switch', ConditionalOperator: '?:' };
 function structure(ast, f) {
   const out = [];
   const lines = text(f);
-  const header = (r) => {   // the loop or branch header as written, up to the body
+  const header = (r) => {
     let s = lines.slice(r.start.line, Math.min(r.end.line, r.start.line + 2) + 1).join(' ').slice(r.start.character);
     let depth = 0, end = s.length;
     for (let i = s.indexOf('('); i >= 0 && i < s.length; i++) { if (s[i] === '(') depth++; else if (s[i] === ')' && --depth === 0) { end = i + 1; break; } }
@@ -57,7 +51,6 @@ function structure(ast, f) {
     const k = n.kind;
     if (n.role === 'statement' && (LOOPS[k] || BRANCHES[k])) {
       const h = header(n.range);
-      // a range-for's range is read once, before the loop; an if's condition always runs: only the body repeats or depends
       const kids = n.children ?? [];
       let range = n.range;
       if ((k === 'CXXForRange' || k === 'If') && kids.length > 1) range = { start: kids[k === 'If' ? 1 : kids.length - 1].range.start, end: n.range.end };
@@ -72,13 +65,11 @@ function structure(ast, f) {
   visit(ast, null);
   return out;
 }
-/** for (int i = 0; i < 4; ++i): a fixed number of passes. */
 function tripCount(h) {
   const m = /^for\s*\(\s*(?:[\w:]+\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*(<=?)\s*(\d+)\s*;\s*(?:\+\+\1|\1\+\+|\1\s*\+=\s*1)\s*\)/.exec(h);
   return m ? Number(m[4]) - Number(m[2]) + (m[3] === '<=' ? 1 : 0) : null;
 }
 
-// ---- one function's flow: its project calls in source order, placed in their innermost loop or branch ----
 const flows = new Map();
 async function flowOf(item) {
   const key = `${item.uri}#${item.selectionRange.start.line}`;
@@ -99,7 +90,7 @@ async function flowOf(item) {
     if (!inProject(fileOf(oc.to.uri))) continue;
     for (const r of oc.fromRanges) {
       const after = (src[r.end.line] ?? '').slice(r.end.character).trimStart();
-      if (!/^[(<{]/.test(after)) { result.pointers = (result.pointers ?? 0) + 1; continue; }   // e.g. return not_found;
+      if (!/^[(<{]/.test(after)) { result.pointers = (result.pointers ?? 0) + 1; continue; }
       result.calls.push({ at: r.start, to: oc.to });
     }
   }
@@ -107,7 +98,6 @@ async function flowOf(item) {
   return result;
 }
 
-// ---- walk from the start: numbered steps, nested loops and branches, callees opened recursively ----
 let step = 0, functions = 0, loopsSeen = 0, branchesSeen = 0;
 const numbered = new Map();
 const lines = [];
@@ -122,7 +112,6 @@ async function walk(item, depth, indent, caller = null, at = null) {
   const myRow = rows.length - 1;
   lines.push(`${'  '.repeat(indent)}${String(n).padStart(3)} ${fl.name}  ${path.relative(root, fl.file)}:${fl.line + 1}`);
   if (depth >= MAX_DEPTH) { if (fl.calls.length) lines.push(`${'  '.repeat(indent + 1)}    … ${fl.calls.length} calls not opened (depth ${MAX_DEPTH})`); return; }
-  // each call goes under the chain of loops and branches that contain it; a header is printed when the chain changes
   let open = [];
   const openFrames = [];
   for (const call of fl.calls) {
@@ -134,7 +123,7 @@ async function walk(item, depth, indent, caller = null, at = null) {
       const s = chain[k]; open.push(s);
       if (s.type === 'loop') { loopsSeen++; lines.push(`${'  '.repeat(indent + 1 + k)}    ↻ ${s.count != null ? `×${s.count}  ` : ''}${s.text}`); }
       else { branchesSeen++; lines.push(`${'  '.repeat(indent + 1 + k)}    ? ${s.text}`); }
-      const fr = { type: s.type, text: s.text, count: s.count, from: rows.length, to: rows.length - 1, owner: myRow };   // empty until a step lands in it
+      const fr = { type: s.type, text: s.text, count: s.count, from: rows.length, to: rows.length - 1, owner: myRow };
       frames.push(fr); openFrames[k] = fr;
     }
     const inLambda = fl.structs.some((s) => s.type === 'lambda' && inside(call.at, s.range));

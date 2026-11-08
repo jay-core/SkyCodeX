@@ -1,5 +1,3 @@
-// Language engines for Rust, Python and Go files (rust-analyzer, Pyright, gopls from language packs).
-// Each starts when the first file of its language opens; documents sync, diagnostics, completion, hover and go-to-definition.
 import { createSignal } from 'solid-js';
 import type { EditorView } from '@codemirror/view';
 import { setDiagnostics, Diagnostic as CmDiagnostic } from '@codemirror/lint';
@@ -16,9 +14,13 @@ const started = new Map<Lang, Promise<boolean>>();
 const versions = new Map<string, number>();
 const diags = new Map<string, Diagnostic[]>();
 const views = new Map<string, EditorView>();
-const waiting = new Map<string, string>();   // documents opened before their server was ready
+const waiting = new Map<string, string>();
 
-export function resetLanguages(folder: string) { root = folder; started.clear(); versions.clear(); diags.clear(); setLangStatus({}); }
+export function resetLanguages(folder: string) {
+  root = folder; started.clear(); versions.clear(); diags.clear(); waiting.clear(); setLangStatus({});
+  for (const t of timers.values()) clearTimeout(t);
+  timers.clear();
+}
 
 function ensure(lang: Lang): Promise<boolean> {
   if (!root) return Promise.resolve(false);
@@ -56,6 +58,7 @@ export function changeDoc(file: string, get: () => string) {
 }
 function send(file: string, text: string) {
   timers.delete(file);
+  if (!versions.has(file)) return;
   const v = versions.get(file)! + 1;
   versions.set(file, v);
   api.lang.notify(serverLang(file)!, 'textDocument/didChange', { textDocument: { uri: fileToUri(file), version: v }, contentChanges: [{ text }] });
@@ -64,7 +67,14 @@ export function flush(file: string, text: string) { if (timers.has(file)) { clea
 export function savedDoc(file: string) { if (versions.has(file)) api.lang.notify(serverLang(file)!, 'textDocument/didSave', { textDocument: { uri: fileToUri(file) } }); }
 export function attachView(file: string, view: EditorView | null) { if (view) { views.set(file, view); push(file); } else views.delete(file); }
 
-api.lang.onNotify((_lang, method, params) => {
+api.lang.onNotify((lang, method, params) => {
+  if (method === '$/exit') {
+    const l = lang as Lang;
+    started.delete(l);
+    for (const f of [...versions.keys()]) if (serverLang(f) === l) { versions.delete(f); clearTimeout(timers.get(f)); timers.delete(f); }
+    setLangStatus({ ...langStatus(), [l]: 'stopped · starts again with the next edit' });
+    return;
+  }
   if (method !== 'textDocument/publishDiagnostics') return;
   const file = uriToFile(params.uri);
   diags.set(file, params.diagnostics);

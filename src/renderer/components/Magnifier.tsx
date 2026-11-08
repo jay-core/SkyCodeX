@@ -1,27 +1,21 @@
-// The magnifier, for either flow view: when it is on (the chip or M), a lens follows the pointer and shows what is
-// under it larger, at the strength chosen — at any zoom, so small text reads without zooming the whole view. It is
-// a live copy of the view (refreshed as the view changes), so everything it shows is what the view shows.
 import { Show, createSignal, createEffect, onCleanup, on } from 'solid-js';
 import { magnify } from '../lib/flowstore';
 
 const LW = 420, LH = 260;
 
-/** host: the view the pointer moves over. source: what to copy, and where its own (0, 0) is on screen. */
 export default function Magnifier(props: { host: () => HTMLElement | undefined; source: () => { el: HTMLElement; x: number; y: number; w: number; h: number } | null }) {
   const [at, setAt] = createSignal<{ x: number; y: number } | null>(null);
   let inner: HTMLDivElement | undefined, copyOf: HTMLElement | null = null, mo: MutationObserver | null = null, timer = 0;
 
-  /** The copy, made again whenever the view changes (a few times a second at most). */
   const recopy = () => {
     const src = props.source();
     if (!inner || !src) return;
     copyOf = src.el;
     const c = src.el.cloneNode(true) as HTMLElement;
-    c.querySelectorAll('canvas').forEach((x) => x.remove());   // canvases copy empty
+    c.querySelectorAll('canvas').forEach((x) => x.remove());
     inner.replaceChildren(c);
     place();
   };
-  /** The lens stays inside the view; the spot under the pointer is shown where the pointer is in the lens. */
   const box = () => {
     const p = at(), h = props.host()?.getBoundingClientRect();
     if (!p || !h) return { left: 0, top: 0 };

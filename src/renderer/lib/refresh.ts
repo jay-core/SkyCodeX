@@ -1,6 +1,3 @@
-// The refresh button (bottom right): everything read from disk or worked out from it is forgotten and built again —
-// the previews at the cursor, the flow graph, the run and its views, the file tree. clangd's own index is left to
-// clangd, which keeps it up to date as files change. One refresh at a time; a click while one runs is ignored.
 import { createSignal } from 'solid-js';
 import { files, getMainView, flash } from './store';
 import { lspState, clearDefinitionCache } from './lsp';

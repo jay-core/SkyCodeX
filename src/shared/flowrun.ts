@@ -1,67 +1,27 @@
-// The analyser behind the flow view. Two parts, both pure (no Electron, no DOM) so they can be tested:
-//
-//  1. analyseFunction: what one function does, in the order it does it, from clangd's syntax tree
-//     (textDocument/ast) and its outgoing calls (callHierarchy/outgoingCalls). Evaluation order follows the language:
-//     arguments before the call, a `for`'s increment after its body, `&&` / `||` / `?:` make their right side
-//     conditional, statements after an early `return` / `continue` only run when it was not taken, a lambda's body
-//     runs later (or on a thread, when it is handed to std::thread and the like), a range-for's range is read once.
-//     Nothing is guessed: a call whose order the language leaves open is marked, a call through a pointer or a
-//     std::function is shown as indirect, a function named but not called is a value.
-//
-//  2. walkRun: every step from an entry point, numbered in execution order. A function is opened the first time it
-//     runs; later calls are references to that step.
-
 import type { Effects } from './flowfacts';
 import { PAIR_CALL, unclosed, Unclosed } from './flowpairs';
 import { caseOf, exprOf, has, paramsIn, plainType, settledValue, showValue, switchArms, truthOf, valuesOf, Expr, Vals } from './flowvalues';
 
 export interface Pos { line: number; character: number }
 export interface Range { start: Pos; end: Pos }
-/** A node of clangd's syntax tree, as textDocument/ast returns it. */
 export interface AstNode { kind: string; role?: string; detail?: string; range?: Range; children?: AstNode[] }
-/** A function a call reaches, as the call hierarchy names it. */
 export interface Target { key: string; name: string; project: boolean; ctor: boolean; container: string }
-/** One outgoing call of the call hierarchy: the callee and every place this function names it. */
 export interface OutCall { to: Target; fromRanges: Range[] }
 
 export type FlowNode =
-  /** a call to a function; unsequenced: the language leaves its order against a sibling argument open */
-  /** argx: the arguments as the syntax tree computes them, where understood (src/shared/flowvalues.ts) */
   | { t: 'call'; to: Target; at: Pos; unsequenced?: boolean; approx?: boolean; noreturn?: boolean; args?: string[]; argx?: (Expr | null)[]; obj?: string }
-  /** a function named but not called here: a callback, a function pointer, a thread's start routine */
   | { t: 'value'; to: Target; at: Pos }
-  /**
-   * a call whose target is not known here: through a pointer, a member pointer or a std::function; dependent (in a
-   * template: resolved per instantiation); or unresolved (the compiler could not make sense of it — a missing
-   * include or define in this file's build settings)
-   */
   | { t: 'indirect'; via: Via; text: string; at: Pos }
   | { t: 'stmt'; kind: StmtKind; line: number; text: string; body: FlowNode[] }
-  /**
-   * cond always runs; then one arm (or none). For && and ||, the one arm is the right-hand side. test: the condition
-   * (an if's, a switch's value, the left side of && / || / ?:) when it reads a parameter (src/shared/flowvalues.ts)
-   */
   | { t: 'branch'; kind: 'if' | 'switch' | '?:' | '&&' | '||' | 'try'; text: string; line: number; cond: FlowNode[]; arms: Arm[]; test?: Expr }
-  /** once: before the first pass (a for's init, a range-for's range); each: every pass, in order */
   | { t: 'loop'; kind: 'while' | 'for' | 'for each' | 'do'; text: string; line: number; count: number | null; once: FlowNode[]; each: FlowNode[]; test?: Expr }
-  /** a lambda's body: runs when the lambda is called, or on a new thread */
   | { t: 'deferred'; kind: 'lambda' | 'thread'; text: string; line: number; body: FlowNode[] }
-  /** a static local's initializer: the first time only */
   | { t: 'once'; text: string; line: number; body: FlowNode[] }
-  /** what follows an early exit (`if (x) return …;`): runs only when that exit was not taken */
   | { t: 'guard'; text: string; exit: StmtKind; line: number; body: FlowNode[] }
-  /** the side of an if constexpr the compiler discarded: not in this build, never runs; the project calls it names */
   | { t: 'unbuilt'; text: string; line: number; calls: Target[] };
 export type Via = 'pointer' | 'member pointer' | 'std::function' | 'dependent' | 'unresolved';
-/** cases: a switch arm's case values, one per label (null for default, or a label not understood) */
 export interface Arm { label: string; line: number; body: FlowNode[]; fallsThrough?: boolean; cases?: (Expr | null)[] }
 export type StmtKind = 'code' | 'return' | 'break' | 'continue' | 'throw' | 'goto' | 'co_return';
-/** dropped: places the index names a function but the syntax tree shows no call (a built-in operator, say) */
-/**
- * unlisted: names of functions called directly in the body that clangd's call list doesn't name. While clangd is still
- * updating its index such calls are missing from the graph, so a caller can tell the graph isn't complete yet.
- */
-/** jumps: the body has a goto or a label, so a part that looks unreachable may be jumped into */
 export interface FnFlow { body: FlowNode[]; dropped: { name: string; at: Pos }[]; unlisted?: string[]; jumps?: true }
 
 const CALLS = new Set(['Call', 'CXXMemberCall', 'CUDAKernelCall', 'UserDefinedLiteral']);
@@ -71,10 +31,7 @@ const DEPENDENT = new Set(['CXXDependentScopeMember', 'DependentScopeDeclRef', '
 const UNEVALUATED = new Set(['UnaryExprOrTypeTrait', 'CXXNoexcept', 'CXXTypeid', 'CXXUuidof', 'Requires', 'Concept', 'CXXDefaultArg', 'CXXDefaultInit']);
 const SKIP_ROLES = new Set(['type', 'specifier', 'template name', 'template argument']);
 const EXITS: StmtKind[] = ['return', 'break', 'continue', 'throw', 'goto', 'co_return'];
-/** How clang's dump writes a function type that never returns. */
 const NORETURN = /__attribute__\(\(noreturn\)\)/;
-/** Calls that start a thread with the callable they are given. */
-/** Calls that start a thread or an RTOS task with the function they are given (RTOS APIs often behind a wrapper: ThreadX's tx_thread_create is _txe_thread_create). */
 export const THREAD_START = /^(?:std::)?(?:thread|jthread|async|pthread_create|_beginthread(?:ex)?|CreateThread|xTaskCreate\w*|k_thread_create|taskSpawn|task_create|rt_thread_(?:create|init)|osThreadNew|osThreadCreate|_*txe?_thread_create|OSTaskCreate\w*|OS_(?:TASK_)?Create\w*|QtConcurrent::run)$/;
 const ASSIGN = /^(?:=|\*=|\/=|%=|\+=|-=|<<=|>>=|&=|\^=|\|=)$/;
 const LEFT_FIRST = /^(?:<<|>>|\[\]|->\*|,)$/;
@@ -82,23 +39,13 @@ const LEFT_FIRST = /^(?:<<|>>|\[\]|->\*|,)$/;
 const before = (a: Pos, b: Pos) => a.line < b.line || (a.line === b.line && a.character <= b.character);
 const within = (r: Range, outer: Range) => before(outer.start, r.start) && before(r.end, outer.end);
 const kids = (n: AstNode) => n.children ?? [];
-/**
- * A position as one number that orders exactly like before(): line·2²² + character. Exact while the character is a
- * whole number below 2²² and the line a whole number (far past any real file); keyed() says when that holds.
- */
 const KEY = 4194304;
 const key = (p: Pos) => p.line * KEY + p.character;
 const keyed = (p: Pos) => Number.isInteger(p.line) && p.line >= 0 && Number.isInteger(p.character) && p.character >= 0 && p.character < KEY;
-/** Line starts of the last file read: the functions of one file share it, so it is worked out once per file. */
 let lastText: string | null = null;
 let lastStarts: number[] = [0];
-/** Statements read from their source text (header, keyword, declaration), which need a range to be read. */
 const SHAPED = new Set(['If', 'Switch', 'While', 'Do', 'For', 'CXXForRange', 'CXXTry', 'Return', 'Break', 'Continue', 'Goto', 'IndirectGoto', 'CoreturnStmt', 'Coreturn', 'Decl']);
 
-/**
- * What one function does, in evaluation order. text is the function's whole file. A tree the analyser cannot follow
- * still gives the function's calls, in source order and marked approximate, so one odd function never stops a run.
- */
 export function analyseFunction(ast: AstNode, text: string, calls: OutCall[]): FnFlow {
   try { return new Analyser(ast, text, calls).run(); } catch {
     const at = calls.flatMap((c) => c.fromRanges.map((r) => ({ to: c.to, at: r.start }))).sort((a, b) => (before(a.at, b.at) ? -1 : 1));
@@ -115,7 +62,6 @@ class Analyser {
   private dropped: { name: string; at: Pos }[] = [];
   private unlisted = new Set<string>();
   private all: AstNode[] = [];
-  /** Per node of this.all, in the same order: its range as keys and its length in characters (null when a position can't be keyed). */
   private spans: { s: Float64Array; e: Float64Array; len: Float64Array; has: Uint8Array } | null = null;
 
   constructor(private ast: AstNode, private text: string, calls: OutCall[]) {
@@ -125,7 +71,7 @@ class Analyser {
       lastText = text;
       lastStarts = starts;
     }
-    this.starts = lastStarts;   // only read, never changed
+    this.starts = lastStarts;
     const index = (n: AstNode) => { this.all.push(n); for (const c of kids(n)) { this.parent.set(c, n); index(c); } };
     index(ast);
     this.spans = this.keySpans();
@@ -148,15 +94,10 @@ class Analyser {
   private src(r: Range) { return this.text.slice(this.off(r.start), this.off(r.end)); }
   private oneLine(r: Range) { return this.src(r).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ').trim(); }
 
-  /**
-   * The most specific node whose range holds r: the smallest one, and of equal ones the deepest. (Siblings can
-   * overlap — a range-for's loop variable spans the whole header — so the first match on the way down is not enough.)
-   */
   private deepest(r: Range): AstNode | null {
     let best: AstNode | null = null, size = Infinity;
     const k = this.spans;
     if (k && keyed(r.start) && keyed(r.end)) {
-      // the same walk and the same tests as below, on numbers worked out once per node
       const rs = key(r.start), re = key(r.end);
       for (let i = 0; i < this.all.length; i++) {
         if (!k.has[i] || k.s[i] > rs || re > k.e[i]) continue;
@@ -167,19 +108,17 @@ class Analyser {
     for (const n of this.all) {
       if (!n.range || !within(r, n.range)) continue;
       const len = this.off(n.range.end) - this.off(n.range.start);
-      if (len <= size) { best = n; size = len; }   // this.all is in tree order, so an equal-sized later node is deeper
+      if (len <= size) { best = n; size = len; }
     }
     return best;
   }
 
-  /** Decides what naming `to` at `r` is: a call (at which call node), a value, or (when the tree has no node there, as in a macro) loose. */
   private place(to: Target, r: Range) {
     const at = r.start;
     const d = this.deepest(r);
     if (!d || d === this.ast) { this.loose.push({ to, range: r, done: false }); return; }
     if (to.ctor) {
       for (let n: AstNode | undefined = d; n; n = this.parent.get(n)) if (CONSTRUCTS.has(n.kind)) return this.add(this.sites, n, to, at);
-      // a constructor named in a member initializer or a base specifier: it runs where the initializer is
       for (let n: AstNode | undefined = d; n; n = this.parent.get(n)) if (n.kind === 'MemberInitializer' || n.kind === 'BaseInitializer') return this.add(this.sites, n, to, at);
       this.loose.push({ to, range: r, done: false });
       return;
@@ -188,11 +127,10 @@ class Analyser {
     for (let n = this.parent.get(d); n; via = n, n = this.parent.get(n)) {
       if (CALLS.has(n.kind) || n.kind === 'CXXOperatorCall') {
         if (kids(n)[0] === via) return this.add(this.sites, n, to, at);
-        break;   // named inside an argument: passed, not called
+        break;
       }
       if (CONSTRUCTS.has(n.kind) || n.role === 'statement' || n.role === 'declaration') break;
     }
-    // the index can name an overloaded operator where the compiler used the built-in one (float * float): no call
     if (/^operator\W/.test(to.name) && BUILTIN_OPS.has(d.kind)) { this.dropped.push({ name: to.name, at }); return; }
     if (d.kind === 'DeclRef' || d.kind === 'Member' || d.kind === 'UnresolvedLookup' || d.kind === 'UnresolvedMember') this.add(this.values, d, to, at);
     else if (CALLS.has(d.kind) || d.kind === 'CXXOperatorCall' || CONSTRUCTS.has(d.kind)) this.add(this.sites, d, to, at);
@@ -220,9 +158,6 @@ class Analyser {
     return { body, dropped: this.dropped, unlisted: [...this.unlisted], ...(jumps ? { jumps: true as const } : {}) };
   }
 
-  // ---------- statements ----------
-
-  /** A block of statements; what follows an early exit becomes a guard, what follows an unconditional exit never runs. */
   private stmts(list: AstNode[]): FlowNode[] {
     const flat: AstNode[] = [];
     for (const s of list) {
@@ -233,10 +168,9 @@ class Analyser {
     for (let i = 0; i < flat.length; i++) {
       const nodes = this.stmt(flat[i]);
       out.push(...nodes);
-      // a ghost (an if constexpr's discarded side) runs nothing: whether the block goes on is the kept side's
       const last = nodes.filter((x) => x.t !== 'unbuilt').pop();
       if (!last) continue;
-      if (exits(last)) break;   // the rest of the block is unreachable
+      if (exits(last)) break;
       const early = earlyExit(last);
       if (early && i + 1 < flat.length) {
         const rest = this.stmts(flat.slice(i + 1));
@@ -249,7 +183,6 @@ class Analyser {
 
   private stmt(s: AstNode): FlowNode[] {
     if (!s.range && !kids(s).length) return [];
-    // a statement the tree gives no place for (written by a macro): its parts are read in order, without its shape
     if (!s.range && SHAPED.has(s.kind)) return this.stmts(kids(s));
     const line = s.range?.start.line ?? 0;
     switch (s.kind) {
@@ -277,7 +210,6 @@ class Analyser {
         return isStatic && body.length ? [{ t: 'once', text: this.oneLine(s.range!), line, body: [st] }] : [st];
       }
       default: {
-        // an expression statement (or anything else that holds expressions)
         const body: FlowNode[] = [];
         const kind: StmtKind = s.kind === 'CXXThrow' || (s.kind === 'ExprWithCleanups' && kids(s)[0]?.kind === 'CXXThrow') ? 'throw' : 'code';
         this.expr(s, body, false);
@@ -287,17 +219,14 @@ class Analyser {
     }
   }
 
-  /** Calls the tree has no node for (inside a macro, say) are placed at the statement that contains them. */
   private flushLoose(s: AstNode, out: FlowNode[]) {
     if (!s.range) return;
     for (const l of this.loose) if (!l.done && within(l.range, s.range)) { l.done = true; out.push({ t: 'call', to: l.to, at: l.range.start, approx: true }); }
   }
 
-  /** Splits a statement's children into those inside its header's parentheses and those after. */
   private header(s: AstNode) {
     const start = this.off(s.range!.start), open = this.text.indexOf('(', start);
     const close = open < 0 ? -1 : matchParen(this.text, open);
-    // by where a child starts: a range-for's loop variable ends past the parenthesis but belongs to the header
     const inHead = (c: AstNode) => !!c.range && close > 0 && this.off(c.range.start) > open && this.off(c.range.start) < close;
     const head = kids(s).filter(inHead), rest = kids(s).filter((c) => !inHead(c) && (c.role === 'statement' || c.role === 'expression' || c.kind === 'Compound'));
     return { head, rest, open, close, text: close > 0 ? this.text.slice(start, close + 1).replace(/\s+/g, ' ').trim() : '' };
@@ -310,11 +239,6 @@ class Analyser {
     }
   }
 
-  /**
-   * An if constexpr the compiler has decided (its condition's value is in the tree) is not a branch: the side it
-   * keeps runs unconditionally, the other is not in this build at all (shown as a ghost, never walked). One whose
-   * condition depends on a template's arguments is decided per instantiation, so it stays a branch.
-   */
   private ifNodes(s: AstNode): FlowNode[] {
     const h = this.header(s);
     const v = /\bconstexpr\b/.test(arcOf(s)) && h.head.length === 1 && h.head[0].kind === 'Constant' ? /Int (-?\d+)/.exec(arcOf(h.head[0]))?.[1] : undefined;
@@ -330,7 +254,6 @@ class Analyser {
     collect(gone);
     const cond = h.text.replace(/^if\s+constexpr\s*\(/, '').replace(/\)$/, '');
     if (!calls.length) return out;
-    // in source order: a discarded then stands before the kept else, a discarded else after the kept then
     const ghost: FlowNode = { t: 'unbuilt', text: `not in this build · ${cond} is ${v !== '0'}`, line: drop?.range?.start.line ?? s.range!.start.line, calls };
     return v !== '0' ? [...out, ghost] : [ghost, ...out];
   }
@@ -353,10 +276,8 @@ class Analyser {
     let cur: { labels: string[]; cases: (Expr | null)[]; line: number; list: AstNode[] } | null = null;
     const flush = () => { if (cur) { const body = this.stmts(cur.list); const last = body[body.length - 1]; arms.push({ label: cur.labels.join(' · '), line: cur.line, body, fallsThrough: !last || !exits(last), cases: cur.cases }); } };
     const visitCase = (c: AstNode) => {
-      // case 1: case 2: stmt — the labels chain through the case's last child
       if (c.kind === 'Case' || c.kind === 'Default') {
         const label = c.kind === 'Default' ? 'default' : 'case ' + (kids(c)[0]?.range ? this.oneLine(kids(c)[0].range!) : '');
-        // a GNU case range (case 1 ... 5) is not one value
         const value = c.kind === 'Default' || /\bgnu_range\b/.test(arcOf(c)) ? null : caseOf(kids(c)[0]);
         const v = value && value.k !== '?' ? value : null;
         if (!cur || cur.list.length) { flush(); cur = { labels: [label], cases: [v], line: c.range?.start.line ?? 0, list: [] }; } else { cur.labels.push(label); cur.cases.push(v); }
@@ -369,8 +290,7 @@ class Analyser {
     };
     for (const b of h.rest) for (const c of b.kind === 'Compound' ? kids(b) : [b]) visitCase(c);
     flush();
-    for (const a of arms) if (a.body.length && last(a.body)?.t === 'stmt' && (last(a.body) as { kind: StmtKind }).kind === 'break') a.body.pop();   // a case's closing break is how it ends, not a step
-    // every label of this switch is one of its arms' (none inside a nested block, as in Duff's device)
+    for (const a of arms) if (a.body.length && last(a.body)?.t === 'stmt' && (last(a.body) as { kind: StmtKind }).kind === 'break') a.body.pop();
     const labels = (n: AstNode): number => kids(n).reduce((k, c) => k + (c.kind === 'Switch' ? 0 : (c.kind === 'Case' || c.kind === 'Default' ? 1 : 0) + labels(c)), 0);
     const whole = h.rest.reduce((k, b) => k + labels(b) + (b.kind === 'Case' || b.kind === 'Default' ? 1 : 0), 0) === arms.reduce((k, a) => k + (a.cases?.length ?? 0), 0) - (arms[0]?.label === 'before any case' ? 1 : 0);
     return { t: 'branch', kind: 'switch', text: h.text, line: s.range!.start.line, cond, arms, ...(whole ? test(h.head) : {}) };
@@ -404,7 +324,6 @@ class Analyser {
       return { t: 'loop', kind: 'while', text: h.text, line, count: null, once, each, ...test(h.head) };
     }
     if (s.kind === 'For') {
-      // init ; cond ; inc — told apart by where the header's own semicolons are
       const semis = topLevel(this.text, h.open, h.close, ';');
       const part = (c: AstNode) => { const o = this.off(c.range!.start); return o < (semis[0] ?? Infinity) ? 0 : o < (semis[1] ?? Infinity) ? 1 : 2; };
       this.headExprs(h.head.filter((c) => part(c) === 0), once);
@@ -413,7 +332,6 @@ class Analyser {
       this.headExprs(h.head.filter((c) => part(c) === 2), each);
       return { t: 'loop', kind: 'for', text: h.text, line, count: forCount(h.text, this.src(s.range!).slice(h.close - this.off(s.range!.start) + 1)), once, each };
     }
-    // range-for: an init-statement and the range are read once; the loop variable is set on every pass
     const colon = topLevel(this.text, h.open, h.close, ':')[0] ?? h.close;
     for (const c of h.head) {
       if (this.off(c.range!.start) > colon) this.expr(c, once, false);
@@ -423,12 +341,9 @@ class Analyser {
     return { t: 'loop', kind: 'for each', text: h.text, line, count: null, once, each };
   }
 
-  // ---------- expressions, in evaluation order ----------
-
   private expr(n: AstNode, out: FlowNode[], threadArg: boolean): void {
     if (SKIP_ROLES.has(n.role ?? '') || UNEVALUATED.has(n.kind)) return;
     if (n.kind === 'Lambda') {
-      // captures are evaluated here; the body runs when the lambda is called (or on the thread it is handed to)
       const body = kids(n).find((c) => c.kind === 'Compound');
       for (const c of kids(n)) if (c !== body && c.role === 'expression' && c.kind !== 'CXXThis') this.expr(c, out, false);
       out.push({ t: 'deferred', kind: threadArg ? 'thread' : 'lambda', text: firstLine(this.src(n.range!)), line: n.range!.start.line, body: body ? this.stmts([body]) : [] });
@@ -453,7 +368,6 @@ class Analyser {
       return;
     }
     if ((n.kind === 'BinaryOperator' || n.kind === 'CompoundAssignOperator') && ASSIGN.test(n.detail ?? '')) {
-      // C++17: the right side of an assignment is evaluated before the left
       if (c[1]) this.expr(c[1], out, false);
       this.expr(c[0], out, false);
       return;
@@ -477,12 +391,8 @@ class Analyser {
       const sites = this.sites.get(n) ?? [];
       const ind: Via | null = n.kind === 'Call' ? indirectVia(callee) : n.kind === 'CXXMemberCall' && memberPointer(callee) ? 'member pointer' : null;
       if (ind && !sites.some((s) => s.to.project)) out.push({ t: 'indirect', via: ind, text: callee?.range ? this.oneLine(callee.range) : '', at: n.range!.start });
-      // a direct call clangd's list doesn't name (its index not up to date yet, or a builtin)
       if (!ind && !sites.length) { const nm = calleeName(callee); if (nm) this.unlisted.add(nm.replace(/^.*::/, '')); }
-      // the compiler's type for the callee says it never returns (exit, abort, longjmp, pthread_exit …)
       const never = NORETURN.test((callee as { arcana?: string } | undefined)?.arcana ?? '') || NORETURN.test((unwrap(callee) as { arcana?: string } | undefined)?.arcana ?? '');
-      // a call of the project's own functions (a value followed through them, src/shared/flowwatch.ts), or one that
-      // opens or closes something (src/shared/flowpairs.ts), keeps its arguments, and a method its object, as written
       const kept = sites.some((x) => x.to.project || PAIR_CALL.test(x.to.name.replace(/^.*::/, ''))) ? this.written(n, callee) : {};
       for (const s of sites) out.push({ t: 'call', to: s.to, at: s.at, ...(never ? { noreturn: true } : {}), ...kept });
       return;
@@ -498,7 +408,6 @@ class Analyser {
     for (const s of this.sites.get(n) ?? []) out.push({ t: 'call', to: s.to, at: s.at });
   }
 
-  /** A call's arguments as written, and the object of a method call. */
   private written(n: AstNode, callee: AstNode | undefined): { args?: string[]; argx?: (Expr | null)[]; obj?: string } {
     const u = unwrap(callee), base = u && (u.kind === 'Member' || u.kind === 'UnresolvedMember') ? kids(u)[0] : undefined;
     const args = kids(n).slice(1).map((a) => (a.range ? this.oneLine(a.range) : ''));
@@ -506,7 +415,6 @@ class Analyser {
     return { ...(args.length ? { args } : {}), ...(argx.some(Boolean) ? { argx } : {}), ...(base?.range ? { obj: this.oneLine(base.range) } : {}) };
   }
 
-  /** Arguments, left to right as written; when two of them call project functions, which runs first is the compiler's choice. */
   private args(list: AstNode[], out: FlowNode[], threadArg: boolean, unsequenced: boolean) {
     const parts = list.map((a) => { const o: FlowNode[] = []; this.expr(a, o, threadArg); return o; });
     const withCalls = parts.filter((p) => p.some(hasCall)).length;
@@ -519,7 +427,6 @@ class Analyser {
 
 const last = <T>(a: T[]) => a[a.length - 1];
 const arcOf = (n: AstNode) => ((n as { arcana?: string }).arcana ?? '');
-/** The lists of nodes a node holds, in order. */
 function childLists(n: FlowNode): FlowNode[][] {
   switch (n.t) {
     case 'stmt': case 'deferred': case 'once': case 'guard': return [n.body];
@@ -528,7 +435,6 @@ function childLists(n: FlowNode): FlowNode[][] {
     default: return [];
   }
 }
-/** A condition that reads a parameter, as the syntax tree has it: the header's one expression (no declaration or init-statement). */
 function test(head: AstNode[]): { test?: Expr } {
   if (head.length !== 1 || head[0].role !== 'expression') return {};
   const x = exprOf(head[0]);
@@ -549,16 +455,12 @@ function calleeName(n: AstNode | undefined): string | null {
   if (u.kind === 'Member' || u.kind === 'UnresolvedMember') return u.detail ?? null;
   return null;
 }
-/**
- * A plain call is direct when its callee is a function (the compiler decays it to a pointer). Otherwise: dependent
- * inside a template, unresolved where the compiler gave up, and through a pointer for anything else.
- */
 function indirectVia(callee: AstNode | undefined): Via | null {
   let n = callee;
   while (n && n.kind === 'Paren') n = kids(n)[0];
   if (!n) return null;
   if (n.kind === 'ImplicitCast' && n.detail === 'FunctionToPointerDecay') return null;
-  if (n.kind === 'DeclRef' || n.kind === 'Member') return null;   // a builtin, or a function the cast above was left out for
+  if (n.kind === 'DeclRef' || n.kind === 'Member') return null;
   if (contains(n, (k) => k.kind === 'Recovery')) return 'unresolved';
   if (DEPENDENT.has(n.kind)) return 'dependent';
   return 'pointer';
@@ -586,7 +488,6 @@ function markUnsequenced(list: FlowNode[]) {
     else if (n.t === 'branch') { markUnsequenced(n.cond); for (const a of n.arms) markUnsequenced(a.body); }
   }
 }
-/** A statement that always leaves the block. */
 function exits(n: FlowNode): boolean {
   if (n.t === 'stmt') return EXITS.includes(n.kind);
   if (n.t === 'branch' && (n.kind === 'if' || n.kind === 'switch' || n.kind === 'try')) {
@@ -597,11 +498,10 @@ function exits(n: FlowNode): boolean {
   if (n.t === 'guard') { const l = last(n.body); return !!l && exits(l); }
   return false;
 }
-/** An if whose taken arm leaves the block while the other does not: what follows runs only when it was not taken. */
 function earlyExit(n: FlowNode): { text: string; exit: StmtKind; line: number; arm: number } | null {
   if (n.t !== 'branch' || n.kind !== 'if') return null;
   const ex = n.arms.map((a) => { const l = last(a.body); return l && exits(l) ? exitKind(l) : null; });
-  if (ex.every((e) => e) && n.arms.length === 2) return null;   // both leave: handled by exits()
+  if (ex.every((e) => e) && n.arms.length === 2) return null;
   const i = ex.findIndex((e) => e);
   if (i < 0) return null;
   return { text: n.arms[i].label === 'then' ? n.text : `${n.text} … else`, exit: ex[i]!, line: n.line, arm: i };
@@ -613,7 +513,6 @@ function exitKind(n: FlowNode): StmtKind {
   return 'return';
 }
 
-/** The closing parenthesis of the one at `open`, skipping strings, characters and comments. */
 export function matchParen(s: string, open: number): number {
   let depth = 0;
   for (let i = open; i < s.length; i++) {
@@ -628,12 +527,10 @@ export function matchParen(s: string, open: number): number {
 }
 function skipQuoted(s: string, i: number): number {
   const q = s[i];
-  // raw strings: R"tag( … )tag"
   if (q === '"' && s[i - 1] === 'R') { const m = /^"([^(\s]*)\(/.exec(s.slice(i)); if (m) { const e = s.indexOf(`)${m[1]}"`, i); return e < 0 ? s.length : e + m[1].length + 1; } }
   for (let j = i + 1; j < s.length; j++) { if (s[j] === '\\') { j++; continue; } if (s[j] === q || s[j] === '\n') return j; }
   return s.length;
 }
-/** Offsets of `ch` at the top level between open and close (not inside nested brackets, strings or a `::`). */
 function topLevel(s: string, open: number, close: number, ch: string): number[] {
   const out: number[] = [];
   let depth = 0;
@@ -649,10 +546,6 @@ function topLevel(s: string, open: number, close: number, ch: string): number[] 
   }
   return out;
 }
-/**
- * The number of passes of `for (int i = A; i < B; ++i)` with literal bounds — only when it is certain:
- * the body never assigns the counter, takes its address, or leaves early.
- */
 export function forCount(head: string, body: string): number | null {
   const m = /^for\s*\(\s*(?:(?:unsigned|signed|int|long|short|size_t|std::size_t|auto|u?int\d+_t|std::u?int\d+_t)\s+)*(\w+)\s*=\s*(-?\d+)\s*;\s*\1\s*(<|<=|!=)\s*(-?\d+)\s*;\s*(?:\+\+\s*\1|\1\s*\+\+|\1\s*\+=\s*1)\s*\)$/.exec(head);
   if (!m) return null;
@@ -664,12 +557,7 @@ export function forCount(head: string, body: string): number | null {
   return n >= 0 ? n : 0;
 }
 
-/**
- * A function's extent, from the compiler: the syntax tree's root when it is the function. Call items from outgoing
- * calls can carry the declaration's first line only, which would cut its code short and fold long helpers.
- */
 const FN_KIND = /^(Function|CXXMethod|CXXConstructor|CXXDestructor|CXXConversion|FunctionTemplate)$/;
-/** The function in a syntax tree asked for by its range: itself, or the one inside a wrapper (extern "C" { … }, a template). */
 export function functionNode(ast: AstNode | null | undefined): AstNode | null {
   if (!ast) return null;
   const queue = [ast];
@@ -682,73 +570,53 @@ export function fnExtent(ast: AstNode | null | undefined, fallback: Range): { st
   return { start: r.start.line, lines: r.end.line - r.start.line + 1 };
 }
 
-// ---------- the run ----------
-
-/** What the run needs to know about a function. */
 export interface FnInfo { name: string; file: string; line: number; start?: number; lines: number; flow: FnFlow; overrides?: Target[]; effects?: Effects }
 
-/**
- * One row of the run, in execution order. A step is numbered; a ref is a later call of a function already opened
- * (it points at that step); indirect and value rows are what the analyser can say about calls it cannot follow.
- */
 export interface RunRow {
   kind: 'step' | 'ref' | 'indirect' | 'value';
-  n: number;                 // the step's number (0 for rows that are not steps)
-  key: string;               // the function (steps, refs, values)
+  n: number;
+  key: string;
   name: string;
   file: string;
-  line: number;              // the line of the function's name (0-based)
-  start: number;             // the function's first line, return type included (0-based)
-  caller: number | null;     // the row of the step this runs inside
-  at: Pos | null;            // where the caller makes the call
+  line: number;
+  start: number;
+  caller: number | null;
+  at: Pos | null;
   depth: number;
-  frames: number[];          // frames around this row, outermost first
-  thread: boolean;           // runs on a thread another step started
-  last: number;              // the last row inside this step (itself when it calls nothing)
-  ref?: number;              // ref: the row of the step it refers to
-  recursive?: boolean;       // ref: a call back into a step still running
+  frames: number[];
+  thread: boolean;
+  last: number;
+  ref?: number;
+  recursive?: boolean;
   unsequenced?: boolean;
-  approx?: boolean;          // placed at its statement, not its exact position (a macro)
-  args?: string[];           // step, ref: the call's arguments as written
-  via?: string;              // indirect: how (pointer, std::function, …); value: the callee
-  could?: string[];          // indirect: functions it may reach — those whose address the code takes (probable, not proved)
+  approx?: boolean;
+  args?: string[];
+  via?: string;
+  could?: string[];
   text?: string;
-  lines: number;             // the function's length in lines (0 when unknown)
-  only?: string;             // in this build only, not the one compared with (src/shared/flowalign.ts)
-  change?: 'added' | 'changed';   // what a change does: new in this version, or its function's lines differ
-  changeNote?: string;       // what changed, in words: `added`, `changed · 2 lines`, `now inside if (ok)`
+  lines: number;
+  only?: string;
+  change?: 'added' | 'changed';
+  changeNote?: string;
 }
 export interface RunFrame {
   kind: 'loop' | 'arm' | 'guard' | 'lambda' | 'thread' | 'once' | 'virtual';
-  text: string;              // the loop or condition as written
-  label: string;             // the arm: then, else, case 3, the right side of && …
-  count: number | null;      // a loop's passes, when certain
-  fallsThrough?: boolean;    // a switch arm that runs on into the next one
-  owner: number;             // the row of the function it is in
+  text: string;
+  label: string;
+  count: number | null;
+  fallsThrough?: boolean;
+  owner: number;
   line: number;
-  from: number; to: number;  // the rows inside it
+  from: number; to: number;
   parent: number | null;
-  /** cannot happen in this call: the values the call passed settle its condition the other way (src/shared/flowvalues.ts) */
   dead?: string;
 }
-/** effects: what each function of the run does besides calling (src/shared/flowfacts.ts), by its key. */
-/** unlisted: project functions the bodies call that the graph doesn't list yet (set by the caller, which knows the project's names). */
-/** exits: every way out of each function of the run (exitsOf), by its key. */
-/** pairs: what each function opens and leaves open at a way out (src/shared/flowpairs.ts), by its key. */
-/** ghosts: calls that are not in this build (another configuration's, or an if constexpr's discarded side), shown in place, never walked. */
-export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]>; ghosts?: Ghost[] }
-/** A ghost: after which row it stands, in which step, the functions it names, and why it is not in this build. */
+export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]>; ghosts?: Ghost[]; deep?: string[] }
+export const MAX_RUN_DEPTH = 400;
 export interface Ghost { after: number; owner: number; names: string[]; why: string; kind?: 'removed' }
 
-/**
- * A way out of a function, or of a loop: a return, throw, break, continue, goto or co_return as written, or a call
- * that never returns (its type says so, or the project's own function is declared so). when: the conditions it sits
- * under, outermost first, as written (`headers.empty()`, `cmd · case 3`); early: anything but the function's normal
- * end (its last statement, a plain return).
- */
 export interface Exit { kind: StmtKind | 'noreturn'; line: number; text: string; when: string[]; early: boolean; callee?: string }
 
-/** Every way out of a function's body; a lambda's or a thread's body is its own function and is left out. */
 export function exitsOf(body: FlowNode[], neverReturns: (to: Target) => boolean = () => false): Exit[] {
   const out: Exit[] = [];
   const never = (list: FlowNode[]): Target | null => {
@@ -759,7 +627,6 @@ export function exitsOf(body: FlowNode[], neverReturns: (to: Target) => boolean 
     return null;
   };
   const walk = (list: FlowNode[], when: string[], top: boolean) => {
-    // the last statement: calls a macro wrote, whose place the tree doesn't give, are put after it (approx)
     let lastAt = list.length - 1;
     while (lastAt > 0 && list[lastAt].t === 'call' && (list[lastAt] as { approx?: boolean }).approx) lastAt--;
     list.forEach((n, i) => {
@@ -781,7 +648,7 @@ export function exitsOf(body: FlowNode[], neverReturns: (to: Target) => boolean 
           for (const a of n.arms) walk(a.body, [...when, a.label === 'then' ? n.text : `${n.text} · ${n.kind === '&&' || n.kind === '||' ? `${n.kind} ${a.label}` : a.label}`], false);
           break;
         case 'loop': walk(n.once, when, false); walk(n.each, [...when, n.text], false); break;
-        default: break;   // value, indirect: not a way out; deferred: another function's body
+        default: break;
       }
     });
   };
@@ -789,15 +656,14 @@ export function exitsOf(body: FlowNode[], neverReturns: (to: Target) => boolean 
   return out;
 }
 
-/** Every step from the entry point, numbered in execution order. flows: the facts of each function, by key. */
 export function walkRun(start: string, flows: (key: string) => FnInfo | undefined): Run {
   const rows: RunRow[] = [], frames: RunFrame[] = [];
-  const opened = new Map<string, number>();   // function → its step row
+  const opened = new Map<string, number>();
   const running = new Set<string>();
   const missing = new Set<string>();
+  const deep = new Set<string>();
   let n = 0;
   const ghosts: Ghost[] = [];
-  // values settled per call: for a step, each parameter whose value its call settles (src/shared/flowvalues.ts)
   const known = new Map<number, Map<string, { v: Vals; type: string; text: string; call: string; origin: string }>>();
   const deadIn = (fs: number[]) => fs.some((f) => frames[f].dead);
   const bind = (row: number, argx: (Expr | null)[] | undefined) => {
@@ -807,7 +673,6 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     const call = `${r.name}(${(r.args ?? []).join(', ')})`;
     e.params.forEach((p, i) => {
       const x = argx[i], t = pv[p.name];
-      // the argument as the compiler converted it, of the parameter's own type
       const ty = x && 'ty' in x ? x.ty : '';
       if (!x || !t || !ty || plainType(ty) !== plainType(t)) return;
       const v = valuesOf(x, (nm) => from?.get(nm)?.v);
@@ -817,21 +682,20 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     });
     if (out.size) known.set(row, out);
   };
-  /** Which arms of a branch can run in this call (null: not settled by it), and why the others cannot. */
   const settle = (node: Extract<FlowNode, { t: 'branch' } | { t: 'loop' }>, owner: number, around: number[]): { live: boolean[]; why: string } | null => {
+    try { return settledBy(node, owner, around); } catch { return null; }
+  };
+  const settledBy = (node: Extract<FlowNode, { t: 'branch' } | { t: 'loop' }>, owner: number, around: number[]): { live: boolean[]; why: string } | null => {
     const vals = known.get(owner);
     if (!vals || !node.test || flows(rows[owner].key)?.flow.jumps || deadIn(around)) return null;
     const get = (nm: string) => vals.get(nm)?.v, none = () => undefined;
     let live: boolean[] | null;
     if (node.t === 'loop') {
-      // a while whose condition is false from the start never runs its body (the condition itself runs once, so only
-      // one wholly understood, with no calls in it, is settled)
       live = node.kind === 'while' && !has(node.test, (y) => y.k === '?') && truthOf(node.test, get) === false && truthOf(node.test, none) == null ? [false] : null;
     } else if (node.kind === 'switch') {
       const ty = 'ty' in node.test ? node.test.ty : '';
       const arms = node.arms.map((a) => ({ cases: a.cases ?? [null], isDefault: a.label.split(' · ').map((l) => l === 'default'), fallsThrough: !!a.fallsThrough }));
       if (!ty || node.arms.some((a) => !a.cases || a.label === 'before any case')) return null;
-      // settled by the values passed, not by constants alone
       live = switchArms(node.test, ty, arms, get);
       if (live && switchArms(node.test, ty, arms, none)) return null;
     } else {
@@ -841,7 +705,6 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     }
     if (!live) return null;
     const used = paramsIn(node.test).filter((nm) => vals.has(nm));
-    // a value that differs by platform (-1 made unsigned) is said as written, with the conversion
     const said = used.map((nm) => { const k = vals.get(nm)!; return `${nm} is ${showValue(k.v, k.type) ?? `${k.text} converted to ${plainType(k.type)}`}`; }).join(', ');
     const k = vals.get(used[0])!;
     return { live, why: `${said} here — passed by ${k.call}${k.origin !== k.call ? `, from ${k.origin}` : ''}` };
@@ -850,6 +713,7 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   const open = (key: string, caller: number | null, at: Pos | null, frameStack: number[], thread: boolean, extra: Partial<RunRow> = {}, argx?: (Expr | null)[]): void => {
     const info = flows(key);
     const depth = caller == null ? 0 : rows[caller].depth + 1;
+    if (depth > MAX_RUN_DEPTH) { deep.add(info?.name ?? key); return; }
     const seen = opened.get(key);
     if (seen != null) {
       rows.push({ kind: 'ref', n: 0, key, name: rows[seen].name, file: rows[seen].file, line: rows[seen].line, start: rows[seen].start, caller, at, depth, frames: [...frameStack], thread, last: rows.length, ref: seen, recursive: running.has(key), lines: rows[seen].lines, ...extra });
@@ -859,7 +723,7 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     rows.push({ kind: 'step', n: ++n, key, name: info?.name ?? key, file: info?.file ?? '', line: info?.line ?? 0, start: info?.start ?? info?.line ?? 0, caller, at, depth, frames: [...frameStack], thread, last: row, lines: info?.lines ?? 0, ...extra });
     opened.set(key, row);
     if (!info) { missing.add(key); return; }
-    bind(row, argx);
+    try { bind(row, argx); } catch {  }
     running.add(key);
     walk(info.flow.body, row, [], thread);
     running.delete(key);
@@ -875,10 +739,8 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
     frames[id].to = rows.length - 1;
   };
 
-  /** stack: the frames open inside the current function, outermost first (the caller's are on its row). */
   const walk = (list: FlowNode[], owner: number, stack: number[], thread: boolean): void => {
     const around = () => [...rows[owner].frames, ...stack];
-    // the if just before: a guard after it runs only when its exiting arm was not taken
     let prev: { node: FlowNode; s: { live: boolean[]; why: string } | null } | null = null;
     for (const node of list) {
       const before = prev;
@@ -919,7 +781,6 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
           break;
         }
         case 'unbuilt':
-          // nothing runs: a ghost in place, after the row before it
           ghosts.push({ after: rows.length - 1, owner, names: node.calls.map((c) => c.name), why: node.text });
           break;
         case 'loop': {
@@ -933,7 +794,6 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   };
 
   open(start, null, null, [], false);
-  // frames with no rows inside say nothing about the run; their ids are kept stable by leaving them in place
   const fx: Record<string, Effects> = {};
   for (const k of opened.keys()) { const e = flows(k)?.effects; if (e) fx[k] = e; }
   const ex: Record<string, Exit[]> = {};
@@ -941,9 +801,8 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   for (const k of opened.keys()) {
     const f = flows(k);
     if (!f) continue;
-    ex[k] = exitsOf(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn);
-    const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn);
-    if (u.length) pairs[k] = u;
+    try { ex[k] = exitsOf(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); } catch {  }
+    try { const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); if (u.length) pairs[k] = u; } catch {  }
   }
-  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs, ...(ghosts.length ? { ghosts } : {}) };
+  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs, ...(ghosts.length ? { ghosts } : {}), ...(deep.size ? { deep: [...deep] } : {}) };
 }

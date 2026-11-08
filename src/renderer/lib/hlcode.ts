@@ -1,5 +1,3 @@
-// One line of C/C++ coloured as the editor colours it (keywords, functions, strings, comments), as HTML. For the few
-// lines the flow views quote; the editor and the step preview use CodeMirror.
 const KW = /^(if|else|for|while|do|switch|case|default|return|break|continue|auto|const|constexpr|static|void|bool|int|char|long|short|unsigned|signed|float|double|size_t|true|false|nullptr|this|new|delete|struct|class|using|namespace|template|typename|noexcept|std|throw|try|catch)$/;
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 

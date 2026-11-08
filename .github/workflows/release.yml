@@ -1,5 +1,3 @@
-# Builds the Windows and Linux versions on real machines, checks each packaged app starts and works,
-# and attaches them to the GitHub Release of the tag. (The macOS version is built on a Mac with `npm run package`.)
 name: release
 
 on:
@@ -48,7 +46,7 @@ jobs:
         run: npm run fetch-clangd
 
       - name: Tests
-        continue-on-error: true   # written on macOS; failures here are reported, the packaged app is what must pass
+        continue-on-error: true
         run: npm test
 
       - name: Package
@@ -63,9 +61,6 @@ jobs:
           timeout 360 xvfb-run -a "$dir/skycodex" --smoke "$PWD/samples/tinyhttp" --scenario boot || true
           node src/build/check-smoke.mjs "$dir"
 
-      # as the README tells Windows users: the C/C++ standard headers come from the llvm-mingw pack. Installed the way
-      # the app installs it (src/main/packs.ts): the official release, its published SHA-256 checked, unpacked into
-      # language_packs/<name>-<version> beside the app with its skycodex-pack.json
       - name: llvm-mingw pack (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -103,7 +98,6 @@ jobs:
         shell: pwsh
         run: |
           $dir = (Get-ChildItem release -Directory | Select-Object -First 1).FullName
-          # wait for the app itself only (with -Wait, Start-Process also waits for every process it started), at most 6 minutes
           $p = Start-Process -FilePath "$dir\SkyCodeX.exe" -ArgumentList '--smoke', "`"$PWD\samples\tinyhttp`"", '--scenario', 'boot' -PassThru
           if (-not $p.WaitForExit(360000)) { Stop-Process -Id $p.Id -Force; Write-Host 'the app did not finish in 6 minutes' }
           Get-Process clangd, SkyCodeX -ErrorAction SilentlyContinue | Format-Table Id, Name
@@ -144,5 +138,4 @@ jobs:
           ls -la out
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SkyCodeX ${TAG#v}" --notes "Portable builds for each system."
-          # the archives only; the artifacts also hold the unpacked folders
           gh release upload "$TAG" out/*.zip out/*.tar.gz --repo "$GITHUB_REPOSITORY" --clobber

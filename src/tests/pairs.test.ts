@@ -1,5 +1,3 @@
-// Pairs that don't close (src/shared/flowpairs.ts), on real clangd output for samples/pairs (recorded with
-// src/tests/fixtures/record-flow.mjs). Each function in the sample says what should be found; worked out by hand.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';

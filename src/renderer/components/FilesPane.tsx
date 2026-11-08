@@ -7,7 +7,6 @@ import { setPalette } from '../lib/actions';
 import { t } from '../lib/i18n';
 
 const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
-/** The folder being looked at: the last one clicked, else the open file's, else the project's. New files, new folders and the terminal go there. */
 const [here, setHere] = createSignal('');
 const dirOf = (p: string) => p.replace(/[\\/][^\\/]*$/, '');
 const inRoot = (p: string) => !!p && !!root() && (p === root() || p.startsWith(root() + '/') || p.startsWith(root() + '\\'));
@@ -40,7 +39,6 @@ function Dir(props: { path: string; depth: number }) {
   );
 }
 
-/** Text with each case-free match of q marked. */
 export function Marked(props: { text: string; q: string }) {
   const parts = () => {
     const out: { t: string; m: boolean }[] = [];
@@ -52,7 +50,6 @@ export function Marked(props: { text: string; q: string }) {
   return <span class="mk"><For each={parts()}>{(p) => (p.m ? <mark>{p.t}</mark> : p.t)}</For></span>;
 }
 
-/** The folder's files whose path matches the filter (any case), grouped by folder; ↑ ↓ choose, ↵ opens, Esc clears. */
 const [filter, setFilter] = createSignal('');
 function Found() {
   const [all] = createResource(() => [root(), listVersion()] as const, async ([r]) => (r ? await api.fs.files(r) : []));
@@ -89,7 +86,6 @@ function Found() {
 }
 Found.key = (_e: KeyboardEvent) => {};
 
-/** Asks for a name (a path inside the project, from the folder in view) and makes a file or a folder there. */
 function create(kind: 'file' | 'folder') {
   const at = relTo(folderNow());
   setPalette({
@@ -105,7 +101,6 @@ function create(kind: 'file' | 'folder') {
           if (kind === 'folder') await api.fs.mkdir(path);
           else { await api.fs.mkdir(dirOf(path)); await api.fs.write(path, ''); }
         } catch (e) { flash(`couldn't create ${rel}: ${e}`); return; }
-        // open the folders down to it, so it shows
         const s = new Set(expanded());
         for (let d = kind === 'folder' ? path : dirOf(path); inRoot(d) && d !== root(); d = dirOf(d)) s.add(d);
         setExpanded(s);

@@ -1,4 +1,3 @@
-// Editor actions that span files: rename, quick fixes and refactorings, quick open, the command palette.
 import { createSignal } from 'solid-js';
 import { api, fileToUri, uriToFile, relPath, Range } from './api';
 import { openSearch } from './search';
@@ -15,7 +14,6 @@ export const [palette, setPalette] = createSignal<PaletteState | null>(null);
 
 const req = (method: string, params: unknown) => api.lsp.request(method, params) as Promise<any>;
 
-/** Applies an LSP WorkspaceEdit. Affected files are opened and left unsaved so the change can be reviewed. */
 export async function applyWorkspaceEdit(edit: any): Promise<number> {
   const byFile = new Map<string, { range: Range; newText: string }[]>();
   for (const [uri, edits] of Object.entries(edit?.changes ?? {})) byFile.set(uriToFile(uri), edits as any);
@@ -72,7 +70,7 @@ export async function quickFix() {
   const line = c.pos.line;
   const diagnostics = diagnosticsFor(c.file).filter((d) => d.range.start.line <= line && d.range.end.line >= line);
   let actions: any[] = [];
-  try { actions = (await req('textDocument/codeAction', { textDocument: { uri: fileToUri(c.file) }, range: { start: c.from, end: c.to }, context: { diagnostics } })) ?? []; } catch { /* none */ }
+  try { actions = (await req('textDocument/codeAction', { textDocument: { uri: fileToUri(c.file) }, range: { start: c.from, end: c.to }, context: { diagnostics } })) ?? []; } catch {  }
   if (!actions.length) { flash('no fixes or refactorings here'); return; }
   setPalette({
     placeholder: 'fixes and refactorings',
@@ -91,7 +89,7 @@ export async function findReferences() {
   const c = cursor();
   if (!c || lspState() !== 'ready') return;
   let refs: any[] = [];
-  try { refs = (await req('textDocument/references', { textDocument: { uri: fileToUri(c.file) }, position: c.pos, context: { includeDeclaration: true } })) ?? []; } catch { /* none */ }
+  try { refs = (await req('textDocument/references', { textDocument: { uri: fileToUri(c.file) }, position: c.pos, context: { includeDeclaration: true } })) ?? []; } catch {  }
   if (!refs.length) { flash('no references found'); return; }
   const lines = new Map<string, string[]>();
   for (const r of refs) { const f = uriToFile(r.uri); if (!lines.has(f)) lines.set(f, ((await api.fs.read(f).catch(() => '')) as string).split('\n')); }
@@ -123,7 +121,6 @@ export async function goToSymbol() {
 export let symbolQuery: ((q: string) => Promise<PaletteItem[]>) | null = null;
 export const clearSymbolQuery = () => { symbolQuery = null; };
 
-// ---------- file commands ----------
 export function newFile() {
   if (!root()) { saveAsNew(); return; }
   setPalette({
@@ -163,18 +160,16 @@ export async function saveAs() {
   if (!p || p === old) { if (p === old) await save(old); return; }
   try { await api.fs.write(p, st.doc.toString()); } catch (e) { flash(`couldn't save: ${e}`); return; }
   await openFile(p);
-  forgetFile(old);   // the edits now live in the new file; the old file on disk is unchanged
+  forgetFile(old);
 }
 export const closeActive = () => { if (files.active) closeFile(files.active); };
 const withView = (f: (v: any) => boolean) => () => { const v = getMainView(); if (v && files.active) { v.focus(); f(v); } };
-/** Find in the editor that has focus — a preview card or the flow's step preview — else in the open file. */
 const findHere = () => {
   const el = (document.activeElement as HTMLElement | null)?.closest('.cm-editor');
   const v = el && el !== getMainView()?.dom ? EditorView.findFromDOM(el as HTMLElement) : null;
   if (v) openSearchPanel(v); else withView(openSearchPanel)();
 };
 
-/** Every command reachable from the menus, by id. */
 export const COMMANDS: Record<string, () => void> = {
   newFile, openFile: openFileDialog, openFolder: openFolderDialog, save: () => save(), saveAs, saveAll, closeFile: closeActive,
   undo: withView(undo), redo: withView(redo), selectAll: withView(selectAll), find: findHere,
@@ -207,7 +202,6 @@ export function commandPalette() {
   setPalette({ placeholder: 'command…', items: cmds.map(([label, detail, run]) => ({ label, detail, run })) });
 }
 
-/** Subsequence match with a bonus for word starts and contiguous runs; null when it doesn't match. */
 export function fuzzy(q: string, s: string): number | null {
   if (!q) return 0;
   const a = q.toLowerCase(), b = s.toLowerCase();

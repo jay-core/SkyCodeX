@@ -28,7 +28,6 @@ html,body{margin:0;background:var(--stage)}
 .label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
 .col{display:flex;flex-direction:column;min-width:0;min-height:0}
 
-/* window */
 .win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
   box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
 .hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
@@ -56,7 +55,6 @@ html,body{margin:0;background:var(--stage)}
 .empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
 .links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
 
-/* code */
 .code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
 .ln{display:flex;position:relative}
 .ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
@@ -84,7 +82,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
 .gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
 
-/* cards */
 .cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
 .card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
@@ -104,7 +101,6 @@ html,body{margin:0;background:var(--stage)}
 .row.on{background:rgba(119,165,165,.12);color:var(--fg)}
 .cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
 
-/* tree */
 .tree{font:12px var(--ui);padding:2px 0}
 .ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
 .ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
@@ -113,7 +109,6 @@ html,body{margin:0;background:var(--stage)}
 .ti .fds{margin-left:auto;display:flex;gap:3px}
 .ti .fd{width:7px;height:7px;border-radius:50%}
 
-/* terminal */
 .term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
 .tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
 .tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
@@ -121,13 +116,11 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px;line-height:18px;padding:2px 2px}
 .okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
 
-/* floating */
 .pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
 .kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
 .toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
 .ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
 .ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
-/* Lithograph: charcoal, borderless, low contrast */
 :root{
   --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
   --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
@@ -175,7 +168,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.chg{box-shadow:inset 2px 0 #4e6a6a}
 .toast{border:0}
 .ln.hitl{background:rgba(115,150,150,.07)}
-/* Metro: typography is the chrome */
 .win{border-radius:0}
 .hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
 .pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
@@ -310,7 +302,6 @@ const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</sp
 function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
   <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
 
-/* ---------- shared sample project ---------- */
 const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
 const MAIN=R`void Server::start() {
     socket_.listen(port_);
@@ -399,7 +390,6 @@ const mainCards=(focusParse)=>cards(
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
 try{
-/* ---------- preview shift: deterministic animation, driven by seek(t) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const ST=(pos='45:42',p='no problems')=>`<span>${pos}</span><span>clangd ready</span><span>${p}</span>`;
 const COLW=372, TRAIL_H=46;
@@ -449,7 +439,6 @@ const clamp=x=>Math.max(0,Math.min(1,x));
 const expo=p=>p>=1?1:1-Math.pow(2,-10*p);
 const inC=p=>p*p*p;
 const mix=(a,b,p)=>{const A=a.match(/\w\w/g).map(h=>parseInt(h,16)),B=b.match(/\w\w/g).map(h=>parseInt(h,16));return '#'+A.map((x,i)=>Math.round(x+(B[i]-x)*p).toString(16).padStart(2,'0')).join('');};
-// colours per card, by order in its column
 const colour={};cols.forEach(items=>{let k=0;items.forEach(it=>{const c=it.querySelector('[data-card]');if(!c)return;colour[c.dataset.card]=PAL[k++%PAL.length];c.querySelector('.sw').style.background=colour[c.dataset.card];});});
 
 function setItem(it,x,o,rot=0){it.style.transformOrigin='left center';it.style.transform=`translateX(${x}px)`+(rot?` perspective(900px) rotateY(${rot}deg)`:'');it.style.opacity=o;}
@@ -475,7 +464,6 @@ function drawLinks2(v,alpha){
     out+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${col}" stroke-width="1.5" opacity=".8" fill="none"/><circle cx="${x2}" cy="${y2}" r="3" fill="${col}"/>`;});
   svg.innerHTML=out;svg.style.opacity=alpha;}
 
-// timeline
 const SHIFT=0.85,BACK=0.95;
 const EV=[{t:1.0,k:'f',v:0},{t:2.75,k:'f',v:1},{t:4.5,k:'f',v:2},{t:6.4,k:'b',v:3}];
 window.TOTAL=8.3;
@@ -512,7 +500,6 @@ window.seek=function(t){
 };
 seek(0);
 
-/* ---------- walkthrough: wraps the shift page with intro, settings and captions ---------- */
 const shiftSeek=window.seek;
 const W=document.querySelector('.win'),HDR=W.querySelector('.hdr'),BODY=HDR.nextElementSibling;
 const GEAR=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.4"/>${[...Array(8)].map((_,i)=>`<line x1="12" y1="2.6" x2="12" y2="6.2" transform="rotate(${i*45} 12 12)" stroke-width="3" stroke-linecap="butt"/>`).join('')}<circle cx="12" cy="12" r="6.6"/></svg>`;
@@ -568,12 +555,11 @@ window.seek=function(t){
   if(t<10.6){shiftSeek(t-2.6);pageT(BODY,0,1);pageT(HDR,0,1);set.style.opacity=0;return;}
   shiftSeek(8.0);
   if(t<11.0){pageT(BODY,0,1);pageT(HDR,0,1);set.style.opacity=0;return;}
-  if(t<15.6){ // editor out, settings in
+  if(t<15.6){
     const eo=inC(clamp((t-11.0)/0.28));pageT(HDR,-70*eo,1);pageT(BODY,-70*inC(clamp((t-11.04)/0.28)),1);
     if(eo>0)document.getElementById('lk').style.opacity=0;
     set.style.opacity=1;SI.forEach((s,k)=>{const p=clamp((t-11.22-0.06*k)/0.55),e=expo(p);s.style.transformOrigin='left center';s.style.transform=`perspective(1400px) rotateY(${70*(1-e)}deg) translateX(${60*(1-e)}px)`;s.style.opacity=Math.min(1,p*1.6);});
     return;}
-  // settings out, editor back in
   SI.forEach((s,k)=>{const p=clamp((t-15.6-0.04*k)/0.26),e=inC(p);s.style.transform=`perspective(1400px) rotateY(${-75*e}deg)`;s.style.opacity=1-Math.min(1,p*1.3);});
   set.style.opacity=t>16.0?0:1;
   const bi=p=>expo(clamp(p));pageT(HDR,70*(1-bi((t-15.85)/0.55)),1);pageT(BODY,70*(1-bi((t-15.92)/0.55)),1);
@@ -581,7 +567,6 @@ window.seek=function(t){
 };
 seek(0);
 
-/* ---------- final preview: walkthrough, then a turnstile tour of every view ---------- */
 const walkSeek=window.seek;
 const SC=[['../../docs/concepts/final/b02-atlas.png','atlas — the whole codebase as a map'],['../../docs/concepts/final/b03-book.png','book mode — read a project start to finish'],
   ['../../docs/concepts/final/b06-board.png','investigation board — paste a crash, get its stack'],['../../docs/concepts/terminal-press/t1-terminal.png','terminal — every command a block'],
@@ -600,7 +585,6 @@ window.seek=function(t){
   walkSeek(T0-0.01);
   const cap=document.getElementById('cap'),grad=document.getElementById('mgrad');
   const k=Math.min(SC.length,Math.floor((t-T0)/D)),tau=t-T0-k*D;
-  // outgoing: editor for the first scene, previous image otherwise
   const outE=inC(clamp(tau/0.34)),inE=expo(clamp((tau-0.16)/0.6));
   if(k===0){pageT(HDR,-70*outE,1);pageT(BODY,-70*inC(clamp((tau-0.04)/0.34)),1);}
   MI.forEach((m,i)=>{

@@ -28,7 +28,6 @@ html,body{margin:0;background:var(--stage)}
 .label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
 .col{display:flex;flex-direction:column;min-width:0;min-height:0}
 
-/* window */
 .win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
   box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
 .hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
@@ -56,7 +55,6 @@ html,body{margin:0;background:var(--stage)}
 .empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
 .links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
 
-/* code */
 .code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
 .ln{display:flex;position:relative}
 .ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
@@ -84,7 +82,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
 .gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
 
-/* cards */
 .cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
 .card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
@@ -104,7 +101,6 @@ html,body{margin:0;background:var(--stage)}
 .row.on{background:rgba(119,165,165,.12);color:var(--fg)}
 .cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
 
-/* tree */
 .tree{font:12px var(--ui);padding:2px 0}
 .ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
 .ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
@@ -113,7 +109,6 @@ html,body{margin:0;background:var(--stage)}
 .ti .fds{margin-left:auto;display:flex;gap:3px}
 .ti .fd{width:7px;height:7px;border-radius:50%}
 
-/* terminal */
 .term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
 .tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
 .tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
@@ -121,13 +116,11 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px;line-height:18px;padding:2px 2px}
 .okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
 
-/* floating */
 .pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
 .kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
 .toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
 .ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
 .ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
-/* Lithograph: charcoal, borderless, low contrast */
 :root{
   --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
   --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
@@ -175,7 +168,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.chg{box-shadow:inset 2px 0 #4e6a6a}
 .toast{border:0}
 .ln.hitl{background:rgba(115,150,150,.07)}
-/* Metro: typography is the chrome */
 .win{border-radius:0}
 .hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
 .pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
@@ -295,7 +287,6 @@ const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</sp
 function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
   <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
 
-/* ---------- shared sample project ---------- */
 const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
 const MAIN=R`void Server::start() {
     socket_.listen(port_);
@@ -383,7 +374,6 @@ const mainCards=(focusParse)=>cards(
   card('route','router.cpp:31',C_ROUTE,{c:{start:31,params:['path','routes']}}),
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
-/* ---------- round 2: Lithograph ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const ST=(pos='45:42',p='no problems')=>`<span>${pos}</span><span>clangd ready</span><span>${p}</span>`;
 const H=(t,extra='')=>`${t}${extra}`;
@@ -734,7 +724,6 @@ kvstore/|open
    [2,'<b>Query bar</b> — structural search: calls:, called-by:, in:, type:, writes: … combined freely.'],
    [3,'<b>Slices</b> — save a view of just the directories you care about; the rest dims and stays out of search.'],
    [4,'<b>Index on disk</b> in data/, built in the background (a 2-px line is the only progress UI). Huge files open read-only and stream.']]);};
-/* ---------- render ---------- */
 function drawLinks(w){
   const svg=w.querySelector('svg.links');if(!svg)return;const wr=w.getBoundingClientRect();
   svg.setAttribute('width',wr.width);svg.setAttribute('height',wr.height);
@@ -745,7 +734,6 @@ function drawLinks(w){
     const t=w.querySelector(`[data-card="${id}"]`);if(!t)return;const col=colorOf[id];
     const a=el.getBoundingClientRect(),pr=el.closest('.pane').getBoundingClientRect();
     const b=(t.querySelector(':scope > .card-h')||t.querySelector(':scope > .t')||t).getBoundingClientRect();
-    // start after the end of the line's text so the lead never crosses code
     const rg=document.createRange();rg.selectNodeContents(el.closest('.t'));const tr=rg.getBoundingClientRect();
     const xe=pr.right-wr.left,y1=a.top+a.height/2-wr.top,x1=Math.min(Math.max(a.right-wr.left+2,tr.right-wr.left+8),xe),x2=b.left-wr.left+(t.classList.contains('ln')?4:0),y2=b.top+b.height/2-wr.top;
     if(el.textContent){el.style.textDecoration=`underline ${col}`;el.style.textUnderlineOffset='4px';el.style.textDecorationThickness='1.5px';}
@@ -754,7 +742,6 @@ function drawLinks(w){
     out+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${col}" stroke-width="1.6" opacity=".9" fill="none"/>`;
     out+=`${xe-x1>2?`<circle cx="${x1}" cy="${y1}" r="2.6" fill="${col}"/>`:''}<circle cx="${x2}" cy="${y2}" r="3.2" fill="${col}"/>`;
   }));
-  // analyzer step path
   const steps=[...w.querySelectorAll('.astep')];
   for(let i=1;i<steps.length;i++){const p=steps[i-1].getBoundingClientRect(),q=steps[i].getBoundingClientRect();
     const x1=p.left-wr.left+p.width/2,y1=p.bottom-wr.top,x2=q.left-wr.left+q.width/2,y2=q.top-wr.top;const c=i===steps.length-1?'#b8766b':'#ab9070';

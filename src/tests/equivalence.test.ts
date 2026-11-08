@@ -1,5 +1,3 @@
-// Speed changes that must not change a single result: each new implementation against the one it replaced
-// (copied here as it was), on real sources and on many random inputs.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +11,6 @@ function oldAddressTaken(text: string, names: Set<string>): Set<string> {
   return out;
 }
 
-/** Every C/C++ file of the samples. */
 const sources = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
   const p = path.join(dir, e.name);
   return e.isDirectory() ? (e.name === 'build' || e.name.startsWith('.') ? [] : sources(p)) : /\.(c|cc|cpp|h|hpp)$/.test(e.name) ? [p] : [];

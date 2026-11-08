@@ -1,4 +1,4 @@
-import { onMount, onCleanup, Show, createSignal } from 'solid-js';
+import { onMount, onCleanup, Show, createSignal, createEffect, on } from 'solid-js';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { cardExtensions } from '../lib/cm';
@@ -9,17 +9,16 @@ import { cardLoc, depths } from '../lib/preview';
 import { t } from '../lib/i18n';
 
 export const cardViews = new Map<string, EditorView>();
-/** The last cursor move inside any card: which card, and where. Drives the highlight in the next column. */
 export const [cardCursor, setCardCursor] = createSignal<{ id: string; head: number } | null>(null);
 
-function mountCode(host: HTMLElement, text: string, firstLine: number, file: string, startLine: number, onFocus: () => void, id: string) {
+function mountCode(host: HTMLElement, text: string, firstLine: number, file: string, startLine: number, onFocus: () => void, id: () => string) {
   return new EditorView({
     parent: host,
     state: EditorState.create({
       doc: text,
       extensions: [
         cardExtensions(firstLine), gotoDefinition({ file: () => file, base: () => startLine }),
-        EditorView.updateListener.of((u) => { if (u.selectionSet) setCardCursor({ id, head: u.state.selection.main.head }); }),
+        EditorView.updateListener.of((u) => { if (u.selectionSet) setCardCursor({ id: id(), head: u.state.selection.main.head }); }),
         EditorView.domEventHandlers({
           mousedown() { onFocus(); return false; },
           focus() { onFocus(); return false; },
@@ -40,12 +39,15 @@ export default function Card(props: { card: CardData; id: string; color: string;
   let view: EditorView | undefined;
   const openSrc = () => openFile(props.card.file, props.card.item.selectionRange.start);
   onMount(() => {
-    view = mountCode(host, props.card.text, props.card.startLine + 1, props.card.file, props.card.startLine, props.onFocus, props.id);
-    cardViews.set(props.id, view);
-    // long lines pan sideways (trackpad, shift + wheel); the connectors follow
+    view = mountCode(host, props.card.text, props.card.startLine + 1, props.card.file, props.card.startLine, props.onFocus, () => props.id);
     if (props.onScroll) view.scrollDOM.addEventListener('scroll', props.onScroll, { passive: true });
   });
-  onCleanup(() => { cardViews.delete(props.id); view?.destroy(); });
+  createEffect(on(() => props.id, (id, prev) => {
+    if (!view) return;
+    if (prev && cardViews.get(prev) === view) cardViews.delete(prev);
+    cardViews.set(id, view);
+  }));
+  onCleanup(() => { if (cardViews.get(props.id) === view) cardViews.delete(props.id); view?.destroy(); });
 
   return (
     <div class="card" classList={{ focus: props.focus, std: props.card.std, lit: !!props.lit }} data-card={props.id} style={{ '--c': props.color }}>

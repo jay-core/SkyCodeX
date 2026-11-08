@@ -1,5 +1,3 @@
-// Writes the tinyhttp run (from the recorded clangd fixture, no clangd needed) and the files' text, for ux.html.
-// usage (from the repo): npx esbuild src/concepts/flow/ux/data.ts --bundle --platform=node --outfile=<tmp>/data.cjs && node <tmp>/data.cjs <out.json>
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadFixture, describeRun } from '../../../tests/flowrun.fixture';

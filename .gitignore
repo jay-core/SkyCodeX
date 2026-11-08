@@ -1,19 +1,13 @@
 .DS_Store
-# runtime data created beside the executable
 data/
-# build output
 node_modules/
 /dist/
 /build/
 /out/
-# packaged apps (npm run package)
 release/
 *.log
-# sample project build output (machine-specific)
 samples/*/build/
 samples/*/compile_commands.json
 .cache/
-# clangd fetched for this platform by `npm run fetch-clangd` (too large for git)
 tools/clangd/
-# language packs installed from inside SkyCodeX
 language_packs/

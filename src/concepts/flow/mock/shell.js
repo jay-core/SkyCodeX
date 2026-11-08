@@ -1,4 +1,3 @@
-// The app's chrome around a mock-up: header pivot, status, the flow pane, the preview pane, the app bar.
 function shell(o) {
   const gear = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="6.6"/></svg>';
   document.getElementById('root').innerHTML = `

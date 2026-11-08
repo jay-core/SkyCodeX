@@ -1,7 +1,3 @@
-// Traversal prototype, third version: detail levels per function (calls, decisions, all code), so the code between
-// calls appears in place; ← retraces the path walked, ⇧← jumps to the previous pass of a loop. Moves are scripted, every
-// position is worked out from the analysed data (calls from the index, statements from clangd's syntax tree).
-// usage: node trav3.mjs <data.json> <root> <out.html> <title> <start row> <moves, comma-separated>
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';

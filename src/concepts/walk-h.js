@@ -1,4 +1,3 @@
-/* ---------- horizontal (side-to-side) page transitions for settings ---------- */
 const rotSeek=window.seek;
 window.seek=function(t){
   rotSeek(t);

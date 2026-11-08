@@ -1,12 +1,7 @@
-// Searches are case-free everywhere: file names, a file's text, the whole folder. A Unicode-aware regular expression
-// of the escaped query (not lower-casing, which can change a string's length) keeps match offsets exact.
-
-/** A case-free matcher for the query, or null for an empty one. */
 export function matcher(q: string): RegExp | null {
   return q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu') : null;
 }
 
-/** Where the query occurs in text: [start, end) pairs, in order. */
 export function matchesIn(text: string, q: string, max = 1000): [number, number][] {
   const re = matcher(q), out: [number, number][] = [];
   if (!re) return out;
@@ -16,7 +11,6 @@ export function matchesIn(text: string, q: string, max = 1000): [number, number]
 
 export interface Hit { file: string; line: number; col: number; len: number; text: string }
 
-/** One file's matches, line by line; a long line is cut to a window around its first match. */
 export function hitsIn(file: string, text: string, q: string, max = 200): Hit[] {
   const re = matcher(q), out: Hit[] = [];
   if (!re) return out;

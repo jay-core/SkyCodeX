@@ -24,7 +24,6 @@ const ITEMS: ([string, string, string] | null)[] = [
   ['settings', 'settings', `${mod},`],
 ];
 
-/** The bottom app bar's ··· menu (Windows Phone style); on macOS the same commands are also in the menu bar. */
 export default function AppMenu() {
   const close = () => setMenuOpen(false);
   const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -39,7 +38,6 @@ export default function AppMenu() {
 
 function MenuPanel(props: { close: () => void }) {
   let el!: HTMLDivElement;
-  // animate once the panel is attached; an animation started on a detached node never runs
   onMount(() => {
     const a = el.animate([{ transform: 'translate3d(0,12px,0)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' });
     a.pause(); afterPaint().then(() => a.play());

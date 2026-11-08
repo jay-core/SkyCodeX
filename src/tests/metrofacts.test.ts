@@ -20,12 +20,11 @@ describe('metro facts', () => {
     expect(resultOf('    for (auto line : ', ') {')?.text).toBe('→ each item');
     expect(resultOf('    return ', ';')?.text).toBe('→ returned');
     expect(resultOf('    if (x == ', ')')?.text).toBe('→ the condition');
-    expect(resultOf('    std::thread flusher([this] { metrics_.', '; });')?.text).toBe('');   // inside a lambda's body: no claim about a result
+    expect(resultOf('    std::thread flusher([this] { metrics_.', '; });')?.text).toBe('');
     expect(resultOf('    server.', ';')?.text).toBe('');
   });
 
   it('never states anything the source does not contain', () => {
-    // every call text is in its caller's line, every loop text in the caller's file
     for (const m of rows) {
       const r = run.rows[s.items[m.item]], c = r.caller != null ? run.rows[r.caller] : null;
       if (!c || !r.at) continue;
@@ -40,12 +39,10 @@ describe('metro facts', () => {
     const ph = rows.find((m) => m.name === 'parse_headers')!;
     expect(ph.callText).toBe('parse_headers(req.raw)');
     expect(ph.result).toBe('→ headers');
-    // nothing that returns no value is said to have its result thrown away, and pure means pure all the way down
     for (const m of rows) if (m.notes.some((n) => n.text === 'result thrown away')) expect(run.effects?.[run.rows[s.items[m.item]].kind === 'ref' ? run.rows[run.rows[s.items[m.item]].ref!].key : run.rows[s.items[m.item]].key]?.returnsValue).toBe(true);
     expect(rows.find((m) => m.name === 'is_space')!.notes.some((n) => n.text === 'pure')).toBe(true);
     expect(rows.find((m) => m.name === 'handle')!.notes.some((n) => n.text === 'pure')).toBe(false);
     expect(rows.find((m) => m.name === 'start')!.notes.some((n) => n.text === 'pure')).toBe(false);
-    // library calls aren't known: a function that makes one is never called pure (listen opens a socket)
     for (const n of ['listen', 'write_all', 'close', 'read_env', 'split']) expect(rows.find((m) => m.name === n)?.notes.some((x) => x.text === 'pure') ?? false).toBe(false);
     expect(rows.find((m) => m.name === 'handle')!.notes.some((n) => n.text.includes('Handles one client request'))).toBe(true);
   });

@@ -1,5 +1,3 @@
-// The boxes view's model on a real run (tinyhttp, recorded from clangd): rows, lines and their numbers, labels that
-// never overlap at any zoom, routes between two functions, a function's neighbourhood, how often a row runs.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import ELK from 'elkjs/lib/elk.bundled.js';
@@ -29,8 +27,7 @@ describe('boxes from the run', () => {
     expect(text('handle', 'route')).toBe('15');
     expect(text('handle', 'close')).toBe('22');
     expect(text('stop', 'close')).toBe('→22');
-    expect(text('start', 'handle')).toBeUndefined();   // inside one file: the numbers say the order
-    // every call between files has its line
+    expect(text('start', 'handle')).toBeUndefined();
     const cross = m.calls.filter((c) => R[c.a].file !== R[c.b].file);
     expect(l.lines.length).toBe(cross.length);
     for (const x of l.lines) expect(x.pts.length).toBeGreaterThanOrEqual(2);
@@ -132,12 +129,11 @@ describe('the walk marker', () => {
   it('returns up the lines it came in on, then goes down to the next call', async () => {
     const { walkPoints } = await import('../shared/flowboxes');
     const l = await lay('functions');
-    // trim (strings.cpp) returns to parse_headers, then handle calls route (router.cpp)
     const from = R.findIndex((r) => r.kind === 'ref' && r.name.endsWith('trim')), to = step('route');
     const pts = walkPoints(m, l, from, to);
     const ph = rowAt(m, l, step('parse_headers'))!, rt = rowAt(m, l, to)!, hd = rowAt(m, l, step('handle'))!;
-    expect(pts.some((p) => p.y === ph.y && p.x >= ph.x && p.x <= ph.x + ph.w)).toBe(true);   // through parse_headers' row
-    expect(pts.some((p) => p.y === hd.y && p.x >= hd.x && p.x <= hd.x + hd.w)).toBe(true);   // and handle's
+    expect(pts.some((p) => p.y === ph.y && p.x >= ph.x && p.x <= ph.x + ph.w)).toBe(true);
+    expect(pts.some((p) => p.y === hd.y && p.x >= hd.x && p.x <= hd.x + hd.w)).toBe(true);
     expect(pts[pts.length - 1]).toEqual({ x: rt.x + 34, y: rt.y });
   });
 });
@@ -145,11 +141,11 @@ describe('the walk marker', () => {
 describe('drawing only what is in view', () => {
   it('every box that meets the view (and a screen around it) is drawn; those far away are not', () => {
     const r = viewRect({ x: 2000, y: 0 }, { w: 1000, h: 800 }, 1, 600);
-    expect(meets(r, { x: 2500, y: 100, w: 260, h: 80 })).toBe(true);            // on screen
-    expect(meets(r, { x: 1200, y: 100, w: 260, h: 80 })).toBe(true);            // within a screen to the left
-    expect(meets(r, { x: 100, y: 100, w: 260, h: 80 })).toBe(false);            // far left
-    expect(meets(r, { x: 2500, y: 3000, w: 260, h: 80 })).toBe(false);          // far below
-    const z = viewRect({ x: 0, y: 0 }, { w: 1000, h: 800 }, 0.5, 600);          // zoomed out: more of the diagram is in view
+    expect(meets(r, { x: 2500, y: 100, w: 260, h: 80 })).toBe(true);
+    expect(meets(r, { x: 1200, y: 100, w: 260, h: 80 })).toBe(true);
+    expect(meets(r, { x: 100, y: 100, w: 260, h: 80 })).toBe(false);
+    expect(meets(r, { x: 2500, y: 3000, w: 260, h: 80 })).toBe(false);
+    const z = viewRect({ x: 0, y: 0 }, { w: 1000, h: 800 }, 0.5, 600);
     expect(meets(z, { x: 2800, y: 100, w: 260, h: 80 })).toBe(true);
   });
 });
@@ -162,7 +158,6 @@ describe('a much-called box', () => {
     for (const x of l.lines) expect(!!x.hub).toBe(!!l.hubs[nodeOf(m, 'files', x.fb)] && nodeOf(m, 'files', x.fa) !== nodeOf(m, 'files', x.fb));
     const labelled = new Set(placeLabels(l, 1).flatMap((b) => b.keys));
     for (const x of l.lines.filter((y) => y.hub)) expect(labelled.has(`${x.a}>${x.b}`)).toBe(false);
-    // the default threshold leaves tinyhttp (8 files) as it was
     expect(Object.keys((await layoutBoxes(m, 'files', elk)).hubs)).toEqual([]);
   });
 });

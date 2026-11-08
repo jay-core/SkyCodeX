@@ -17,7 +17,7 @@ describe('which files are C/C++', () => {
     expect(looksLikeCpp('// Copyright\n// licence\n#pragma once\nstruct A {};')).toBe(true);
     expect(looksLikeCpp('/* big\n licence\n block */\n\n#ifndef QT_STRING_H\n#define QT_STRING_H')).toBe(true);
     expect(looksLikeCpp('// -*- C++ -*-\n')).toBe(true);
-    expect(looksLikeCpp('X(alpha, 1)\nX(beta, 2)\n')).toBe(false);   // an .inc/.def table has nothing to read; clangd marks those
+    expect(looksLikeCpp('X(alpha, 1)\nX(beta, 2)\n')).toBe(false);
     expect(looksLikeCpp('Hello, this is a README.\n# Heading')).toBe(false);
   });
   it('remembers files that read as C/C++ or that clangd pointed to', () => {

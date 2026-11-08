@@ -6,7 +6,6 @@ import { compilerOpen, setCompilerOpen } from './CompilerWindow';
 import { t } from '../lib/i18n';
 import { refreshAll, refreshing } from '../lib/refresh';
 
-/** The app bar, below a faint separator: options, settings, compiler and preview on the left; refresh on the right. */
 export default function AppBar() {
   const previewOn = () => !!settings()['preview.enabled'];
   return (

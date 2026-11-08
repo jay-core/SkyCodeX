@@ -1,5 +1,3 @@
-// The colour settings: exact round trips through the sliders, defaults that match the stylesheet they control,
-// validation, and settings.toml.
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';

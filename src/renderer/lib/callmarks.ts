@@ -1,10 +1,7 @@
-// Call outlines: every call in a source view (the editor for pane 1, pane 1's focused card for pane 2, and so on)
-// gets a thin box in the colour of the card it leads to. The preview pushes the marks in; hovering a box shows its
-// connector, clicking it brings its card into view (components/Preview.tsx).
 import { StateEffect, StateField } from '@codemirror/state';
 import { EditorView, Decoration, DecorationSet } from '@codemirror/view';
 
-export interface CallMark { from: number; to: number; color: string; id: string }   // id: "level:card"
+export interface CallMark { from: number; to: number; color: string; id: string }
 
 export const setCallMarks = StateEffect.define<CallMark[]>();
 
@@ -22,7 +19,6 @@ export const callMarks = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-/** The marks a view shows now, to skip a dispatch when nothing changed. */
 const shown = new WeakMap<EditorView, string>();
 export function showCallMarks(view: EditorView, marks: CallMark[]) {
   const sig = marks.map((m) => `${m.from}-${m.to}-${m.color}-${m.id}`).join('|');

@@ -1,7 +1,3 @@
-// The grid view of the run: called functions down the side (CALLED ↓), calling functions across the top (CALLER →),
-// both grouped under their files; each square holds the steps where that call happens, in run order. The grid fits
-// the pane, totals stay in sight (TIMES CALLED at the end of each row, CALLS IT MAKES under each column), a square
-// opens in place when chosen, and its details fill the card in the right pane. Tab switches to the metro.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import { setWalkSpeed, seq, trail, status, runStatus, stepMove, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords, changed } from '../lib/flowstore';
 import { root, flash, settings } from '../lib/store';
@@ -15,12 +11,11 @@ import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { Skyline } from './Sequence';
 
-// SIDE: file label + ƒ + row name; HEAD: file band + ƒ + two-line column name; TOT: times called; FOOT: calls it makes
 const SIDE = 236, HEAD = 84, TOT = 76, FOOT = 46, GAP = 4, OPEN_W = 270, LINE_H = 23, BIG = 1800, SKY = 62;
 const PAL = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 const stem = (f: string) => basename(f).replace(/\.(c|cc|cpp|cxx|h|hpp)$/, '');
-const wrapName = (n: string) => n.replace(/_/g, '_​');   // a long name breaks after an underscore first
+const wrapName = (n: string) => n.replace(/_/g, '_​');
 const load = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 interface Pos { at: number[]; w: number[]; size: number }
 interface Rect { x: number; y: number; w: number; h: number }
@@ -33,12 +28,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const R = () => S()!.run.rows;
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const [order, setOrderRaw] = createSignal<GridOrder>(load('grid.order', 'file') as GridOrder);
-  const setOrder = (o: GridOrder) => { setOrderRaw(o); try { localStorage.setItem('grid.order', o); } catch { /* kept for this run */ } };
+  const setOrder = (o: GridOrder) => { setOrderRaw(o); try { localStorage.setItem('grid.order', o); } catch {  } };
   const model = createMemo(() => (S() ? buildGrid(S()!, nums(), order()) : null));
   const col = createMemo(() => { const m = new Map<string, string>(); model()?.files.forEach((f, i) => m.set(f, PAL[i % PAL.length])); return m; });
-  // a large run opens on files × files; a click on a block opens its functions
   const [drill, setDrill] = createSignal<{ rowFile: string; colFile: string } | null>(null);
-  // the chosen square (opens in place, fills the card) and the square under the pointer
   const [pick, setPick] = createSignal<{ c: string; r: string } | null>(null);
   const [hover, setHover] = createSignal<{ c: string; r: string } | null>(null);
   createEffect(on(S, () => { setDrill(null); setPick(null); setHover(null); }, { defer: true }));
@@ -49,16 +42,14 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const cellAt = (c: string, r: string) => model()?.cells.get(`${c}>${r}`);
   const pickCell = createMemo(() => { const p = pick(); return p ? cellAt(p.c, p.r) ?? [] : []; });
 
-  // ---- the pane's size and scroll: the grid fits it; the totals follow the scroll so they stay in sight ----
   let scroller!: HTMLDivElement, canvas!: HTMLDivElement;
   const [vw, setVw] = createSignal(900), [vh, setVh] = createSignal(600), [sl, setSl] = createSignal(0), [st, setSt] = createSignal(0);
   onMount(() => {
-    // sizes are applied on the next frame, so the layout they cause never feeds back into this same observation
     let f = 0;
     const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setVw(scroller.clientWidth); setVh(scroller.clientHeight - SKY); }); });
     onCleanup(() => cancelAnimationFrame(f));
     ro.observe(scroller); onCleanup(() => ro.disconnect());
-    requestAnimationFrame(() => canvas?.focus());   // keys work as soon as the grid opens (Tab from the metro)
+    requestAnimationFrame(() => canvas?.focus());
   });
   const place = (list: GridFn[], size: (i: number) => number): Pos => {
     const at: number[] = [], w: number[] = []; let x = 0;
@@ -72,7 +63,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const openH = pr >= 0 ? 8 + Math.min(6, pickCell().length) * LINE_H : 0;
     const nc = cs.length - (pc >= 0 ? 1 : 0), nr = rs.length - (pr >= 0 ? 1 : 0);
     const cw = Math.max(44, Math.min(92, nc ? Math.floor((vw() - SIDE - TOT - 12 - breaks(cs) * GAP - (pc >= 0 ? OPEN_W : 0)) / nc) : 92));
-    // rows as short as 19 px (a step chip is 16 px) before the grid scrolls under its sticky totals
     const rh = Math.max(19, Math.min(28, nr ? Math.floor((vh() - HEAD - FOOT - breaks(rs) * GAP - openH) / nr) : 28));
     const x = place(cs, (i) => (i === pc ? Math.max(OPEN_W, cw) : cw)), y = place(rs, (j) => (j === pr ? Math.max(openH, rh) : rh));
     return { cw, rh, pc, pr, x, y };
@@ -80,13 +70,11 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const colIdx = createMemo(() => new Map(cols().map((c, i) => [c.key, i])));
   const rowIdx = createMemo(() => new Map(rows().map((r, j) => [r.key, j])));
   const rectOf = (i: number, j: number): Rect => ({ x: SIDE + geo().x.at[i], y: HEAD + geo().y.at[j], w: geo().x.w[i] - 2, h: geo().y.w[j] - 2 });
-  // the totals: at the end of the grid, or at the pane's edge when the grid is wider or taller than the pane
   const totX = () => Math.min(SIDE + geo().x.size + 8, sl() + vw() - TOT);
   const footY = () => Math.min(HEAD + geo().y.size + 6, st() + vh() - FOOT);
   const maxRow = createMemo(() => Math.max(1, ...rows().map((r) => r.count)));
   const maxCol = createMemo(() => Math.max(1, ...cols().map((c) => c.count)));
 
-  // ---- the summary line ----
   const summary = createMemo(() => {
     const m = model(), s = S();
     if (!m || !s) return null;
@@ -96,9 +84,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     return { fns: m.rows.length, callers: m.cols.length, calls, cross: calls ? Math.round((cross / calls) * 100) : 0, most };
   });
 
-  // the current call: its square is lit, its row and column get a crosshair
   const curCell = createMemo(() => { const m = model(), c = cur(); return m && c && c.at < S()!.items.length ? m.cellOf[c.at] : ''; });
-  // the chosen square fills the card: the current call when it is in the square, else its first
   createEffect(() => { const p = pick(), v = pickCell(), a = curAt(); setGridPick(p && v.length ? { at: v.includes(a) ? a : v[0], cell: v } : null); });
   const [heat, setHeat] = createSignal(false);
   const [focus, setFocus] = createSignal(false);
@@ -111,8 +97,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
   });
   const leaves = (key: string) => { const s = S(); if (!s) return false; const row = s.run.rows.findIndex((r) => r.kind === 'step' && r.key === key); return row >= 0 && earlyExits(s.run, row).length > 0; };
   const maxCell = createMemo(() => { let m = 1; for (const v of model()?.cells.values() ?? []) m = Math.max(m, v.length); return m; });
-  // what a function's name says, as in the metro: a value followed (W, V) and how; called only where its values rule
-  // the call out; added or changed against a commit; edited and not saved
   const marks = createMemo(() => {
     const s = S(), m = new Map<string, { fw?: string; dim?: boolean; add?: boolean; chg?: boolean; edit?: boolean }>();
     if (!s) return m;
@@ -130,7 +114,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     return m;
   });
   const mk = (key: string) => marks().get(key);
-  // file outlines: only around a file's own block when its functions call each other, and only when it is one block
   const boxes = createMemo(() => {
     const out: (Rect & { c: string })[] = [], cs = cols(), rs = rows();
     for (const f of model()?.files ?? []) {
@@ -143,7 +126,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     return out;
   });
 
-  // ---- the hover tag: above the square, else below, placed so it covers no square that holds a call ----
   const tag = createMemo(() => {
     const h = hover(), v = h && cellAt(h.c, h.r);
     if (!h || !v) return null;
@@ -165,13 +147,11 @@ export default function GridView(props: { switcher: JSX.Element }) {
     return { text, x: Math.max(4, ok.x), y: ok.y };
   });
 
-  // ---- captions ----
   const [caption, setCaption] = createSignal<{ key: string; what: string; why: string } | null>(null);
   let capTimer: ReturnType<typeof setTimeout> | undefined;
   const say = (key: string, what: string, why = '') => { setCaption({ key, what, why }); clearTimeout(capTimer); capTimer = setTimeout(() => setCaption(null), 2600); };
   const report = (r: ReturnType<typeof stepMove>, quiet = false) => { if (r.note) say('', r.note); else if (r.state && !quiet) say(r.state.key, r.state.what, r.state.why); };
 
-  // ---- play: one step at a time, at the chosen speed ----
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
   let playId = 0;
@@ -199,7 +179,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
   createEffect(() => setWalkSpeed(playing() ? speed() : 0));
   onCleanup(() => { stop(); clearTimeout(capTimer); setWalkSpeed(0); setGridPick(null); });
 
-  // ---- routes: ⇧-click two functions ----
   let routeFrom = -1;
   function pickRoute(key: string) {
     const s = S();
@@ -214,7 +193,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     setRoute({ from: a, to: b, list, only: list.length === 1 ? 0 : -1 });
   }
 
-  // the current (or chosen) square glides into view when it is outside the pane
   createEffect(on([curCell, pick], () => requestAnimationFrame(() => {
     const el = (scroller?.querySelector('.gcell.pk') ?? scroller?.querySelector('.gcell.on')) as HTMLElement | null;
     if (!el) return;
@@ -242,7 +220,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     e.preventDefault(); stop(); report(stepMove(m));
   }
 
-  // ---- export: the grid as a PNG, drawn from the same model and layout ----
   async function exportPng() {
     const m = model(); if (!m) return;
     const file = (await api.fs.saveDialog(`${root()}/${basename(root()) || 'flow'}-grid.png`)) as string | null;
@@ -265,7 +242,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
     <i classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); setPick({ c, r }); go(it); }}>{it + 1}</i>
   );
   const header = createMemo(() => { const s = S(), c = cur(); if (!s || !c) return ''; if (c.at >= s.items.length) return `Step ${s.items.length} of ${s.items.length} · end`; const n = nums()[c.at], r = R()[s.items[c.at]]; return `Step ${c.at + 1} of ${s.items.length} · ${n?.fn ? `ƒ${n.fn} ` : ''}${short(r.kind === 'ref' ? R()[r.ref!].name : r.kind === 'indirect' ? (r.text ?? r.name) : r.name)}`; });
-  // the key's examples are the run's own: a step already run, the current one, the next
   const keySteps = () => { const a = curAt(), n = S()?.items.length ?? 0; return { done: Math.max(1, a), now: a + 1, next: Math.min(n, a + 2) }; };
 
   return (
@@ -307,7 +283,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
                 <div class="gsz" style={{ width: `${SIDE + geo().x.size + TOT + 12}px`, height: `${HEAD + geo().y.size + FOOT + 8}px` }}>
                   <div class="gax" style={{ left: `${SIDE - 92}px`, top: `${HEAD - 40}px` }}>caller →</div>
                   <div class="gax" style={{ left: '40px', top: `${HEAD - 16}px` }}>called ↓</div>
-                  {/* file bands and column heads */}
                   <For each={cols()}>{(c, i) => (
                     <>
                       <Show when={i() === 0 || cols()[i() - 1].file !== c.file}>{(() => { const last = () => { let k = i(); while (k + 1 < cols().length && cols()[k + 1].file === c.file) k++; return k; }; return <div class="gfb" style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.at[last()] + geo().x.w[last()] - geo().x.at[i()] - 2}px`, '--c': col().get(c.file) }}>{stem(c.file)}</div>; })()}</Show>
@@ -316,7 +291,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
                       </div>
                     </>
                   )}</For>
-                  {/* row heads, grouped by file */}
                   <For each={rows()}>{(r, j) => (
                     <>
                       <Show when={j() === 0 || rows()[j() - 1].file !== r.file}>{(() => { const last = () => { let k = j(); while (k + 1 < rows().length && rows()[k + 1].file === r.file) k++; return k; }; return <div class="grb" style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().y.at[last()] + geo().y.w[last()] - geo().y.at[j()] - 2}px`, '--c': col().get(r.file) }}><span>{stem(r.file)}</span></div>; })()}</Show>
@@ -325,9 +299,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
                       </div>
                     </>
                   )}</For>
-                  {/* file outlines, under the squares */}
                   <For each={boxes()}>{(b) => <div class="gbox" style={{ left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, '--c': b.c }} />}</For>
-                  {/* the squares */}
                   <For each={cols()}>{(c, i) => (
                     <For each={rows()}>{(r, j) => {
                       const key = `${c.key}>${r.key}`, v = () => model()!.cells.get(key);
@@ -359,13 +331,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
                     }}</For>
                   )}</For>
                   <Show when={tag()}>{(t) => <div class="gtag" style={{ left: `${t().x}px`, top: `${t().y}px` }}>{t().text}</div>}</Show>
-                  {/* TIMES CALLED: the end of each row, kept in sight */}
-                  {/* opaque from the top, so columns scrolled under it never show through its label */}
                   <div class="gtot" style={{ left: `${totX()}px`, top: '0px', height: `${HEAD + geo().y.size + 4}px` }}>
                     <div class="gax w2" style={{ left: '6px', top: `${HEAD - 30}px` }}>times called</div>
                     <For each={rows()}>{(r, j) => <div class="t" classList={{ pk: pick()?.r === r.key }} style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }}><i style={{ width: `${Math.max(4, Math.round((r.count / maxRow()) * 28))}px` }} />×{r.count}</div>}</For>
                   </div>
-                  {/* CALLS IT MAKES: under each column, kept in sight */}
                   <div class="gmk" style={{ top: `${footY()}px`, width: `${SIDE + geo().x.size}px` }}>
                     <div class="gax" style={{ left: '80px', top: '18px' }}>calls it makes →</div>
                     <For each={cols()}>{(c, i) => <div class="m" classList={{ pk: pick()?.c === c.key }} style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }}><i style={{ height: `${Math.max(3, Math.round((c.count / maxCol()) * 14))}px` }} />{c.count}</div>}</For>
@@ -397,7 +366,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
   );
 }
 
-/** A large run first: files × files, each block the number of calls from one file into another; a click opens it. */
 function FilesGrid(props: { model: ReturnType<typeof buildGrid>; col: Map<string, string>; onOpen: (rowFile: string, colFile: string) => void }) {
   const files = () => props.model.files;
   const counts = createMemo(() => {

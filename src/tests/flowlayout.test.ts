@@ -6,7 +6,7 @@ describe('flow labels', () => {
     const boxes = [
       { id: 'a', x: 0, y: 0, w: 190, h: 66 },
       { id: 'b', x: 600, y: 0, w: 190, h: 66 },
-      { id: 'mid', x: 320, y: 10, w: 190, h: 66 },   // right where the label would go
+      { id: 'mid', x: 320, y: 10, w: 190, h: 66 },
     ];
     const [r] = routeEdges(boxes, [{ from: 'a', to: 'b', text: '3 · 7 · 12', thread: false }]);
     const { w, h } = labelSize('3 · 7 · 12', false);

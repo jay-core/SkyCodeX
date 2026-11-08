@@ -1,5 +1,3 @@
-// Configurations (FLOW-DESIGN §8b), on real clangd output for samples/configs as built (recorded with
-// src/tests/fixtures/record-flow.mjs). Worked out by hand from the sample and its compile_flags.txt.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -30,7 +28,6 @@ describe('configurations (samples/configs, as built: BOARD=1)', () => {
   });
 });
 
-// the same sample recorded with -DDEBUG -DBOARD=2 (record-flow.mjs … -DDEBUG -DBOARD=2): a later -D wins
 const alt = loadFixture(path.join(ROOT, 'src/tests/fixtures/configs-alt-flow.json'), path.join(ROOT, 'samples/configs'));
 const ra = alt.run([...alt.infos.keys()].find((k) => alt.infos.get(k)!.name === 'main')!);
 

@@ -28,7 +28,6 @@ html,body{margin:0;background:var(--stage)}
 .label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
 .col{display:flex;flex-direction:column;min-width:0;min-height:0}
 
-/* window */
 .win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
   box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
 .hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
@@ -56,7 +55,6 @@ html,body{margin:0;background:var(--stage)}
 .empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
 .links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
 
-/* code */
 .code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
 .ln{display:flex;position:relative}
 .ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
@@ -84,7 +82,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
 .gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
 
-/* cards */
 .cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
 .card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
@@ -104,7 +101,6 @@ html,body{margin:0;background:var(--stage)}
 .row.on{background:rgba(119,165,165,.12);color:var(--fg)}
 .cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
 
-/* tree */
 .tree{font:12px var(--ui);padding:2px 0}
 .ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
 .ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
@@ -113,7 +109,6 @@ html,body{margin:0;background:var(--stage)}
 .ti .fds{margin-left:auto;display:flex;gap:3px}
 .ti .fd{width:7px;height:7px;border-radius:50%}
 
-/* terminal */
 .term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
 .tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
 .tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
@@ -121,13 +116,11 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px;line-height:18px;padding:2px 2px}
 .okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
 
-/* floating */
 .pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
 .kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
 .toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
 .ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
 .ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
-/* Lithograph: charcoal, borderless, low contrast */
 :root{
   --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
   --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
@@ -175,7 +168,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.chg{box-shadow:inset 2px 0 #4e6a6a}
 .toast{border:0}
 .ln.hitl{background:rgba(115,150,150,.07)}
-/* Metro: typography is the chrome */
 .win{border-radius:0}
 .hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
 .pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
@@ -310,7 +302,6 @@ const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</sp
 function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
   <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
 
-/* ---------- shared sample project ---------- */
 const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
 const MAIN=R`void Server::start() {
     socket_.listen(port_);
@@ -399,7 +390,6 @@ const mainCards=(focusParse)=>cards(
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
 try{
-/* ---------- concept: thin call index between the code and the preview cards ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const SRC=R`Response Server::handle(const Request& req) {
     auto headers = «c:i0|parse_headers»(req.raw);
@@ -417,7 +407,7 @@ const SRC=R`Response Server::handle(const Request& req) {
     return res;
 }`;
 const NAMES=['parse_headers','route','apply_cors','keep_alive','compress','send_response','record','close'];
-const VISIBLE=new Set([2,3,4,5]);   // the column is scrolled so cards 3–6 are in view
+const VISIBLE=new Set([2,3,4,5]);
 const COL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b','#8f9aa8','#9aa86f'];
 const CARDS={2:[`apply_cors`,'http/cors.cpp:8',R`void apply_cors(Response& r, const Origins& o) {
     if (o.empty()) return;
@@ -461,7 +451,6 @@ document.getElementById('root').innerHTML=`<div class="win" style="position:abso
   <svg id="lk" style="position:absolute;left:0;top:0;pointer-events:none;overflow:visible" width="1440" height="900"></svg>
  </div>
  <div class="term" style="height:30px;border:0"><div class="tt"><span class="on">zsh</span><span>+</span><span class="grow"></span><span>hide terminal</span><span style="font-size:16px">···</span></div></div></div>`;
-// connectors: call site → its name in the index → its card (when the card is in view)
 const B=document.getElementById('body').getBoundingClientRect(), rel=(r)=>({l:r.left-B.left,r:r.right-B.left,t:r.top-B.top,b:r.bottom-B.top,cy:(r.top+r.bottom)/2-B.top});
 const codeR=rel(document.getElementById('codep').getBoundingClientRect()), idxR=rel(document.getElementById('index').getBoundingClientRect());
 let svg='';
@@ -475,7 +464,6 @@ NAMES.forEach((n,i)=>{
   svg+=`<path d="M${x1} ${y1} L${xe} ${y1}" stroke="${COL[i]}" stroke-width="0.8" stroke-dasharray="1.5 4" opacity=".45" fill="none"/><circle cx="${x1}" cy="${y1}" r="1.8" fill="${COL[i]}"/>`;
   svg+=`<path d="M${xe} ${y1} C${xe+k} ${y1} ${x2-k} ${y2} ${x2} ${y2}" stroke="${COL[i]}" stroke-width="0.9" opacity=".7" fill="none"/><circle cx="${x2}" cy="${y2}" r="1.6" fill="${COL[i]}" opacity=".8"/>`;
   if (VISIBLE.has(i)) {
-    // the line ends on the card's own colour dot, so the eye lands on the right card at once
     const sw=rel(document.querySelector(`#cd${i} .card-h .sw`).getBoundingClientRect());
     const a=dot.r+22, b=sw.l-1, yb=sw.cy, kk=Math.max(22,(b-a)*.5);
     svg+=`<path d="M${a} ${y2} C${a+kk} ${y2} ${b-kk} ${yb} ${b} ${yb}" stroke="${COL[i]}" stroke-width="1" opacity=".75" fill="none"/>`;

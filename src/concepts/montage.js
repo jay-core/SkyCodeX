@@ -1,4 +1,3 @@
-/* ---------- final preview: walkthrough, then a turnstile tour of every view ---------- */
 const walkSeek=window.seek;
 const SC=[['../../docs/concepts/final/b02-atlas.png','atlas — the whole codebase as a map'],['../../docs/concepts/final/b03-book.png','book mode — read a project start to finish'],
   ['../../docs/concepts/final/b06-board.png','investigation board — paste a crash, get its stack'],['../../docs/concepts/terminal-press/t1-terminal.png','terminal — every command a block'],
@@ -17,7 +16,6 @@ window.seek=function(t){
   walkSeek(T0-0.01);
   const cap=document.getElementById('cap'),grad=document.getElementById('mgrad');
   const k=Math.min(SC.length,Math.floor((t-T0)/D)),tau=t-T0-k*D;
-  // outgoing: editor for the first scene, previous image otherwise
   const outE=inC(clamp(tau/0.34)),inE=expo(clamp((tau-0.16)/0.6));
   if(k===0){pageT(HDR,-70*outE,1);pageT(BODY,-70*inC(clamp((tau-0.04)/0.34)),1);}
   MI.forEach((m,i)=>{

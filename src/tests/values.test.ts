@@ -1,5 +1,3 @@
-// Values settled per call (src/shared/flowvalues.ts), on real clangd output for samples/values (recorded with
-// src/tests/fixtures/record-flow.mjs). Each function in the sample says what its call settles; worked out by hand.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { loadFixture } from './flowrun.fixture';
@@ -44,7 +42,6 @@ describe('values settled per call (samples/values)', () => {
   });
 });
 
-// The evaluator on its own: C and C++ rules, across the platforms (int 16 or 32 bits, long 32 or 64, char signed or not).
 const lit = (v: number, ty = 'int'): Expr => ({ k: 'int', v: String(v), ty });
 const p = (name: string, ty: string): Expr => ({ k: 'cast', how: 'LValueToRValue', ty, a: { k: 'param', name } });
 const bin = (op: string, a: Expr, b: Expr, ty = 'int'): Expr => ({ k: 'bin', op, ty, a, b });
@@ -54,19 +51,19 @@ const at = (vals: Record<string, Vals>) => (n: string) => vals[n];
 describe('the evaluator', () => {
   it('signed overflow, shifting a negative and dividing by zero are left open', () => {
     const k = { k: passed(lit(32767)) };
-    expect(truthOf(bin('>', bin('+', p('k', 'int'), lit(1)), p('k', 'int'), 'bool'), at(k))).toBeNull();   // 16-bit int overflows
+    expect(truthOf(bin('>', bin('+', p('k', 'int'), lit(1)), p('k', 'int'), 'bool'), at(k))).toBeNull();
     expect(truthOf(bin('<<', lit(-1), lit(1)), () => undefined)).toBeNull();
     expect(truthOf(bin('/', lit(1), lit(0)), () => undefined)).toBeNull();
     expect(truthOf(bin('>>', lit(-8), lit(1)), () => undefined)).toBeNull();
   });
   it('unsigned arithmetic wraps, and a comparison settles only when every platform agrees', () => {
     const neg = passed({ k: 'cast', how: 'IntegralCast', ty: 'unsigned int', a: { k: 'un', op: '-', ty: 'int', a: lit(1) } });
-    expect(settledValue(neg)!.same).toBe(false);   // 65535 or 4294967295
+    expect(settledValue(neg)!.same).toBe(false);
     expect(truthOf(bin('>', p('n', 'unsigned int'), { k: 'cast', how: 'IntegralCast', ty: 'unsigned int', a: lit(10) }, 'bool'), at({ n: neg }))).toBe(true);
-    expect(truthOf(bin('>', p('n', 'unsigned int'), { k: 'cast', how: 'IntegralCast', ty: 'unsigned int', a: lit(65535, 'long') }, 'bool'), at({ n: neg }))).toBeNull();   // 65535 > 65535 is false, 4294967295 > 65535 true
+    expect(truthOf(bin('>', p('n', 'unsigned int'), { k: 'cast', how: 'IntegralCast', ty: 'unsigned int', a: lit(65535, 'long') }, 'bool'), at({ n: neg }))).toBeNull();
   });
   it('a literal too large for a platform rules that platform out, not the answer', () => {
-    expect(truthOf(bin('>', lit(40000), lit(1)), () => undefined)).toBe(true);   // 40000 as int: int is not 16 bits here
+    expect(truthOf(bin('>', lit(40000), lit(1)), () => undefined)).toBe(true);
   });
   it('&& and || settle from either side that decides, the right side only when the left does not', () => {
     const q: Expr = { k: '?' };
@@ -85,6 +82,6 @@ describe('the evaluator', () => {
   it('char: settled only where signed and unsigned char agree', () => {
     const ch = (v: number): Vals => passed({ k: 'cast', how: 'IntegralCast', ty: 'char', a: lit(v) });
     expect(truthOf(bin('<', { k: 'cast', how: 'IntegralCast', ty: 'int', a: p('c', 'char') }, lit(0), 'bool'), at({ c: ch(65) }))).toBe(false);
-    expect(settledValue(ch(200))).toBeNull();   // 200 into a signed char is the platform's choice
+    expect(settledValue(ch(200))).toBeNull();
   });
 });

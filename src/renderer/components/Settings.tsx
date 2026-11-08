@@ -33,7 +33,6 @@ async function set(key: string, value: unknown) {
 
 interface Opt { value: string; label: string; group?: string; font?: boolean }
 
-/** A text box with a filtered list under it: pick from the list or type any value and press enter. */
 function Combo(props: { value: string; load: () => Promise<Opt[]>; onPick: (v: string) => void; font?: boolean; hint?: string }) {
   const [open, setOpen] = createSignal(false);
   const [q, setQ] = createSignal('');
@@ -87,9 +86,8 @@ const fontOpts = (monoFirst: boolean) => async (): Promise<Opt[]> => {
   return [...all].sort((a, b) => order(a) - order(b)).map((f) => ({ value: f.name, label: f.name, group: g(f), font: true }));
 };
 
-const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);   // 0.05 steps keep two places
+const decimals = (step: number) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
 
-/** Slider with a live value while dragging, plus a box to type the number; large ranges get the box only. */
 function NumberCtl(props: { d: SettingDef }) {
   const d = props.d;
   const range = (d.max ?? 0) - (d.min ?? 0);
@@ -102,7 +100,6 @@ function NumberCtl(props: { d: SettingDef }) {
   createEffect(on(() => settings()[d.key], () => setLive(null), { defer: true }));
   const fmt = (n: number) => String(+n.toFixed(decimals(step)));
   const clamp = (n: number) => Math.min(d.max ?? Infinity, Math.max(d.min ?? -Infinity, n));
-  // dragging restyles the editor at once (nothing is written); letting go saves
   const preview = (n: number) => { setLive(n); applySettings({ ...settings(), [d.key]: n }, problems()); };
   const commit = (n: number) => { if (!Number.isFinite(n)) { flash(`${label(d)}: type a number`); setDraft(null); return; } n = clamp(+n.toFixed(decimals(step))); setLive(n); setDraft(null); set(d.key, n); };
   const typed = (e: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
@@ -130,7 +127,6 @@ function NumberCtl(props: { d: SettingDef }) {
   );
 }
 
-/** The weights the chosen font really has, each shown in itself; any other saved value is kept as a choice. */
 function WeightCtl(props: { d: SettingDef; family: () => string }) {
   const [ws] = createResource(props.family, weightsOf);
   const cur = () => Number(settings()[props.d.key]);
@@ -152,7 +148,6 @@ function WeightCtl(props: { d: SettingDef; family: () => string }) {
   );
 }
 
-/** A colour: swatch and hex, and hue / saturation / lightness (and transparency) sliders whose tracks show what they do. */
 function ColorCtl(props: { d: SettingDef }) {
   const d = props.d;
   const [live, setLive] = createSignal<string | null>(null);
@@ -160,7 +155,6 @@ function ColorCtl(props: { d: SettingDef }) {
   const cur = () => live() ?? String(settings()[d.key] ?? d.default);
   const hsla = () => hexToHsla(cur());
   const alpha = () => cur().length === 9;
-  // dragging recolours the window at once (nothing is written); letting go saves
   const preview = (hex: string) => { setLive(hex); applySettings({ ...settings(), [d.key]: hex }, problems()); };
   const commit = (hex: string) => { setLive(hex); set(d.key, hex); };
   const withPart = (k: 'h' | 's' | 'l' | 'a', v: number) => hslaToHex({ ...hsla(), [k]: v }, alpha());
@@ -193,7 +187,6 @@ function Control(props: { d: SettingDef }) {
   const d = props.d;
   const changed = () => JSON.stringify(v()) !== JSON.stringify(d.default);
   const reset = () => <Show when={changed()}><button class="rst" title={`back to ${JSON.stringify(d.default)}`} onClick={() => set(d.key, d.default)}>{t('reset')}</button></Show>;
-  // a setting that only matters with another one: dimmed until it applies
   const idle = () => d.key === 'editor.autosave_delay_ms' && settings()['editor.autosave'] !== 'delay';
   const Lab = () => <div class="lab">{t(label(d))}{reset()}</div>;
   const wrap = (body: any) => <div class="ctl" classList={{ idle: idle() }}>{body}</div>;
@@ -216,7 +209,6 @@ function Control(props: { d: SettingDef }) {
       <button class="chip" onClick={async () => { const p = (await api.fs.pickFile('')) as string | null; if (p) set(d.key, p); }}>{t('browse')}</button>
       <Show when={v() !== 'auto'}><button class="chip" onClick={() => set(d.key, 'auto')}>{t('auto')}</button></Show>
     </div><div class="doc">{t(d.doc)}</div></>);
-  // lists: JSON or plain space-separated words
   const text = () => (d.type === 'string[]' ? ((v() as string[]) ?? []).join(' ') : String(v() ?? ''));
   return wrap(<>
     <Lab />
@@ -243,7 +235,6 @@ export default function Settings() {
   onMount(() => {
     window.addEventListener('keydown', onKey);
     if (settings()['motion.reduce']) return;
-    // held at the first frame until the page has been laid out, then played: the entrance never starts with a stall
     const anims = [...el.querySelectorAll('.si')].map((k, i) => (k as HTMLElement).animate(
       [{ transform: 'perspective(1400px) rotateY(70deg) translate3d(60px,0,0)', opacity: 0 }, { transform: 'none', opacity: 1 }],
       { duration: 620, delay: 40 + i * 60, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' }));
@@ -265,7 +256,6 @@ export default function Settings() {
       </Show>
       <div class="grid si"><For each={defs()}>{(d, i) => (
         <>
-          {/* each group of colours says what it colours */}
           <Show when={d.type === 'color' && sectionOf(d.key) !== sectionOf(defs()[i() - 1]?.key ?? '')}>
             <div class="sechead">
               <span>{sectionOf(d.key).replace('colors.', '').replace('cards', 'preview cards').replace('editor', 'whole editor')}</span>

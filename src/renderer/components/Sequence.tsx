@@ -1,10 +1,3 @@
-// The sequence view, the flow page's default: the run of one entry point, time going down, one row per call.
-// The selected step opens as a box on rows of its own, with the lines around its call; back and next are marked on
-// their rows; the last steps keep a fading warmth; loops are teal frames with their label in a slot of its own; only
-// the call chain you are in keeps its bars. The spine on the right is the whole run, in chapters. A big call folds
-// into one row (⇧F); / finds a function and walks one of its paths from the start; T tours the run; a walk can be
-// shared as a link or written out as a walkthrough. Every position comes from layoutSeq (src/shared/flowseq.ts),
-// which never lets two rows or labels share space.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import { setWalkSpeed, seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
 import { watch, journey, watchable, argName } from '../../shared/flowwatch';
@@ -25,16 +18,13 @@ import PlayControls from './PlayControls';
 import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 
-const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;   // TOP: below the legend and the column headings
-// one colour per file on the metro line, in order of first appearance
+const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
-/** Runs longer than this open around the step (A shows the whole run). */
 const AROUND_AT = 400;
 const load = <T,>(key: string, d: T): T => { try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
-const keep = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* kept for this run */ } };
+const keep = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {  } };
 
-/** The keys, as the ? overlay lists them. */
 const KEYS: [string, string][] = [
   ['→ / ←', 'next step / back along the path walked'], ['⇧ →', 'step over: skip what runs inside'], ['↑', 'step out: finish this function'],
   ['R', 'another pass of the loop'], ['L', 'leave the loop'], ['⇧ ←', 'previous pass'], [']  [', 'next / previous call in the same function'],
@@ -54,7 +44,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const [help, setHelp] = createSignal(false);
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
-  const [folded, setFolded] = createSignal<Set<number>>(new Set());   // folded by hand (⇧F)
+  const [folded, setFolded] = createSignal<Set<number>>(new Set());
   const reduce = () => !!settings()['motion.reduce'];
 
   const S = () => seq();
@@ -63,14 +53,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const R = () => S()!.run.rows;
   const rowOf = (it: number) => R()[S()!.items[it]];
   const atEnd = () => (cur()?.at ?? 0) >= N();
-  // a new run: nothing folded, no path
   createEffect(on(seq, () => { setFolded(new Set<number>()); setPath(null); setWhat(null); }, { defer: true }));
-  // what if a condition went the other way: the steps it would skip, and what happens instead
   const [what, setWhat] = createSignal<WhatIf | null>(null);
   const [whatMenu, setWhatMenu] = createSignal<{ it: number; options: WhatIf[] } | null>(null);
   const [compare, setCompare] = createSignal(false);
-  const whatOptions = (it: number) => { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); };
-  // ---- what you've read: the functions you have been to, kept per folder and start ----
+  const whatOptions = (it: number) => { try { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); } catch { return [] as WhatIf[]; } };
   const store = (kind: string) => `flow.${kind}:${root()}:${entryStart()}`;
   const [read, setRead] = createSignal<Set<string>>(new Set());
   createEffect(on([seq, root], () => setRead(new Set(load<string[]>(store('read'), [])))));
@@ -83,7 +70,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }));
   const readCount = createMemo(() => { const s = S(); if (!s) return null; const steps = s.run.rows.filter((r) => r.kind === 'step'); return { n: steps.filter((r) => read().has(r.key)).length, of: steps.length }; });
 
-  // ---- notes on steps: kept per folder and start, by function and which of its calls ----
   const noteKey = (it: number) => { const s = S()!, k = s.run.rows[s.items[it]].key; let occ = 0; for (let i = 0; i < it; i++) if (s.run.rows[s.items[i]].key === k) occ++; return `${k}|${occ}`; };
   const [noteStore, setNoteStore] = createSignal<Record<string, string>>({});
   createEffect(on([seq, root], () => setNoteStore(load<Record<string, string>>(store('notes'), {}))));
@@ -95,7 +81,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   const [noteOpen, setNoteOpen] = createSignal(false);
 
-  // ---- jump letters: two letters on every row in view ----
   const [jump, setJump] = createSignal<{ typed: string } | null>(null);
   const hints = createMemo(() => {
     if (!jump()) return [] as { it: number; k: string }[];
@@ -104,7 +89,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return rows.map((it, i) => ({ it, k: HINT[Math.floor(i / HINT.length) % HINT.length] + HINT[i % HINT.length] }));
   });
 
-  // ---- the change ripple: functions edited and not saved, and every chain that reaches them ----
   const changedItems = createMemo(() => { const s = S(), c = changed(), out = new Set<number>(); if (!s || !c.size) return out; s.items.forEach((row, it) => { const r = s.run.rows[row]; if (c.has(r.kind === 'ref' ? r.ref! : row)) out.add(it); }); return out; });
   const rippleChain = createMemo(() => { const s = S(), out = new Set<number>(); if (!s) return out; for (const it of changedItems()) for (let i: number | null = s.run.rows[s.items[it]].caller; i != null; i = s.run.rows[i].caller) out.add(s.itemOf[i]); return out; });
 
@@ -116,7 +100,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     canvas.focus();
   }
 
-  // detail levels: calls only (the default), with decisions, or all code — everywhere (⇧D) or per function (D)
   const LEVELS: Detail[] = ['calls', 'decisions', 'all'];
   const [detailAll, setDetailAll] = createSignal<Detail>(load('flow.detail', 'calls'));
   const [detailFn, setDetailFn] = createSignal<Map<string, Detail>>(new Map());
@@ -133,17 +116,12 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     m.set(R()[row].key, d); setDetailFn(m);
     say({ key: 'D', what: `${short(R()[row].name)}: ${levelWord(d)}`, why: 'D again for more · ⇧D everywhere' });
   }
-  // what the run shows without running it (src/shared/flowseq.ts findings)
   const found = createMemo(() => (S() ? findings(S()!.run) : []));
   const [foundOpen, setFoundOpen] = createSignal(false);
-  // ways out (E): every early return, throw, break, goto and call that never returns, with what leads there
   const exitsAt = (it: number): Exit[] => { const s = S(); return s ? earlyExits(s.run, s.items[it]) : []; };
   const leaving = createMemo(() => { const s = S(); return s ? leavingCount(s.run) : 0; });
-  /** One way out as written: the condition it sits under, then the statement (or the call that never returns). */
   const exitWords = (x: Exit) => `${x.when.length ? `${x.when[x.when.length - 1]} → ` : ''}${x.kind === 'noreturn' ? `${x.callee} — never returns` : x.text}`;
-  // watch a variable (W) and a value's journey (V): a picker, then the steps that touch it stay lit, saying how
   const [pick, setPick] = createSignal<{ kind: 'W' | 'V'; q: string; options: { label: string; note: string; go: () => void }[] } | null>(null);
-  /** Values settled per call: the arm around this row that cannot happen in its call (first: the row that says why). */
   const deadAt = (it: number) => {
     const s = S();
     if (!s) return null;
@@ -185,7 +163,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   const CODE_H = 18;
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  /** Ghosts (not in this build): a faint dotted line in place, below the row before them, with why. */
   const code = createMemo(() => {
     const s = S();
     if (!s) return new Map();
@@ -199,8 +176,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return m;
   });
   const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n: number, b: { lines: unknown[] }) => n + b.lines.length, 0) * CODE_H + 4])));
-  // around the step (A, on by itself for very long runs): its callers and two levels of callees in full, every other
-  // call folded to its own row; a call opened by hand stays open
   const [around, setAround] = createSignal<boolean | null>(null);
   const [opened, setOpened] = createSignal<Set<number>>(new Set());
   const aroundOn = () => around() ?? (S()?.items.length ?? 0) > AROUND_AT;
@@ -232,7 +207,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const target = g.y[c.at] - viewH() * 0.36;
     return Math.max(0, Math.min(target + manual(), g.height + 120 - viewH()));
   });
-  // only what is near the viewport is drawn: a run of any size stays fast
   const visible = createMemo(() => {
     const g = geom();
     if (!g) return [] as number[];
@@ -243,7 +217,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return out;
   });
 
-  // ---- what each row is, in this state ----
   const chain = createMemo(() => {
     const c = cur(), s = S(), set = new Set<number>();
     if (!s || !c || c.at >= s.items.length) return set;
@@ -261,7 +234,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R()[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
   const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
-  // ---- metro: the numbers, the facts of each row (built on demand for the rows on screen), a colour per file ----
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
   const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f)); c.set(it, m); } return m; };
@@ -271,7 +243,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return m;
   });
   const colOf = (it: number) => fileCol().get(metro(it).file) ?? fileCol().get(rowOf(it).file) ?? '#7b8279';
-  // (after num and short, which it uses as soon as the view opens with unsaved edits)
   const rippleNote = createMemo(() => {
     const s = S(), c = changed();
     if (!s || !c.size) return '';
@@ -279,7 +250,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const at = [...changedItems()].map((it) => num(it));
     return `edited, not saved: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} · runs at ${at.slice(0, 6).join(', ')}${at.length > 6 ? ' …' : ''}`;
   });
-  /** Notes a row carries itself: the conditions that start at it (loops have their own label slot instead). */
   const notes = (it: number) => {
     const s = S()!, r = rowOf(it), out: string[] = [];
     for (const f of ownFrames(s.run, s.items[it])) {
@@ -294,16 +264,13 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return out.join('   ');
   };
   const uses = (it: number) => (S()!.uses.get(S()!.items[it]) ?? []).map((i) => { const r = R()[i]; return `${short(r.name)} ${r.kind === 'step' ? r.n : R()[r.ref!].n}`; }).join(' · ');
-  /** What a row says about itself when compared: another setting's (`only with DEBUG`), or a change's (`added`, `◆ changed · 2 lines`). */
   const markOf = (r: { only?: string; change?: string; changeNote?: string }) => r.only ?? (r.changeNote ? (r.change === 'changed' ? `◆ ${r.changeNote}` : r.changeNote) : '');
-  /** The same for the calls folded into a row's "uses", grouped: `only with DEBUG: log_line`, `added: validate, check_size`. */
   const usesMarks = (it: number) => {
     const by = new Map<string, string[]>();
     for (const i of S()!.uses.get(S()!.items[it]) ?? []) { const w = markOf(R()[i]); if (w) by.set(w, [...(by.get(w) ?? []), short(R()[i].name)]); }
     return [...by].map(([w, ns]) => ({ text: `${w}: ${ns.join(', ')}`, added: w === 'added' }));
   };
 
-  // ---- moves ----
   let capTimer: ReturnType<typeof setTimeout> | undefined;
   function say(c: { key: string; what: string; why: string }, ms = 2600) {
     setCaption(c);
@@ -313,9 +280,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   function go(m: Move, quiet = false) {
     const s = S();
     if (!s || !trail().length) return;
-    // a folded call: next goes past what runs inside it
     if (m === 'next' && foldedAll().has(cur()!.at)) m = 'over';
-    // following a path: next is the path's next place
     const p = path();
     if (m === 'next' && p) {
       const after = p.items.find((it) => it > cur()!.at);
@@ -325,7 +290,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const r = move(s, trail(), m);
     if (r.note) { say({ key: '', what: r.note, why: '' }); return; }
     const c = r.trail[r.trail.length - 1];
-    // a place inside a folded call opens it; one a what-if skips ends the what-if
     const w = what();
     if (w && c.at >= w.skip[0] && c.at <= w.skip[1]) { setWhat(null); setCompare(false); }
     if (hidden().has(c.at)) setFolded(new Set([...folded()].filter((f) => !(c.at > f && c.at <= s.lastItem[f]))));
@@ -338,7 +302,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (m === 'back') say({ key: '←', what: 'back', why: 'along the path you walked' });
   }
 
-  // play: one step at a strict cadence; any other key stops it
   let timer: ReturnType<typeof setInterval> | undefined;
   createEffect(on([playing, speed], ([p, k]) => setWalkSpeed(p ? k : 0)));
   onCleanup(() => setWalkSpeed(0));
@@ -349,7 +312,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }));
   onCleanup(() => { clearInterval(timer); clearInterval(tourTimer); clearTimeout(capTimer); clearTimeout(peekTimer); });
 
-  // ---- the return route: a dashed line back up the bars of what finished, into the caller, then on ----
   const [ret, setRet] = createSignal<{ d: string; head: string; key: number } | null>(null);
   let retKey = 0;
   function showReturn(from: number, to: number) {
@@ -359,7 +321,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       const s = S(), g = geom();
       if (!s || !g || from >= s.items.length || to >= s.items.length || hidden().has(from)) return;
       const R0 = s.run.rows, back = R0[s.items[to]].caller;
-      // the function that finished: the one on the old chain called by the function control is back in
       let child: number | null = s.items[from];
       while (child != null && R0[child].caller !== back) child = R0[child].caller;
       if (child == null || back == null) return;
@@ -374,7 +335,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     });
   }
 
-  // ---- folding ----
   function toggleAround() {
     const on = !aroundOn();
     setAround(on); setOpened(new Set<number>());
@@ -393,7 +353,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const foldSteps = (it: number) => { const s = S()!; let n = 0; for (let i = it + 1; i <= s.lastItem[it]; i++) if (R()[s.items[i]].kind === 'step') n++; return n; };
   const foldNames = (it: number) => { const s = S()!, out: string[] = []; for (let i = it + 1; i <= s.lastItem[it]; i++) { const r = R()[s.items[i]]; if (r.caller === s.items[it] && r.kind === 'step' && !out.includes(short(r.name))) out.push(short(r.name)); } return out; };
 
-  // ---- search and paths ----
   const [find, setFind] = createSignal<{ q: string; sel: number; fn: string | null; routes: RouteInfo[] } | null>(null);
   const [path, setPath] = createSignal<{ index: number; target: string; items: number[]; names: string } | null>(null);
   const matches = createMemo(() => {
@@ -413,7 +372,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!s) return;
     const routes = routesBetween(s.run, s.items[0], key);
     const name = short(s.run.rows.find((r) => r.key === key)?.name ?? key);
-    if (!routes.length) { // the start itself
+    if (!routes.length) {
       setFind(null); go({ jump: s.itemOf[s.run.rows.findIndex((r) => r.key === key)] }); return;
     }
     if (routes.length === 1) { followPath(routes[0], 0, name); return; }
@@ -429,7 +388,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   const onPath = (it: number) => { const p = path(); return !p || p.items.includes(it); };
 
-  // ---- tour: plays, naming each step, and waits at each loop and decision ----
   const [tour, setTour] = createSignal<'on' | 'waiting' | null>(null);
   let tourTimer: ReturnType<typeof setInterval> | undefined;
   function tell() {
@@ -440,7 +398,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const loop = r.frames.map((f) => s.run.frames[f]).filter((f) => f.kind === 'loop').pop();
     say({ key: 'tour', what: `${num(c.at)} ${r.kind === 'indirect' ? r.text : short(r.name)}`, why: `${by ? `called by ${by}` : 'the start of the run'}${loop ? ` · ${loop.count != null ? `×${loop.count}` : 'in a loop'}` : ' · once'}` }, 0);
   }
-  /** What the tour stops at: a loop starting at the next place, or a condition the next place runs under. */
   function decisionAhead(): string {
     const s = S(), c = cur();
     if (!s || !c || c.at + 1 >= s.items.length) return '';
@@ -470,7 +427,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   function stopTour() { clearInterval(tourTimer); setTour(null); setCaption(null); }
 
-  // ---- sharing ----
   const [share, setShare] = createSignal(false);
   const entryKey = () => entryStart();
   async function copyLink() {
@@ -485,7 +441,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!s) return;
     const rel = (f: string) => (f.startsWith(root() + '/') ? f.slice(root().length + 1) : f);
     const lineOf = (f: string, l: number) => lines(f)?.[l] ?? '';
-    // the files a walkthrough quotes are read first
     const files = new Set(trail().flatMap((t) => (t.at < s.items.length ? [R()[s.items[t.at]].caller] : [])).filter((c): c is number => c != null).map((c) => R()[c].file));
     for (const f of files) lines(f);
     await new Promise((r) => setTimeout(r, 300));
@@ -512,7 +467,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return true;
   }
 
-  // ---- keys ----
   function onKey(e: KeyboardEvent) {
     if (gotoOpen() || find() || noteOpen() || pick() || e.metaKey || e.ctrlKey) return;
     const k = e.key, sh = e.shiftKey;
@@ -547,7 +501,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       Escape: () => { setHelp(false); setFollowed(null); setPick(null); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
     };
     if (k === 'ArrowDown' && cur() && !atEnd() && rowOf(cur()!.at).kind === 'indirect') { say({ key: '↓', what: 'step into', why: 'where it goes is known only at run time' }); e.preventDefault(); return; }
-    if (k === 'Tab') return;   // the flow page switches views (components/Flow.tsx)
+    if (k === 'Tab') return;
     if (k === 'f' && sh) { e.preventDefault(); if (cur()) toggleFold(cur()!.at); return; }
     const a = map[k];
     if (!a || (k === 'F' && !sh)) return;
@@ -556,7 +510,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (typeof a === 'function') a(); else go(a);
   }
 
-  // ---- size, focus, the box's own height ----
   onMount(() => {
     let f = 0;
     const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); }); });
@@ -564,16 +517,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); });
     canvas.focus();
   });
-  // the box is as tall as what it says: measured after it is drawn
   createEffect(on([() => cur()?.at, textTick, width], () => requestAnimationFrame(() => {
     if (!band) return;
     const h = (band.firstElementChild as HTMLElement | null)?.scrollHeight ?? 0;
     if (h && Math.abs(h + 26 - boxH()) > 1) setBoxH(h + 26);
   })));
 
-  // ---- the spine: the whole run, in chapters ----
   const chaps = createMemo(() => (S() ? chapters(S()!) : []));
-  const [chapPop, setChapPop] = createSignal<number | null>(null);   // the y the chapter list opens at
+  const [chapPop, setChapPop] = createSignal<number | null>(null);
   createEffect(on([geom, () => cur()?.at, height, chaps, changedItems, notesByItem], () => drawSpine()));
   function drawSpine() {
     const s = S(), c = cur(), el = spineEl;
@@ -584,7 +535,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     x.scale(dpr, dpr);
     x.clearRect(0, 0, 9, H);
     const n = s.items.length, yOf = (i: number) => Math.round((i / Math.max(1, n)) * (H - 6)) + 3;
-    // each top-level chapter: a hairline beside the ticks, alternating, with a gap between chapters
     chaps().filter((ch) => ch.depth === 0).forEach((ch, k) => {
       x.fillStyle = k % 2 ? '#4f6a6a' : '#5a5442';
       x.fillRect(0, yOf(ch.from) + 1, 1, Math.max(1, yOf(ch.to + 1) - yOf(ch.from) - 3));
@@ -606,7 +556,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const chapAt = (it: number) => chaps().filter((ch) => it >= ch.from && it <= ch.to).pop();
   const stepNo = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? r.n : r.kind === 'ref' ? R()[r.ref!].n : r.caller != null ? R()[r.caller].n : 0; };
 
-  // ---- peek: hover a row to read its code; the selected step stays ----
   const [peek, setPeek] = createSignal<{ it: number; up: boolean } | null>(null);
   let peekTimer: ReturnType<typeof setTimeout> | undefined;
   const peekCode = createMemo(() => {
@@ -621,7 +570,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return { head: `${fn.n} ${short(fn.name)}`, loc: `${basename(fn.file)}:${fn.line + 1}`, lines: L.slice(fn.start, fn.start + n).map((t, k) => ({ n: fn.start + k + 1, html: hlLine(t) })), more: (fn.lines || 0) > n };
   });
 
-  // ---- the header: where we are, and the whole call chain ----
   const [crumbsAll, setCrumbsAll] = createSignal(false);
   const header = createMemo(() => {
     const s = S(), c = cur();
@@ -637,7 +585,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     for (let i: number | null = s.items[c.at]; i != null; i = s.run.rows[i].caller) chain.unshift({ name: r.kind === 'indirect' && i === s.items[c.at] ? r.text ?? '' : short(s.run.rows[i].name), it: s.itemOf[i] });
     return { k: `${n} / ${steps}`, loop, chain };
   });
-  /** The chain as shown: all of it, or its first name and last four when it is long. */
   const crumbs = createMemo(() => {
     const h = header();
     if (!h) return [];
@@ -646,7 +593,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return [c[0], { name: '…', it: -1 }, ...c.slice(-4)];
   });
 
-  // ---- the selected step's box ----
   const facts = createMemo((): Fact[] => {
     const s = S(), c = cur();
     if (!s || !c || c.at >= s.items.length) return [];
@@ -665,7 +611,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const sig = L.slice(r.start, r.line + 1).join(' ').replace(/\s*\{.*$/, '').replace(/\s+/g, ' ').trim();
     return { text: sig, code: true };
   });
-  /** The lines around the call, in the caller: the step itself in context. */
   const callCode = createMemo(() => {
     const c = cur(), s = S();
     if (!c || !s || c.at >= s.items.length) return null;
@@ -680,7 +625,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const ways = createMemo(() => (S() ? stepWays(S()!, trail()) : []));
 
-  /** An outermost loop's summary: how many steps, functions and files run inside it (a chapter of the run). */
   const sumCache = createMemo(() => { S(); nums(); return new Map<number, string>(); });
   const chapterSum = (f: number) => {
     const hit = sumCache().get(f); if (hit != null) return hit;
@@ -808,7 +752,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               }}</For>
               <Show when={ret()} keyed>{(r) => (
                 <svg class="sret" width="10" height="10" ref={(el) => requestAnimationFrame(() => {
-                  // drawn from the step it left, back up and into the caller, then gone
                   const arc = el.querySelector('.arc') as SVGPathElement, len = arc.getTotalLength();
                   arc.style.strokeDasharray = `3 3`;
                   arc.animate([{ clipPath: `inset(0 0 100% 0)` }, { clipPath: 'inset(0 0 0 0)' }], { duration: 650, easing: 'ease-out' });
@@ -1050,20 +993,16 @@ function rowNote(f: RunFrame): string {
   }
 }
 
-/** The run bars: the whole run as a profile of call depth, along the bottom. Green a first call, blue a function
- *  called again, purple a call through a pointer; the current step outlined in pale gold; loops shaded; an orange dot
- *  an edit, a gold line a note; taller is deeper. − / + zoom (then it scrolls); click or drag to go. */
 const SKY_COL = { first: '#7f9e82', again: '#6f86b8', ptr: '#b07fa4', value: '#5f665f' };
 const SKY_H = 30;
 export function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<number, string>; onScrub: (it: number) => void; read: string }) {
   let el!: HTMLCanvasElement, box!: HTMLDivElement, wrap!: HTMLDivElement;
   const [w, setW] = createSignal(800);
-  const [hov, setHov] = createSignal(-1);   // the bar under the pointer
-  const [z, setZ] = createSignal(1);        // zoom: how many times wider than the pane
+  const [hov, setHov] = createSignal(-1);
+  const [z, setZ] = createSignal(1);
   const nums = createMemo(() => (seq() ? stepNumbers(seq()!) : []));
   const zMax = () => { const n = seq()?.items.length ?? 1, dpr = window.devicePixelRatio || 1; return Math.max(1, Math.min((n * 24) / Math.max(1, w()), 30000 / dpr / Math.max(1, w()))); };
   const zoom = (k: number) => setZ(Math.max(1, Math.min(zMax(), z() * k)));
-  // applied on the next frame (the canvas it sizes is inside what is observed), and never wider than the pane at 100%
   onMount(() => { let f = 0; const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => setW(wrap.clientWidth)); }); ro.observe(wrap); onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); }); });
   createEffect(() => {
     const s = seq(), W = Math.floor(w() * z()), H = SKY_H, dpr = window.devicePixelRatio || 1, hv = hov(), N = nums();
@@ -1076,7 +1015,6 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
       const r = s.run.rows[s.items[i]], loops = r.frames.filter((f) => s.run.frames[f].kind === 'loop').length;
       if (loops) { x.fillStyle = `rgba(111,158,158,${Math.min(0.28, 0.06 + loops * 0.06)})`; x.fillRect(i * bw, 0, Math.ceil(bw), H); }
       const h = 3 + (r.depth / maxD) * (H - 8), lit = i === hv, now = i === props.at;
-      // the hovered bar: a faint column behind it, the bar itself a little taller
       if (lit) { x.fillStyle = 'rgba(227,214,173,.10)'; x.fillRect(i * bw, 0, Math.max(2, Math.ceil(bw)), H); }
       x.fillStyle = r.kind === 'indirect' ? SKY_COL.ptr : r.kind === 'value' ? SKY_COL.value : r.kind === 'ref' || N[i]?.again ? SKY_COL.again : SKY_COL.first;
       const hh = lit ? Math.min(H - 2, h + 3) : h, bx = i * bw + gap / 2, bwid = Math.max(lit || now ? 2 : 1, bw - gap);
@@ -1088,7 +1026,6 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
       if (props.notes[i]) { x.fillStyle = '#c9b27a'; x.fillRect(i * bw, 0, Math.max(2, bw), 2); }
     }
   });
-  // zoomed in, the current bar stays in view
   createEffect(on([() => props.at, z, w], () => requestAnimationFrame(() => {
     const n = seq()?.items.length ?? 0;
     if (!wrap || !n || z() <= 1) return;
@@ -1104,12 +1041,11 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
     const up = () => { el.removeEventListener('pointermove', go); el.removeEventListener('pointerup', up); };
     el.addEventListener('pointermove', go); el.addEventListener('pointerup', up);
   };
-  // what the hovered bar holds, in a small box above it
   const tip = createMemo(() => {
     const i = hov(), s = seq();
     if (i < 0 || !s || i >= s.items.length) return null;
     const R = s.run.rows, r = R[s.items[i]], fn = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
-    const nm = (x: string) => x.replace(/^.*::(?=[^:]+$)/, '');   // the name without its scope
+    const nm = (x: string) => x.replace(/^.*::(?=[^:]+$)/, '');
     const what = r.kind === 'step' ? `${r.n}  ${nm(r.name)}` : r.kind === 'ref' ? `→${fn.n}  ${nm(fn.name)}  again`
       : r.kind === 'indirect' ? `call through a pointer · ${nm(r.name)}` : nm(r.name);
     const loops = r.frames.map((f) => s.run.frames[f]).filter((f) => f.kind === 'loop');

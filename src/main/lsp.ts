@@ -1,4 +1,3 @@
-// A small Language Server Protocol client, running in the main process: clangd, and the servers of other language packs.
 import { spawn, execFileSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,19 +6,15 @@ import { atomicWrite } from './files';
 import { createHash } from 'node:crypto';
 import { commandFor, Compiler } from './compilers';
 
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string };
+type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; method: string; timer?: NodeJS.Timeout };
+const REQUEST_MS = 60_000, INITIALIZE_MS = 120_000;
 
 const EXE = process.platform === 'win32' ? 'clangd.exe' : 'clangd';
-/** The clangd that ships inside SkyCodeX (tools/clangd/bin), if this build has one. */
 export function inbuiltClangd(toolsDir: string): string | null {
   for (const p of [path.join(toolsDir, 'clangd', 'bin', EXE), path.join(toolsDir, 'clangd', EXE)]) if (fs.existsSync(p)) return p;
   return null;
 }
 
-/**
- * clangd.path: "auto" (inbuilt, else the system's), "inbuilt", "system", "pack:<id>" (an installed language pack)
- * or a path to any clangd.
- */
 export function findClangd(setting: string, toolsDir: string, packsDir?: string): string | null {
   if (setting === 'inbuilt') return inbuiltClangd(toolsDir);
   if (setting === 'system') return systemClangd();
@@ -31,18 +26,16 @@ export function findClangd(setting: string, toolsDir: string, packsDir?: string)
   return inbuiltClangd(toolsDir) ?? systemClangd();
 }
 
-/** The clangd installed on the system (Xcode on macOS, PATH elsewhere). */
 export function systemClangd(): string | null {
   try {
-    if (process.platform === 'darwin') return execFileSync('xcrun', ['--find', 'clangd'], { encoding: 'utf8' }).trim() || null;
+    if (process.platform === 'darwin') return execFileSync('xcrun', ['--find', 'clangd'], { encoding: 'utf8', timeout: 5000 }).trim() || null;
     const which = process.platform === 'win32' ? 'where' : 'which';
-    return execFileSync(which, ['clangd'], { encoding: 'utf8' }).split(/\r?\n/)[0].trim() || null;
+    return execFileSync(which, ['clangd'], { encoding: 'utf8', timeout: 5000 }).split(/\r?\n/)[0].trim() || null;
   } catch {
     return null;
   }
 }
 
-/** compile_commands.json in the root or a build folder one level down; one written for another place is passed over. */
 export function findCompileCommands(root: string): string | null {
   if (fs.existsSync(path.join(root, 'compile_commands.json')) && !staleCompileCommands(root)) return root;
   for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
@@ -52,12 +45,6 @@ export function findCompileCommands(root: string): string | null {
   return null;
 }
 
-/**
- * Whether a compile database was written for another place: its commands run in a folder that doesn't exist (the
- * project was moved, renamed or copied from another machine since it was built). clangd would index the files at
- * those paths, not these, so the project is treated as having none and SkyCodeX writes its own. Reads only the
- * first entry, so a database of any size is checked at once.
- */
 export function staleCompileCommands(dir: string): boolean {
   let head = '';
   try {
@@ -71,7 +58,6 @@ export function staleCompileCommands(dir: string): boolean {
   return path.isAbsolute(d) && !fs.existsSync(d);
 }
 
-/** Where the project's own compile database is and when it was written ('' when it has none). */
 export function ccStamp(root: string): string {
   const d = root ? findCompileCommands(root) : null;
   if (!d) return '';
@@ -82,7 +68,6 @@ const SKIP_DIR = /^(\.|node_modules$|__pycache__$|language_packs$|third[_-]?part
 const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|m|mm)$/i, HEADER = /\.(h|hh|hpp|hxx|h\+\+|inl|ipp|tcc|tpp)$/i;
 const MAX_SOURCES = 20000;
 
-/** Source files and the folders that hold headers, shallow folders first. */
 export function scanProject(root: string): { sources: string[]; headerDirs: string[] } {
   const sources: string[] = [], headerDirs: string[] = [];
   let level = [root];
@@ -104,14 +89,6 @@ export function scanProject(root: string): { sources: string[]; headerDirs: stri
   return { sources: sources.sort(), headerDirs };
 }
 
-/**
- * A folder with no compile_commands.json (a Meson or Make project not yet built, a plain folder of sources):
- * SkyCodeX writes one into its own state folder, never into the project, so clangd indexes the whole project
- * and the project's own #includes resolve. Flags come from compile_flags.txt when the root has one; otherwise
- * every folder that holds headers is an include path. The commands name the compiler the code is read as
- * (src/main/compilers.ts): a toolchain pack's clang++, g++, or cl.exe in its own flag style; none means clang.
- * Returns that folder, or null when the project has its own.
- */
 export function ensureCompileCommands(root: string, stateDir: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null): string | null {
   if (!root || findCompileCommands(root)) return null;
   const { sources, headerDirs } = scanProject(root);
@@ -124,13 +101,11 @@ export function ensureCompileCommands(root: string, stateDir: string, compiler?:
   const dir = path.join(stateDir, 'compile-db', createHash('sha1').update(root).digest('hex').slice(0, 12));
   const out = path.join(dir, 'compile_commands.json'), text = JSON.stringify(db, null, 1);
   fs.mkdirSync(dir, { recursive: true });
-  // unchanged commands keep clangd's index for this folder (kept beside the file) valid
-  if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) atomicWrite(out, text);   // never half-written: clangd reads it
+  if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) atomicWrite(out, text);
   return dir;
 }
 
 export type CompileEntry = { directory: string; file: string; arguments?: string[]; command?: string; output?: string };
-/** A folder's compile_commands.json, or an error that names the file and what is wrong with it. */
 export function readCompileDb(dir: string): CompileEntry[] {
   const f = path.join(dir, 'compile_commands.json');
   let db: unknown;
@@ -139,12 +114,6 @@ export function readCompileDb(dir: string): CompileEntry[] {
   return db as CompileEntry[];
 }
 
-/**
- * Another build setting: the commands in use (the project's own, or the ones SkyCodeX wrote) with macros defined or
- * undefined (`-DDEBUG`, `-UNDEBUG`, `-DBOARD=2`), written into dir. Each flag goes in before a `--` that ends the
- * options, so the file names stay last; a later -D or -U wins, as with clang. clangd keeps this setting's index
- * beside it, apart from the one as built. Returns dir.
- */
 export function writeSettingDb(inUse: string, flags: string[], dir: string): string {
   const db = readCompileDb(inUse);
   const q = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
@@ -159,7 +128,6 @@ export function writeSettingDb(inUse: string, flags: string[], dir: string): str
   if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== text) atomicWrite(f, text);
   return dir;
 }
-/** The project's other build folders with their own compile_commands.json (build-release/, out/debug …), one level down. */
 export function otherCompileDbs(root: string, inUse: string | null): string[] {
   const out: string[] = [];
   for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
@@ -181,25 +149,15 @@ export class LspClient {
     private onNotify: (method: string, params: unknown) => void,
     private onLog: (line: string) => void,
   ) {}
-  /** Edits clangd asks the client to apply (e.g. from a refactoring); forwarded to the interface. */
   onApplyEdit: (edit: unknown) => void = () => {};
 
   name = 'clangd';
-  /** Answers workspace/configuration (pyright reads its Python from it). */
   settings: Record<string, unknown> = {};
 
-  /** The compile_commands.json folder in use: the project's own, or the one SkyCodeX wrote for it. */
   ccDir: string | null = null;
-  /** The project's own compile_commands.json when clangd started (where, and when it was written). */
   ccSeen = '';
-  /** Whether a build has since written or rewritten the project's own compile_commands.json, so clangd should start again. */
   ccChanged(root: string): boolean { return ccStamp(root) !== this.ccSeen; }
 
-  /**
-   * ccOverride: read the code with these commands instead (another build setting, src/main/main.ts setting:start).
-   * check: the repair engine's clangd (main.ts repair:check), which only reads the files it is given: no index, and
-   * each diagnostic comes with clang's fix-its and the version of the text it was found in.
-   */
   start(clangd: string, root: string, extraArgs: string[], stateDir?: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null, env?: Record<string, string>, drivers: (ccDir: string) => string[] = () => [], ccOverride?: string, check = false): Promise<unknown> {
     const args = check ? ['--background-index=false', '--header-insertion=never', '--log=error', '--pch-storage=memory']
       : ['--background-index', '--background-index-priority=low', '--header-insertion=never', '--log=error', '--pch-storage=memory'];
@@ -210,8 +168,6 @@ export class LspClient {
     this.ccDir = cc;
     this.ccSeen = ccStamp(root);
     if (cc) args.push(`--compile-commands-dir=${cc}`);
-    // the compilers clangd may ask for their headers and macros: the one the code is read as, and those the project's
-    // own compile_commands.json names (when they are installed compilers)
     const q = [...(compiler && compiler.kind !== 'msvc' ? [compiler.cxx, compiler.cc] : []), ...(own && cc ? drivers(cc) : [])];
     if (q.length) args.push(`--query-driver=${[...new Set(q)].join(',')}`);
     args.push(...extraArgs);
@@ -229,12 +185,20 @@ export class LspClient {
     p.on('exit', (code) => {
       if (this.proc !== p) return;
       this.onLog(`${this.name} exited (${code})`);
-      for (const q of this.pending.values()) q.reject(new Error(`${this.name} exited (${code})`));
-      this.pending.clear();
+      this.failAll(`${this.name} exited (${code})`);
       this.proc = null;
       this.onNotify('$/exit', { code });
     });
-    p.on('error', (e) => { this.onLog(`${this.name} failed to start: ${e.message}`); });
+    let started = false;
+    p.on('spawn', () => { started = true; });
+    p.on('error', (e) => {
+      this.onLog(`${this.name} ${started ? 'stopped' : 'failed to start'}: ${e.message}`);
+      if (this.proc !== p) return;
+      this.proc = null;
+      this.failAll(`${this.name} ${started ? 'stopped' : 'failed to start'}: ${e.message}`);
+      if (started) { try { p.kill(); } catch {  } this.onNotify('$/exit', { code: null }); }
+    });
+    p.stdin?.on('error', (e) => this.onLog(`${this.name}: ${e.message}`));
     const rootUri = pathToFileURL(root).href;
     this.ready = this.request('initialize', {
       processId: process.pid,
@@ -268,16 +232,19 @@ export class LspClient {
   stop(): void {
     const p = this.proc;
     if (!p) return;
-    try { this.notify('exit', null); } catch { /* already gone */ }
-    // Detach the old process first: its late exit must not fail requests sent to the next one.
+    try { this.notify('exit', null); } catch {  }
     p.removeAllListeners('exit');
     p.stdout?.removeAllListeners('data');
     p.stderr?.removeAllListeners('data');
     p.kill();
     this.proc = null;
-    for (const q of this.pending.values()) q.reject(new Error(`${this.name} restarted`));
-    this.pending.clear();
+    this.failAll(`${this.name} restarted`);
     this.buf = Buffer.alloc(0);
+  }
+
+  private failAll(why: string): void {
+    for (const q of this.pending.values()) { clearTimeout(q.timer); q.reject(new Error(why)); }
+    this.pending.clear();
   }
 
   get running(): boolean { return !!this.proc; }
@@ -292,9 +259,17 @@ export class LspClient {
   request(method: string, params: unknown): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, method });
+      const ms = method === 'initialize' ? INITIALIZE_MS : REQUEST_MS;
+      const timer = setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        this.onLog(`${this.name}: ${method} had no answer in ${ms / 1000} s`);
+        try { this.notify('$/cancelRequest', { id }); } catch {  }
+        reject(new Error(`${method}: no answer from ${this.name} in ${ms / 1000} s`));
+      }, ms);
+      timer.unref?.();
+      this.pending.set(id, { resolve, reject, method, timer });
       try { this.send({ jsonrpc: '2.0', id, method, params }); }
-      catch (e) { this.pending.delete(id); reject(e as Error); }
+      catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e as Error); }
     });
   }
 
@@ -320,6 +295,7 @@ export class LspClient {
       else if (msg.id !== undefined) {
         const q = this.pending.get(msg.id);
         if (!q) continue;
+        clearTimeout(q.timer);
         this.pending.delete(msg.id);
         if (msg.error) q.reject(new Error(`${q.method}: ${msg.error.message}`));
         else q.resolve(msg.result ?? null);
@@ -327,11 +303,9 @@ export class LspClient {
     }
   }
 
-  // servers ask a few things of the client; reply minimally so they never wait on us.
   private answerServerRequest(id: number, method: string, params?: unknown): void {
     let result: unknown = null;
     if (method === 'workspace/configuration') {
-      // each item names a section such as "python" or "python.analysis"
       result = ((params as { items?: { section?: string }[] })?.items ?? []).map((it) => (it.section ?? '').split('.').reduce<any>((o, k) => (o && k ? o[k] : o), this.settings) ?? null);
     }
     if (method === 'workspace/applyEdit') { this.onApplyEdit((params as { edit: unknown }).edit); result = { applied: true }; }
@@ -339,16 +313,12 @@ export class LspClient {
   }
 }
 
-// ---------- headers clang can't recognise by name ----------
-// A header with no extension, or one such as .tcc or .tpp, is passed to clang as a linker input and clangd builds nothing
-// ("Unable to handle compilation"). Such files get a command of their own: the project's flags plus -x c++-header.
 const CLANG_KNOWS = /\.(c|cc|cp|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|m|mm|cu|cuh|cppm|ccm|cxxm|c\+\+m|ixx|i|ii)$/i;
-const STDLIB = /[\\/]c\+\+[\\/](v\d+|\d+(\.\d+)*)[\\/]/;   // libc++ and libstdc++: clangd already handles these itself
-const FRAGMENT = /\.(def|inc)$/i;                       // X-macro tables and include fragments: meaningless on their own
+const STDLIB = /[\\/]c\+\+[\\/](v\d+|\d+(\.\d+)*)[\\/]/;
+const FRAGMENT = /\.(def|inc)$/i;
 
 export interface HeaderCommand { workingDirectory: string; compilationCommand: string[] }
 
-/** Splits a compile command the way a POSIX shell would (quotes and backslashes). */
 export function splitCommand(cmd: string): string[] {
   const out: string[] = [];
   let cur = '', q: string | null = null, any = false;
@@ -364,7 +334,6 @@ export function splitCommand(cmd: string): string[] {
   return out;
 }
 
-/** The flags of one compile command, without its input, output and dependency-file arguments. */
 export function flagsOf(args: string[], input: string): string[] {
   const out: string[] = [];
   const takesValue = new Set(['-o', '-x', '-MF', '-MT', '-MQ', '-MJ']);
@@ -379,22 +348,30 @@ export function flagsOf(args: string[], input: string): string[] {
   return out;
 }
 
-/** A command for a C/C++ file whose name clang doesn't recognise, or null when clangd needs none. */
+const dbCache = new Map<string, { stamp: string; entries: { directory: string; file: string; arguments?: string[]; command?: string }[] }>();
+function parsedDb(f: string) {
+  const st = fs.statSync(f), stamp = `${st.size}:${st.mtimeMs}`, hit = dbCache.get(f);
+  if (hit && hit.stamp === stamp) return hit.entries;
+  const entries = JSON.parse(fs.readFileSync(f, 'utf8')) as { directory: string; file: string; arguments?: string[]; command?: string }[];
+  if (dbCache.size > 8) dbCache.clear();
+  dbCache.set(f, { stamp, entries });
+  return entries;
+}
+
 export function headerCommand(file: string, root: string, ccDirInUse?: string | null): HeaderCommand | null {
   if (CLANG_KNOWS.test(file) || STDLIB.test(file) || FRAGMENT.test(file)) return null;
   let dir = root || path.dirname(file), flags: string[] = [], compiler = 'clang++';
   const ccDir = ccDirInUse ?? (root ? findCompileCommands(root) : null);
   if (ccDir) {
-    // the entry that lives closest to this file lends its flags
     try {
-      const entries = JSON.parse(fs.readFileSync(path.join(ccDir, 'compile_commands.json'), 'utf8')) as { directory: string; file: string; arguments?: string[]; command?: string }[];
+      const entries = parsedDb(path.join(ccDir, 'compile_commands.json'));
       const near = (e: { directory: string; file: string }) => { const f = path.resolve(e.directory, e.file); let n = 0; while (n < f.length && n < file.length && f[n] === file[n]) n++; return n; };
       const best = entries.filter((e) => /\.(c|cc|cpp|cxx|c\+\+|mm?)$/i.test(e.file)).sort((a, b) => near(b) - near(a))[0];
       if (best) {
         const args = best.arguments ?? splitCommand(best.command ?? '');
         compiler = args[0] ?? compiler; flags = flagsOf(args, path.resolve(best.directory, best.file)); dir = best.directory;
       }
-    } catch { /* fall back to compile_flags.txt */ }
+    } catch {  }
   }
   if (!flags.length && root) {
     for (let d = path.dirname(file); d.startsWith(root); d = path.dirname(d)) {

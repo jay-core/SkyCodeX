@@ -1,5 +1,3 @@
-// The flow page: the sequence (the default) or the boxes view of the same run, with the entry point chosen above.
-// Tab switches between the two and keeps the selected step.
 import { For, Show, createEffect, on, onMount } from 'solid-js';
 import { flowView, setFlowView, entries, lane, setLane, rebuild, rebuildSettled, ensureBuilt, seq, refreshChanged, magnify, toggleMagnify, stepMagnify, setMagnify, programs, setPrograms } from '../lib/flowstore';
 import Programs from './Programs';
@@ -13,18 +11,13 @@ import GridView from './GridView';
 export default function Flow() {
   onMount(ensureBuilt);
   createEffect(on([lspState, root], () => rebuild(), { defer: true }));
-  // clangd finished indexing: calls into other files resolve now; rebuild until the graph stops changing
   createEffect(on(indexEpoch, () => rebuildSettled(), { defer: true }));
-  // the change ripple: which functions of the run have unsaved edits
   createEffect(on([seq, () => files.list.map((f) => `${f.path}:${f.dirty}`).join('|')], () => refreshChanged()));
-  // a build may have written (or rewritten) the project's compile_commands.json: clangd reads it from the start
   const refresh = async () => {
     refreshTree();
     if (await api.lsp.stale()) { flash('compile_commands.json changed: clangd reads the project again', 5000); await restartLsp(); }
     rebuild();
   };
-  // switching views: the current step glides from its row in one view to its place in the other, as the new view
-  // fades in (no motion when animations are calmed: reduced motion or battery saver)
   async function switchView(v: 'metro' | 'grid') {
     if (v === flowView()) return;
     const sel = (w: string) => document.querySelector(w === 'metro' ? '.seqv .srow.sel' : '.gview .gcell.on') as HTMLElement | null;
@@ -49,7 +42,6 @@ export default function Flow() {
     const done = () => { ghost.remove(); if (to) to.style.visibility = ''; };
     anim.onfinish = done; anim.oncancel = done;
   }
-  // several programs: the page opens on the list of them; a program's flow has a link back to it
   const listing = () => programs() && entries().length > 1;
   const switcher = () => (
     <>
@@ -70,11 +62,8 @@ export default function Flow() {
   );
   return (
     <div style={{ height: '100%' }} onKeyDown={(e) => {
-      // Tab switches between the two views, keeping the selected step
       if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); switchView(flowView() === 'grid' ? 'metro' : 'grid'); }
-      // Backspace: back to the list of programs
       if (e.key === 'Backspace' && entries().length > 1 && !listing() && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); setPrograms(true); }
-      // M: the magnifier, in either view
       if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target as HTMLElement).closest('input, textarea, .cm-editor')) { e.preventDefault(); toggleMagnify(); }
     }}>
       <Show when={!listing()} fallback={<Programs switcher={switcher()} />}>

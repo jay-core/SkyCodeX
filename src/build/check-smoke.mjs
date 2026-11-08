@@ -1,4 +1,3 @@
-// Fails unless a packaged app's boot check passed: node src/build/check-smoke.mjs <folder holding data/>
 import fs from 'node:fs';
 import path from 'node:path';
 

@@ -1,5 +1,3 @@
-// The folder-wide content search, over the code pane: the query, then every matching line grouped by file. ↑ ↓ choose,
-// ↵ or a click opens the file at that line, Esc closes (the query is kept for ⌘/Ctrl ⇧ F).
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js';
 import { basename } from '../lib/api';
 import { root, openFile } from '../lib/store';

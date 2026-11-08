@@ -1,4 +1,3 @@
-// Integration tests against the real sample project: binary parsing and clangd.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,7 +44,6 @@ describe('clangd', () => {
     const col = text.split('\n')[line].indexOf('handle(');
     const items = (await lsp.request('textDocument/prepareCallHierarchy', { textDocument: { uri: uri('src/server.cpp') }, position: { line, character: col } })) as any[];
     expect(items?.[0]?.name).toMatch(/(^|::)handle$/);
-    // Cross-file callees appear once clangd's background index has covered the project.
     let calls: any[] = [], names: string[] = [];
     const want = ['parse_headers', 'route', 'send_response', 'record', 'keep_alive'];
     for (let i = 0; i < 120 && !want.every((n) => names.includes(n)); i++) {

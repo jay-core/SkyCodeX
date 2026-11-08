@@ -1,4 +1,3 @@
-// Rust, Python, Go and reference packs: matching releases, arranging what is unpacked, and keeping caches inside the pack.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -42,7 +41,7 @@ describe('release lists', () => {
       { name: 'cpython-3.13.8+20251010-aarch64-apple-darwin-install_only.tar.gz', size: 1, digest: d, browser_download_url: 'u1' },
       { name: 'cpython-3.13.9+20251014-aarch64-apple-darwin-install_only.tar.gz', size: 2, digest: d, browser_download_url: 'u2' },
       { name: 'cpython-3.12.12+20251014-aarch64-apple-darwin-install_only.tar.gz', size: 3, digest: d, browser_download_url: 'u3' },
-      { name: 'cpython-3.11.14+20251014-aarch64-apple-darwin-install_only.tar.gz', size: 3, browser_download_url: 'u4' },   // no digest
+      { name: 'cpython-3.11.14+20251014-aarch64-apple-darwin-install_only.tar.gz', size: 3, browser_download_url: 'u4' },
       { name: 'cpython-3.13.9+20251014-aarch64-apple-darwin-install_only_stripped.tar.gz', size: 2, digest: d, browser_download_url: 'u5' },
       { name: 'cpython-3.13.9+20251014-x86_64-apple-darwin-install_only.tar.gz', size: 2, digest: d, browser_download_url: 'u6' },
     ], 'aarch64-apple-darwin');
@@ -90,13 +89,13 @@ describe('using packs', () => {
     fakeManifest(dir, 'python-3.12.12', 'python', '3.12.12');
     const bins = languageBins(dir);
     expect(bins).toContain(path.join(dir, 'rust-1.91.0', 'bin'));
-    expect(bins.some((b) => b.includes('python-3.12'))).toBe(false);   // the newest of a kind only
+    expect(bins.some((b) => b.includes('python-3.12'))).toBe(false);
     const env = languageEnv(dir);
     expect(env.CARGO_HOME).toBe(path.join(dir, 'rust-1.91.0', 'cargo-home'));
     expect(env.GOPATH.startsWith(path.join(dir, 'go-1.25.3'))).toBe(true);
     expect(env.GOMODCACHE.startsWith(path.join(dir, 'go-1.25.3'))).toBe(true);
     expect(env.PIP_CACHE_DIR.startsWith(path.join(dir, 'python-3.13.9'))).toBe(true);
-    expect(goEnv('/p').GOTOOLCHAIN).toBe('local');   // never downloads another Go by itself
+    expect(goEnv('/p').GOTOOLCHAIN).toBe('local');
   });
   it('runs Pyright with SkyCodeX\'s own Node.js and tells it which Python to use', () => {
     const dir = tmp();

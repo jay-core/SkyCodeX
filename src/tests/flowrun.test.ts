@@ -1,6 +1,3 @@
-// The flow analyser (src/shared/flowrun.ts) on real clangd output, recorded by src/tests/fixtures/record-flow.mjs:
-// tinyhttp end to end, and one function per evaluation-order rule (src/tests/fixtures/rules/rules.cpp).
-// Every expectation here was worked out by hand from the source, not copied from the analyser's output.
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -122,7 +119,6 @@ describe('evaluation-order rules', () => {
 });
 
 describe('the index against the syntax tree', () => {
-  // thorvg's atan2: `a * a` on floats, which clangd's index reports as a call to the project's operator*(Point, …)
   const text = 'float f(float a) {\n    auto s = a * a;\n    return s;\n}\n';
   const R = (l: number, a: number, b: number) => ({ start: { line: l, character: a }, end: { line: l, character: b } });
   const ref = (l: number, a: number, b: number) => ({ kind: 'DeclRef', role: 'expression', detail: 'a', range: R(l, a, b) });
@@ -160,7 +156,6 @@ describe('helpers', () => {
     expect(forCount('for (int i = 0; i < 4; i += 2)', '{}')).toBeNull();
   });
   it('a statement written by a macro (no range in the tree) still gives its calls, and nothing throws', () => {
-    // void f() {\n  GUARD(g());\n}  — clangd gives the macro's if no range; the call inside it keeps one
     const text = 'void f() {\n  GUARD(g());\n}\n';
     const R = (l1: number, c1: number, l2: number, c2: number) => ({ start: { line: l1, character: c1 }, end: { line: l2, character: c2 } });
     const g = { key: 'g', name: 'g', project: true, ctor: false, container: '' };
@@ -169,7 +164,6 @@ describe('helpers', () => {
     ] }] };
     const f = analyseFunction(ast, text, [{ to: g, fromRanges: [R(1, 8, 1, 9)] }]);
     expect(JSON.stringify(f.body)).toContain('"key":"g"');
-    // a tree the analyser cannot follow at all: the calls in source order, marked approximate
     const bad = analyseFunction({ kind: 'Function', range: R(0, 0, 2, 1), children: [{ kind: 'Compound', role: 'statement', range: R(0, 9, 2, 1), children: [{ kind: 'Return', role: 'statement', range: undefined as never, children: [null as never] }] }] }, text, [{ to: g, fromRanges: [R(1, 8, 1, 9)] }]);
     expect(bad.body).toEqual([{ t: 'call', to: g, at: { line: 1, character: 8 }, approx: true }]);
   });
@@ -187,8 +181,6 @@ describe('helpers', () => {
 });
 
 describe('calls clangd does not list yet', () => {
-  // while clangd is still updating its index, a call to another file can be missing from its call list: the body
-  // shows the call, so the caller knows the graph is not complete (src/renderer/lib/flowstore.ts settles on it)
   const { fns } = JSON.parse(fs.readFileSync(path.join(FIX, 'tinyhttp-flow.json'), 'utf8')) as { fns: any[] };
   const root = path.resolve(__dirname, '../../samples/tinyhttp');
   const ph = fns.find((f) => f.name === 'parse_headers'), text = fs.readFileSync(path.join(root, ph.file), 'utf8');

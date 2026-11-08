@@ -28,7 +28,6 @@ html,body{margin:0;background:var(--stage)}
 .label{font:600 11px var(--ui);color:#7d8c80;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px 2px;display:flex;align-items:center;gap:6px}
 .col{display:flex;flex-direction:column;min-width:0;min-height:0}
 
-/* window */
 .win{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg);border-radius:10px;overflow:hidden;
   box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px #0d3318}
 .hdr{height:30px;flex:none;display:flex;align-items:center;padding:0 12px;background:var(--side);border-bottom:1px solid var(--line);font:12px var(--ui);color:var(--dim);position:relative;z-index:2}
@@ -56,7 +55,6 @@ html,body{margin:0;background:var(--stage)}
 .empty{position:absolute;inset:0;display:grid;place-items:center;color:#3c5a45;font:12px/1.5 var(--ui);text-align:center;padding:24px}
 .links{position:absolute;left:0;top:0;pointer-events:none;z-index:6;overflow:visible}
 
-/* code */
 .code{font-family:var(--mono);font-size:12.5px;line-height:20px;padding:8px 0;white-space:pre}
 .ln{display:flex;position:relative}
 .ln .g{width:44px;flex:none;text-align:right;padding-right:14px;color:var(--gut);position:relative;user-select:none}
@@ -84,7 +82,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.g2 .g{box-shadow:inset -3px 0 var(--fn)} .ln.g3 .g{box-shadow:inset -3px 0 var(--ty)} .ln.g4 .g{box-shadow:inset -3px 0 var(--var)} .ln.g5 .g{box-shadow:inset -3px 0 var(--kw)}
 .gd{position:absolute;left:8px;top:6px;width:8px;height:8px;border-radius:50%}
 
-/* cards */
 .cards{padding:4px 8px 8px 20px;display:flex;flex-direction:column;gap:8px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
 .card.focus{border-color:rgba(119,165,165,.65);box-shadow:0 0 0 3px rgba(119,165,165,.09)}
@@ -104,7 +101,6 @@ html,body{margin:0;background:var(--stage)}
 .row.on{background:rgba(119,165,165,.12);color:var(--fg)}
 .cnote{font:11.5px/1.5 var(--ui);color:#94a395;padding:6px 10px}
 
-/* tree */
 .tree{font:12px var(--ui);padding:2px 0}
 .ti{display:flex;align-items:center;gap:6px;height:22px;padding-right:12px;color:#aab3a9;white-space:nowrap}
 .ti .ic{width:10px;color:var(--dim);font-size:9px;flex:none}
@@ -113,7 +109,6 @@ html,body{margin:0;background:var(--stage)}
 .ti .fds{margin-left:auto;display:flex;gap:3px}
 .ti .fd{width:7px;height:7px;border-radius:50%}
 
-/* terminal */
 .term{display:flex;flex-direction:column;background:var(--term);border-top:1px solid var(--line);flex:none;position:relative}
 .tt{height:26px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;font:11px var(--ui);color:var(--dim)}
 .tt .on{color:var(--fg);box-shadow:0 1px 0 var(--kw);padding-bottom:3px}
@@ -121,13 +116,11 @@ html,body{margin:0;background:var(--stage)}
 .term .code{font-size:12px;line-height:18px;padding:2px 2px}
 .okc{color:var(--ty)} .tlink{color:var(--kw);text-decoration:underline;text-underline-offset:3px} .er{color:var(--err)} .wa{color:var(--warn)} .dm{color:var(--dim)}
 
-/* floating */
 .pop{position:absolute;z-index:8;background:var(--pop);border:1px solid #1f4d2c;border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.55);font:12px var(--ui);color:var(--fg)}
 .kbd{display:inline-block;font:500 11px var(--ui);padding:1px 6px;border-radius:4px;border:1px solid #2b5a38;border-bottom-width:2px;background:#00300e;color:var(--fg);margin:0 2px}
 .toast{position:absolute;z-index:9;right:16px;bottom:16px;background:var(--pop);border:1px solid #1f4d2c;border-left:3px solid var(--warn);border-radius:7px;padding:10px 14px;font:12px/1.5 var(--ui);box-shadow:0 16px 40px rgba(0,0,0,.5);max-width:420px}
 .ruler{position:absolute;right:0;top:0;bottom:0;width:8px;background:rgba(0,0,0,.12);z-index:3}
 .ruler i{position:absolute;left:1px;right:1px;height:3px;border-radius:1px}
-/* Lithograph: charcoal, borderless, low contrast */
 :root{
   --bg:#171817; --side:#141514; --term:#131413; --pop:#202220; --card:#1b1c1b; --prev:#151615; --line:transparent;
   --fg:#9ea39b; --dim:#5f665f; --gut:#373b37; --kw:#739696; --fn:#ad9b6f; --ty:#7f9e82; --var:#a8929e; --par:#b0857a; --str:#ab9070;
@@ -175,7 +168,6 @@ html,body{margin:0;background:var(--stage)}
 .ln.chg{box-shadow:inset 2px 0 #4e6a6a}
 .toast{border:0}
 .ln.hitl{background:rgba(115,150,150,.07)}
-/* Metro: typography is the chrome */
 .win{border-radius:0}
 .hdr{height:56px;background:none;padding:0 22px 8px;align-items:flex-end}
 .pv{display:flex;align-items:baseline;gap:24px;font:300 27px var(--ui);letter-spacing:-.01em;white-space:nowrap}
@@ -311,7 +303,6 @@ const TABS=(a='zsh',b='Problems 0')=>`<span class="on">${a}</span><span>${b}</sp
 function frame(no,title,sub,stage,notes){return `<div class="frame"><div class="ttl"><span class="no">${no}</span><h1>${title}</h1><p>${sub}</p><span class="brand">LITHOGRAPH</span></div>
   <div class="stage">${stage}</div>${notes?`<div class="notes">${notes.map(([n,t])=>`<div class="note">${n?`<span class="pin">${n}</span>`:''}${t}</div>`).join('')}</div>`:''}</div>`;}
 
-/* ---------- shared sample project ---------- */
 const PAL=['#ad9b6f','#7f9e82','#a8929e','#739696','#ab9070','#b8766b'];
 const MAIN=R`void Server::start() {
     socket_.listen(port_);
@@ -400,7 +391,6 @@ const mainCards=(focusParse)=>cards(
   card('send_response','net/io.cpp:58',C_SEND,{c:{start:58,params:['s','r']}}));
 
 try{
-/* ---------- scrolling previews, std summaries, ASM per ISA — driven by seek(t) ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
 const SRC=R`Response Server::handle(const Request& req) {
@@ -531,7 +521,6 @@ window.seek=function(t){
   const press=t>7.85&&t<8.15;$('#cha').style.background=press?'rgba(255,255,255,.06)':'';
   $('#isa').style.opacity=$('#opt').style.opacity=clamp((t-8.2)/0.3);
   const isaPress=t>11.25&&t<11.55;$('#isa').style.color=isaPress?'#c9b98f':'';$('#isa').textContent=t<11.5?'arm64 ▾':'x86-64 ▾';
-  // set A: scrolling cards
   c1.style.transform=`translateY(${-scrollAt(t)}px)`;
   const hi=(id,a,b)=>{const c=document.querySelector(`#c1 [data-card="${id}"]`);c.style.background=t>a&&t<b?'#202220':'';c.style.boxShadow=t>a&&t<b?'inset 2px 0 '+colour[id]:'';};
   hi('record',4.35,5.5);hi('sort',6.1,6.8);
@@ -539,7 +528,6 @@ window.seek=function(t){
   else{setItems(itA,(e,k)=>{const p=inC(clamp((t-6.8-0.03*k)/0.25));it(e,-26*p,1-p,-72*p);});
     setItems(itB,(e,k)=>{const p=clamp((t-6.95-0.06*k)/0.55),q=expo(p);const outp=asmOn?inC(clamp((t-8.0-0.04*k)/0.25)):0;it(e,170*(1-q)-26*outp,Math.min(1,p*1.7)*(1-outp),-72*outp);});}
   $('#v2').style.opacity=asmOn?1-clamp((t-8.0)/0.2):1;
-  // asm
   const e=expo(clamp((t-9.6)/0.6));
   if(t<8.0){armR.concat(x86R).forEach(r=>r.style.opacity=0);}
   else{layoutRows(armR,e,{});layoutRows(x86R,e,{});
@@ -547,7 +535,6 @@ window.seek=function(t){
     if(t<11.62)x86R.forEach(r=>r.style.opacity=0);else feather(x86R,clamp((t-11.62)/0.9),1);
 }
   if(asmOn&&t>8.4){[[56,'g2'],[57,'g3'],[58,'g4'],[59,'g5'],[60,'g6']].forEach(([n,c])=>ln(n).classList.add(c));}
-  // lines
   const anc=id=>document.querySelector(`#codep .call[data-call="${id}"]`);
   let pairs=[],alpha=1;
   if(t<6.8){pairs=['parse_headers','route','apply_cors','keep_alive','compress','sort','send_response','record'].map(id=>[anc(id),document.querySelector(`#c1 [data-card="${id}"] .card-h`),colour[id],1]);alpha=t>6.7?clamp((6.8-t)/0.1):1;}

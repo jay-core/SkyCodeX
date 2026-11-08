@@ -1,4 +1,3 @@
-// A minimal LSP client for clangd, for the feasibility probe.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';

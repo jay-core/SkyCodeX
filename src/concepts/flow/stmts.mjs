@@ -1,6 +1,3 @@
-// Every statement of each function in a walk, from clangd's syntax tree: kind (code, if, else, loop, return, break,
-// continue), where it sits, how deeply it is nested, and its text. Adds `stmts` to each row of the data.
-// usage: node stmts.mjs <data.json> <root> <compile-commands dir>
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +5,7 @@ import { startClangd, uri } from './lsp.mjs';
 
 const [dataPath, root, ccDir] = process.argv.slice(2);
 const d = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-const REPO = fileURLToPath(new URL('../../..', import.meta.url));   // the repository, from this script's place
+const REPO = fileURLToPath(new URL('../../..', import.meta.url));
 const c = startClangd(path.join(REPO, 'tools/clangd/bin/clangd'), root, ccDir);
 await c.init();
 const src = new Map(), syms = new Map();
@@ -30,7 +27,7 @@ const text = (f, r) => {
   if (r.end.line === r.start.line) t = t.slice(0, r.end.character - r.start.character + 1);
   return t.replace(/\s+/g, ' ').trim().replace(/\{$/, '').trim();
 };
-const header = (f, r) => {   // a loop or if header, up to its closing parenthesis
+const header = (f, r) => {
   const s = lines(f).slice(r.start.line, r.start.line + 3).join(' ').slice(r.start.character);
   let depth = 0;
   for (let i = s.indexOf('('); i >= 0 && i < s.length; i++) { if (s[i] === '(') depth++; else if (s[i] === ')' && --depth === 0) return s.slice(0, i + 1).replace(/\s+/g, ' ').trim(); }
@@ -50,9 +47,8 @@ for (const r of d.rows) {
     if (n.kind === 'If') {
       const kids = n.children ?? [];
       const cond = kids.find((k) => k.role === 'expression') ?? kids[0];
-      // the condition is decided after the calls inside it run: the decision sits at its end
       out.push({ kind: 'if', at: cond.range.end, line: n.range.start.line + 1, depth, text: header(f, n.range) });
-      const rest = kids.slice(kids.indexOf(cond) + 1);   // then, and else: statements or single expressions
+      const rest = kids.slice(kids.indexOf(cond) + 1);
       emit(rest[0], depth + 1);
       if (rest[1]) { out.push({ kind: 'else', at: rest[1].range.start, line: rest[1].range.start.line + 1, depth, text: 'else' }); emit(rest[1], depth + 1); }
       return;
@@ -60,14 +56,13 @@ for (const r of d.rows) {
     if (LOOP.has(n.kind)) {
       out.push({ kind: 'loop', at: n.range.start, line: n.range.start.line + 1, depth, text: header(f, n.range) });
       const kids = n.children ?? [];
-      emit(kids[kids.length - 1], depth + 1);   // the body is the last child
+      emit(kids[kids.length - 1], depth + 1);
       return;
     }
     const kind = n.kind === 'Return' ? 'return' : n.kind === 'Break' ? 'break' : n.kind === 'Continue' ? 'continue' : 'code';
     out.push({ kind, at: n.range.start, end: n.range.end, line: n.range.start.line + 1, depth, text: text(f, n.range) });
   };
   emit(body, 0);
-  // a statement whose call is a step of the walk is that step; it is not listed twice
   const kids = d.rows.map((k, i) => ({ k, i })).filter(({ k }) => k.caller === d.rows.indexOf(r) && k.at);
   for (const s of out) {
     if (s.kind !== 'code' && s.kind !== 'return') continue;

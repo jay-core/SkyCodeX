@@ -1,8 +1,3 @@
-// The boxes view: the run of the chosen entry point (the one the sequence walks) drawn as files (boxes) holding the
-// functions that run in them (rows, in execution order), with a line from each caller's row to each callee's row
-// carrying the calls' step numbers. Any scale scrolls; zoomed out it is drawn as files, then folders, so text stays
-// readable. The selected step is the sequence's (Tab keeps it). Shift-click a second function for every route between
-// the two; Space plays the run as a marker moving along the lines. The model and layout: src/shared/flowboxes.ts.
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import ELK from 'elkjs/lib/elk-api.js';
@@ -21,20 +16,15 @@ import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { setPalette } from '../lib/actions';
 
-// the layout engine runs in a worker, so laying out a large run never holds up the window; it is the same code
-// elk.bundled.js runs on the page, so every layout is the same
 const elk = new ELK({ workerFactory: () => new ElkWorker() }) as unknown as { layout: (g: unknown) => Promise<any> };
 type Zoom = 'all' | 'width' | '100' | '150' | '';
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
-/** Metro motion: a quick start and a long, gentle settle. */
 const METRO = (t: number) => 1 - Math.pow(1 - t, 4);
 const LABEL_PX = 12, LABEL_CH = 7.2;
-/** The zoom chosen last time, or null the first time. */
 const storedZoom = (): Zoom | null => { try { const z = localStorage.getItem('flow.boxes.zoom'); return z === 'all' || z === 'width' || z === '100' || z === '150' || z === '' ? z : null; } catch { return null; } };
 
 const ALT = navigator.platform.startsWith('Mac') ? '⌥' : 'Alt';
 
-/** The three levels' layouts of a run, kept while that run is shown: switching views and back lays nothing out again. */
 const layCache = new WeakMap<object, Partial<Record<Level, Lay>>>();
 
 export default function FlowBoxes(props: { switcher: JSX.Element }) {
@@ -47,13 +37,12 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const [k, setK] = createSignal(1);
   const chosen = storedZoom();
   const [zoom, setZoomRaw] = createSignal<Zoom>(chosen ?? 'width');
-  const setZoom = (z: Zoom) => { setZoomRaw(z); try { localStorage.setItem('flow.boxes.zoom', z); } catch { /* kept for this run */ } };
+  const setZoom = (z: Zoom) => { setZoomRaw(z); try { localStorage.setItem('flow.boxes.zoom', z); } catch {  } };
   const [size, setSize] = createSignal({ w: 1000, h: 700 });
-  const [view, setView] = createSignal({ x: 0, y: 0 });   // scroll position, for the minimap
+  const [view, setView] = createSignal({ x: 0, y: 0 });
   const level = createMemo(() => levelFor(k()));
   const lay = createMemo(() => lays()[level()] ?? null);
 
-  // ---- layout: all three levels, once per run ----
   let gen = 0, fitted = false;
   createEffect(on(model, async (m) => {
     const g = ++gen;
@@ -66,15 +55,12 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     }
     setLays(out);
     if (!fitted || zoom()) {
-      // the first time: fit the width if the functions stay readable there, else 100% and scroll
       const z = !fitted && !chosen ? (fitK('width') >= LEVEL_AT.functions ? 'width' : '100') : zoom() || 'width';
       fitted = true;
       applyZoom(z, 0);
     }
   }));
 
-  // ---- scale ----
-  /** The largest scale that fits, on the level that scale draws: functions if they fit readably, else files, else folders. */
   function fitK(kind: 'width' | 'all'): number {
     const L = lays(), aw = size().w - 2 * PAD, ah = size().h - 2 * PAD;
     const f = (lv: Level) => { const l = L[lv]; return !l || !l.w ? 1 : kind === 'width' ? aw / l.w : Math.min(aw / l.w, ah / Math.max(1, l.h)); };
@@ -89,7 +75,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     const k1 = z === '100' ? 1 : z === '150' ? 1.5 : z === 'all' || z === 'width' ? fitK(z) : k();
     zoomTo(k1, { ms, keep: true });
   }
-  /** The place under a screen point, as a spot in a file's box: kept there whatever level the new scale draws. */
   function anchorAt(ax: number, ay: number) {
     const l = lay();
     if (!l) return null;
@@ -117,7 +102,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   }
   const syncView = () => { if (scroller) setView({ x: scroller.scrollLeft, y: scroller.scrollTop }); };
 
-  // ---- smooth moves ----
   function animate(ms: number, f: (t: number) => boolean | void): Promise<void> {
     return new Promise((done) => {
       const t0 = performance.now();
@@ -131,19 +115,16 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (reduce() || ms <= 0) { scroller.scrollLeft = x; scroller.scrollTop = y; syncView(); return Promise.resolve(); }
     return animate(ms, (t) => { if (id !== scrollAnim) return false; scroller.scrollLeft = x0 + (x - x0) * METRO(t); scroller.scrollTop = y0 + (y - y0) * METRO(t); syncView(); return true; });
   }
-  /** Brings a spot of the diagram into view: nothing moves if it is already comfortably in sight. */
   function reveal(r: { x: number; y: number; w: number; h: number }, ms = 520): Promise<void> {
     const m = 70, kk = k(), x = r.x * kk + PAD, y = r.y * kk + PAD, w = r.w * kk, h = r.h * kk;
     const vx = scroller.scrollLeft, vy = scroller.scrollTop, vw = scroller.clientWidth, vh = scroller.clientHeight;
     if (x >= vx + m && x + w <= vx + vw - m && y >= vy + m && y + h <= vy + vh - m) return Promise.resolve();
     const far = x + w < vx - vw || x > vx + 2 * vw || y + h < vy - vh || y > vy + 2 * vh;
-    // close by: the least movement that brings it in; far: put it at a third of the view
     const nx = far ? x - vw / 3 : x < vx + m ? x - m : x + w > vx + vw - m ? x + w - vw + m : vx;
     const ny = far ? y - vh / 3 : y < vy + m ? y - m : y + h > vy + vh - m ? y + h - vh + m : vy;
     return scrollTo(Math.max(0, nx), Math.max(0, ny), ms);
   }
 
-  // ---- the selected step (the sequence's) ----
   const cur = () => trail()[trail().length - 1];
   const selRow = createMemo(() => { const s = S(), c = cur(); return !s || !c || c.at >= s.items.length ? -1 : stepOf(s.run, s.items[c.at]); });
   const chain = createMemo(() => { const out = new Set<number>(); const s = S(); if (!s) return out; for (let i: number | null = selRow(); i != null && i >= 0; i = s.run.rows[i].caller) out.add(i); return out; });
@@ -163,12 +144,10 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (it >= 0) report(stepMove({ jump: it }));
   }
 
-  // ---- routes between two functions, focus, how often ----
   const [route, setRoute] = createSignal<{ from: number; to: number; list: RouteInfo[]; only: number } | null>(null);
   const [focus, setFocus] = createSignal<number | null>(null);
   const [heat, setHeat] = createSignal(false);
-  const [hot, setHot] = createSignal<Set<number>>(new Set());   // rows a walking marker has reached
-  /** Rows and lines lit by a route or by focus; null when neither is on (then everything shows as usual). */
+  const [hot, setHot] = createSignal<Set<number>>(new Set());
   const active = createMemo(() => {
     const m = model(), r = route(), f = focus();
     if (!m) return null;
@@ -194,18 +173,16 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (!s || from < 0) return;
     if (row === from) { say('', 'pick a different function', 'shift-click the end of the route'); return; }
     let list = routesBetween(s.run, from, s.run.rows[row].key), a = from, b = row;
-    if (!list.length) { list = routesBetween(s.run, row, s.run.rows[from].key); a = row; b = from; }   // the other way round
+    if (!list.length) { list = routesBetween(s.run, row, s.run.rows[from].key); a = row; b = from; }
     if (!list.length) { say('', `no route between ${short(s.run.rows[from].name)} and ${short(s.run.rows[row].name)}`, 'neither reaches the other in this run'); return; }
     setFocus(null);
     setRoute({ from: a, to: b, list, only: list.length === 1 ? 0 : -1 });
   }
 
-  // ---- a marker along the lines ----
   const [marker, setMarker] = createSignal<{ at: Pt; path: Pt[] } | null>(null);
   const [playing, setPlaying] = createSignal(false);
   const [speed, setSpeed] = createSignal(1);
   let walking = false, walkId = 0;
-  /** Moves the marker along a path at an even speed; the view follows it when it nears the edge. */
   async function travel(pts: Pt[], id: number): Promise<boolean> {
     if (pts.length < 2) return id === walkId;
     const seg = [0];
@@ -231,7 +208,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     });
     return id === walkId;
   }
-  /** The next move when playing: another pass of a loop whose count is known until its last pass, else on. */
   function playMove(): Move | null {
     const s = S(), c = cur();
     if (!s || !c || c.at >= s.items.length) return null;
@@ -250,7 +226,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     const r = move(s, trail(), mv);
     if (r.note) return false;
     const to = r.trail[r.trail.length - 1].at;
-    // a loop whose count is not known: one pass, then on — and say so
     const left = loopsAt(s, c.at).filter((f) => s.span.get(f)![1] === c.at && s.run.frames[f].count == null && !loopsAt(s, to).includes(f));
     if (to >= s.items.length) { report(stepMove(mv)); return false; }
     await revealRow(stepOf(s.run, s.items[to]), 420 / speed());
@@ -283,7 +258,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (first) await reveal({ x: first.x, y: first.y - 14, w: 200, h: 28 }, 420);
     const seg = [0];
     for (let j = 1; j < pts.length; j++) seg.push(seg[j - 1] + Math.hypot(pts[j].x - pts[j - 1].x, pts[j].y - pts[j - 1].y));
-    // the marker lights each function as it reaches it
     const watch = setInterval(() => { const mk = marker(); if (mk) at(mk.at); }, 30);
     await travel(pts, id);
     clearInterval(watch);
@@ -292,7 +266,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     setTimeout(() => setHot(new Set<number>()), 1600);
   }
 
-  // ---- the change ripple: functions edited and not saved, and the calls that reach them ----
   const ripple = createMemo(() => {
     const s = S(), c = changed(), chainOf = new Set<number>();
     if (!s || !c.size) return { rows: c, chain: chainOf };
@@ -302,7 +275,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
 
 
 
-  // ---- captions ----
   const [caption, setCaption] = createSignal<{ key: string; what: string; why: string } | null>(null);
   let capTimer: ReturnType<typeof setTimeout> | undefined;
   function say(key: string, what: string, why = '') { setCaption({ key, what, why }); clearTimeout(capTimer); capTimer = setTimeout(() => setCaption(null), 2600); }
@@ -312,7 +284,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   }
   onCleanup(() => { clearTimeout(capTimer); stop(); });
 
-  // ---- keys ----
   function onKey(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey) return;
     const key = e.key, sh = e.shiftKey;
@@ -320,7 +291,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     if (e.altKey && (key === '-' || key === '–')) { e.preventDefault(); zoomTo(k() / 1.25, { ms: 260 }); return; }
     if (e.altKey && (key === '0' || key === 'º')) { e.preventDefault(); applyZoom('width'); return; }
     const moves: Record<string, Move> = { ArrowRight: sh ? 'over' : 'next', ArrowLeft: sh ? 'prevPass' : 'back', ArrowUp: 'out', r: 'again', R: 'again', l: 'leave', L: 'leave', ']': 'nextSibling', '[': 'prevSibling', Home: 'home', End: 'end' };
-    if (key === 'Tab') return;   // the flow page switches views
+    if (key === 'Tab') return;
     if (key === ' ') { e.preventDefault(); play(); return; }
     if (key === '+' || key === '=') { setSpeed(Math.min(4, speed() * 1.5)); return; }
     if (key === '-') { setSpeed(Math.max(0.25, speed() / 1.5)); return; }
@@ -337,9 +308,8 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     report(stepMove(m));
   }
 
-  // ---- pointer: scroll and zoom; drag empty space to pan ----
   const onWheel = (e: WheelEvent) => {
-    if (!(e.ctrlKey || e.metaKey || e.altKey)) return;   // plain wheel and trackpad scroll the view
+    if (!(e.ctrlKey || e.metaKey || e.altKey)) return;
     e.preventDefault();
     const r = scroller.getBoundingClientRect();
     zoomTo(k() * Math.exp(-e.deltaY / 300), { ax: e.clientX - r.left, ay: e.clientY - r.top });
@@ -354,7 +324,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
   const onUp = () => { pan = null; scroller.classList.remove('drag'); };
 
   onMount(() => {
-    // re-fit on the next frame (a fit can bring scrollbars, which resize the view again); scrollbars alone don't re-fit
     let frame = 0;
     const ro = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
@@ -369,17 +338,13 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     canvasEl.focus();
   });
 
-  // ---- what is drawn ----
   const labels = createMemo(() => (lay() ? placeLabels(lay()!, labelScale(k()), LABEL_CH) : []));
   const lineByKey = createMemo(() => new Map((lay()?.lines ?? []).map((l) => [`${l.a}>${l.b}`, l])));
   const labelOn = (keys: string[]) => { const a = active(); if (!a) return null; return keys.some((x) => { const l = lineByKey().get(x); return !!l && !!lineOn(l); }); };
   const rowOn = (row: number) => { const a = active(); return !a ? null : a.rows.has(row); };
-  // ways out (E): functions that can leave early keep their strength, with how many ways; the rest fade
   const outs = (row: number) => (S() ? earlyExits(S()!.run, row) : []);
-  // a value followed (W or V in the sequence view): the functions that touch it stay, saying how; the rest fade
   const touches = (row: number) => followed()?.hits.filter((h) => h.row === row || (R()[h.row]?.kind === 'ref' && R()[h.row].ref === row)) ?? [];
   const boxTouched = (node: string) => { const m = model(); return !!m && R().some((r, i) => r.kind === 'step' && nodeOf(m, level(), r.file) === node && touches(i).length > 0); };
-  /** Values settled per call: why this step's call cannot happen (it sits in an arm its caller's values rule out). */
   const deadOf = (row: number) => { const s = S(), f = s?.run.rows[row]?.frames.find((k) => s.run.frames[k].dead); return f == null ? null : s!.run.frames[f].dead!; };
   const boxOut = (node: string) => { const m = model(); return !!m && R().some((r, i) => r.kind === 'step' && nodeOf(m, level(), r.file) === node && outs(i).length > 0); };
   function toggleWaysOut() {
@@ -388,9 +353,7 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     say('E', on ? `ways out: ${n} function${n === 1 ? '' : 's'} can leave early` : 'the whole run', on ? 'the usual path fades · E again for all' : '');
   }
   const fileOn = (node: string) => { const a = active(), m = model(); return !a || !m ? null : [...a.files].some((f) => nodeOf(m, level(), f) === node); };
-  /** The boxes drawn: files, or (folders level) folders, keyed as the layout keys them. */
   const nodes = createMemo(() => { const m = model(); return !m ? [] : level() === 'folders' ? m.dirs.map((d) => `dir:${d}`) : m.files; });
-  // a very large diagram draws only the boxes and numbers in view (and a screen around it); small ones draw everything
   const CULL_AT = 120;
   const inView = () => viewRect(view(), size(), k());
   const shownNodes = createMemo(() => {
@@ -405,30 +368,25 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     const r = inView();
     return all.filter((b) => meets(r, { x: b.x - b.w, y: b.y - b.h / 2, w: b.w, h: b.h }));
   });
-  /** A box's files: itself, or a folder's. */
   const filesIn = (node: string) => { const m = model()!; return node.startsWith('dir:') ? m.files.filter((f) => `dir:${m.dirOf(f)}` === node) : [node]; };
   const selNode = () => { const m = model(), r = R()[selRow()]; return m && r ? nodeOf(m, level(), r.file) : ''; };
   const unreached = createMemo(() => { const g = graph(), m = model(); return g && m ? g.boxes.filter((b) => !m.rowsOf.has(b.file)).length : 0; });
   const startFile = () => (S()?.run.rows[0]?.file ?? '');
   const callersOf = (f: string) => { const m = model()!; return new Set(m.calls.filter((c) => R()[c.b].file === f && R()[c.a].file !== f).map((c) => R()[c.a].file)); };
   const rel = (f: string) => (f.startsWith(root() + '/') ? f.slice(root().length + 1) : f);
-  /** The hovered file or folder box when zoomed out: its functions, drawn at screen size beside it, inside the window. */
   const [hoverAt, setHoverAt] = createSignal<{ rect: DOMRect; fns: number[] } | null>(null);
-  // its rows are numbered in the run it was opened on: another run closes it
   createEffect(on(seq, () => setHoverAt(null), { defer: true }));
   const hoverStyle = (h: { rect: DOMRect; fns: number[] }) => {
     const below = window.innerHeight - h.rect.bottom, above = h.rect.top, down = below >= above;
     const room = Math.max(120, (down ? below : above) - 16);
     return { left: `${Math.max(8, Math.min(h.rect.left, window.innerWidth - 560))}px`, [down ? 'top' : 'bottom']: `${down ? h.rect.bottom + 6 : window.innerHeight - h.rect.top + 6}px`, 'max-height': `${room}px` };
   };
-  /** How many of its rows fit in the room beside the box (a row is 23px); the rest are counted. */
   const hoverFits = (h: { rect: DOMRect; fns: number[] }) => {
     const room = Math.max(120, Math.max(window.innerHeight - h.rect.bottom, h.rect.top) - 16);
     const n = Math.max(3, Math.floor((room - 16) / 23));
     return h.fns.length <= n ? h.fns.length : n - 1;
   };
 
-  // minimap: the whole diagram and the part in view, when the diagram is larger than the view
   const over = createMemo(() => { const l = lay(); return !!l && (l.w * k() + 2 * PAD > size().w + 2 || l.h * k() + 2 * PAD > size().h + 2); });
   createEffect(on([lay, k, view, size, over, selRow], () => {
     const l = lay();
@@ -456,8 +414,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     window.addEventListener('pointermove', go); window.addEventListener('pointerup', up);
   };
 
-  // ---- export: the diagram as it is drawn, as an SVG picture ----
-  /** The diagram as drawn, as an SVG picture (null before it is laid out). */
   function svgText(): { out: string; W: number; H: number; level: string } | null {
     const m = model(), l = lay();
     if (!m || !l) return null;
@@ -488,7 +444,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     await api.fs.write(file, x.out);
     flash(`saved ${basename(file)}`, 3000);
   }
-  /** The same picture as a PNG, drawn at twice its size (less when that would pass 16,000 pixels a side). */
   async function exportPng() {
     const x = svgText();
     if (!x) return;
@@ -506,7 +461,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
     flash(`saved ${basename(file)} · ${c.width} × ${c.height}`, 3000);
   }
 
-  // ---- the header: where the walk is ----
   const header = createMemo(() => {
     const s = S(), c = cur();
     if (!s || !c) return '';
@@ -548,7 +502,6 @@ export default function FlowBoxes(props: { switcher: JSX.Element }) {
                     <For each={lay()!.lines}>{(l) => {
                       const d = `M${l.pts.map((p) => `${p.x} ${p.y}`).join(' L')}`, q = l.pts[l.pts.length - 1];
                       const cls = () => ({ thread: l.thread, now: `${l.a}>${l.b}` === nowKey() && lv() === 'functions', chain: lv() === 'functions' && chain().has(l.a) && chain().has(l.b), on: lineOn(l) === true, dim: lineOn(l) === false });
-                      // into a much-called box: drawn only on the step's chain or a chosen route
                       const shown = () => !l.hub || cls().now || cls().chain || lineOn(l) === true;
                       return (
                         <Show when={shown()}><g classList={cls()}>

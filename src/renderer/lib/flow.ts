@@ -1,11 +1,3 @@
-// Builds the flow view: every function reachable from each entry point, numbered in execution order, grouped by file.
-//
-// Fast and complete:
-//  1. the call graph is crawled from clangd's index (callHierarchy/outgoingCalls needs no file open or parsed),
-//     many requests in flight at once, until no new function turns up;
-//  2. a call to a virtual method also reaches every override (classes and their bases come from a quick text pass,
-//     the overriding methods from the index), so a chain doesn't stop at an interface;
-//  3. execution order is numbered afterwards, in memory, once per entry point.
 import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename } from './api';
 import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols, ensureOpen } from './lsp';
 import { states } from './store';
@@ -18,9 +10,7 @@ export interface FlowFn { key: string; item: CallItem; file: string; nums: strin
 export interface FlowEdge { from: string; to: string; nums: string[]; thread: boolean; virtual: boolean; lanes: string[] }
 export interface BoxFn { name: string; num: string; line: number; endLine: number }
 export interface FlowBox { file: string; fns: BoxFn[]; loops: string[]; entries: string[]; thread: boolean; dead: boolean }
-/** One entry point and everything it reaches: a program (one main), or a library's public API. */
 export interface FlowLane { id: string; label: string; file: string; fns: number; files: string[]; start: string }
-/** Between programs: one starts another, or they share code. */
 export interface LaneLink { from: string; to: string; kind: 'starts' | 'shares'; text: string }
 export interface FlowGraph {
   boxes: FlowBox[]; edges: FlowEdge[]; fns: FlowFn[]; entries: { file: string; label: string }[];
@@ -37,7 +27,8 @@ async function readText(file: string) {
   texts.set(file, v);
   return v;
 }
-/** Text and parse tree; the tree is made only when something needs it. */
+export const invalidateFlowText = (file: string) => { texts.delete(file); };
+export const builtText = (file: string): string | undefined => texts.get(file)?.text;
 async function src(file: string) {
   const v = await readText(file);
   if (!v.tree) v.tree = parseCpp(v.text);
@@ -49,27 +40,17 @@ const MAIN_NAMES = new Set(['main', 'wmain', 'WinMain', 'wWinMain']);
 const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|m|mm)$/i, HEADER = /\.(h|hh|hpp|hxx|h\+\+|inl|ipp|tcc)$/i;
 const CONCURRENCY = 24, LIMIT = 20000;
 
-/** Runs fn over items with at most n in flight. */
 async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<unknown>) {
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
 }
 
-/** A main in the project: where its name is, found without clangd. */
 export interface Entry { file: string; line: number; ch: number; name: string; rel: string; label: string; kind?: 'main' | 'interrupt' }
 
-/** Interrupt handlers: nothing in the code calls them, the hardware does — CMSIS vector names, *_ISR, AVR's ISR(…). */
 const ISR_NAME = /^(?:\w+_IRQHandler|SysTick_Handler|PendSV_Handler|SVC_Handler|NMI_Handler|HardFault_Handler|MemManage_Handler|BusFault_Handler|UsageFault_Handler|DebugMon_Handler|\w+_ISR|ISR)$/;
-/** …or marked as one: GCC's interrupt attributes, IAR's and TI's __interrupt. */
 const ISR_MARK = /__attribute__\s*\(\(\s*(?:interrupt|isr|signal)\b|\b__interrupt\b|\b__irq\b/;
-/** The key of the function an entry is: the same as a call item's (keyOf) once clangd resolves it. */
 export const entryKey = (e: Entry) => `${fileToUri(e.file)}#${e.line}`;
 
-/**
- * Every main in the project, found in the parse tree (so a "void main()" inside a string, a GLSL shader say, or a
- * comment is not one) — text only, nothing is asked of clangd, so a project with hundreds of mains (ThreadX: 278)
- * lists them in moments. Ranked by the caller (src/shared/entries.ts).
- */
 export async function findEntries(root: string): Promise<Entry[]> {
   const found: Entry[] = [];
   const files = ((await api.fs.sources(root)) as string[]).filter((f) => SOURCE.test(f));
@@ -82,28 +63,21 @@ export async function findEntries(root: string): Promise<Entry[]> {
       if (!MAIN_NAMES.has(d.name) && !isr) continue;
       const lineText = text.split('\n')[d.line] ?? '';
       const rel = f.startsWith(root) ? f.slice(root.length).replace(/^[\\/]/, '') : f;
-      // AVR's ISR(TIMER0_OVF_vect): the vector names it
       const label = !isr ? programName(f, []) : d.name === 'ISR' ? (lineText.match(/ISR\s*\(\s*(\w+)/)?.[1] ?? 'ISR') : d.name;
       found.push({ file: f, line: d.line, ch: Math.max(0, lineText.search(new RegExp(`\\b${d.name}\\s*\\(`))), name: d.name, rel, label, kind: isr ? 'interrupt' : 'main' });
     }
   });
   return found.sort((a, b) => a.rel.localeCompare(b.rel) || a.line - b.line);
 }
-/** The call item clangd has for an entry; a main inside a disabled #if block has none and appears without calls. */
 export async function resolveEntry(e: Entry): Promise<CallItem> {
   const it = await callItemAt(e.file, { line: e.line, character: e.ch });
   const pos = { line: e.line, character: e.ch };
   return it ?? { name: e.name, kind: 12, uri: fileToUri(e.file), range: { start: pos, end: pos }, selectionRange: { start: pos, end: { line: e.line, character: e.ch + e.name.length } } };
 }
 
-/** Folders whose headers are a library's public interface: inc/, include/, … at most two levels down. */
 const PUBLIC_DIR = /^(inc|include|includes|public|api)$/i;
 const MAX_API = 2000;
 
-/**
- * A library without main starts from its public API: every function and method declared in its public headers,
- * in the order the headers declare them, followed to its definition.
- */
 async function findApi(root: string): Promise<CallItem[]> {
   const headers = ((await api.fs.sources(root)) as string[]).filter((f) => {
     if (!HEADER.test(f) || !f.startsWith(root)) return false;
@@ -128,14 +102,11 @@ async function findApi(root: string): Promise<CallItem[]> {
   return [...out.values()];
 }
 
-// ---------- the crawl ----------
-
 interface Call { to: string; at: Pos; virtual: boolean }
 interface Node { item: CallItem; calls: Call[]; raw: OutgoingCall[] }
 
 const firstRange = (rs: { start: Pos }[]) => rs.reduce((m, r) => (r.start.line < m.line || (r.start.line === m.line && r.start.character < m.character) ? r.start : m), rs[0].start);
 
-/** Classes and their direct bases, from a text pass over the project (no compiler needed). */
 async function classBases(root: string): Promise<Map<string, Set<string>>> {
   const bases = new Map<string, Set<string>>();
   const files = (await api.fs.sources(root)) as string[];
@@ -156,7 +127,6 @@ async function classBases(root: string): Promise<Map<string, Set<string>>> {
   return bases;
 }
 
-/** Every class that derives from cls, directly or not. */
 function derivedOf(bases: Map<string, Set<string>>, cls: string): Set<string> {
   const out = new Set<string>();
   let grew = true;
@@ -167,12 +137,6 @@ function derivedOf(bases: Map<string, Set<string>>, cls: string): Set<string> {
   return out;
 }
 
-/**
- * Before clangd has indexed a project, a call into another file names only its declaration in a header. Its definition
- * is then found from the text: the source files whose left margin names it, parsed, and used when there is exactly one
- * (ports of the same function stay unresolved until the index says which is compiled). Null when none or several.
- */
-/** The project's function names and the source files that define them (by the text sieve), built once per crawl. */
 let nameIdx: { root: string; p: Promise<Map<string, string[]>> } | null = null;
 function nameIndex(root: string): Promise<Map<string, string[]>> {
   if (nameIdx?.root === root) return nameIdx.p;
@@ -206,19 +170,10 @@ function textDefinitions(root: string, entry: string) {
     return p;
   };
 }
-/**
- * The definition in the entry point's own file, when it has one that other files can call (not static): a program
- * links one definition of each function, and the entry's file is surely in it — so where every port or example
- * defines tx_application_define, the program running is the one whose main is shown.
- */
 function ownDefinition<T extends { file: string; d: FnDef; text: string }>(hits: T[], name: string, entry: string): T | null {
   return (entry && hits.find((h) => h.file === entry && h.d.name === name && !isStatic(h))) || null;
 }
 const isStatic = (h: { d: FnDef; text: string }) => /\bstatic\b/.test(h.text.slice(h.d.from, offsetOf(h.text, h.d.line, 0)) + (h.text.split('\n')[h.d.line] ?? ''));
-/**
- * Of several definitions, the one sharing the most folders with the header that declares it (common/inc/tx_api.h →
- * common/src, not common_smp/src); null when none does, or two do equally (one per port: the index decides).
- */
 function nearest<T extends { file: string }>(hits: T[], decl: string): T | null {
   if (hits.length <= 1) return hits[0] ?? null;
   const dirs = (f: string) => f.split(/[\\/]/).slice(0, -1);
@@ -226,13 +181,6 @@ function nearest<T extends { file: string }>(hits: T[], decl: string): T | null 
   const ranked = hits.map((h) => ({ h, s: shared(h.file) })).sort((a, b) => b.s - a.s);
   return ranked[0].s > ranked[1].s ? ranked[0].h : null;
 }
-/**
- * A plain C function defined more than once in the project (one per port or board): clangd's index keeps whichever it
- * read last, so the run could differ between sessions. The pick is made stable instead: the one in the entry point's
- * own file (ownDefinition), else the definition sharing the most folders with the caller, then the first by path.
- * Methods, overloads and static (file-local) functions are
- * left to clangd. Null when clangd's own target stands.
- */
 function stableDefinitions(root: string, entry: string) {
   const picked = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem, caller: string): Promise<CallItem | null> => {
@@ -259,27 +207,20 @@ function stableDefinitions(root: string, entry: string) {
 }
 const declOnly = (it: CallItem) => HEADER.test(it.uri) && it.range.end.line === it.range.start.line;
 
-/**
- * Everything reachable from the starts, from clangd's index, with many requests in flight.
- * Calls to methods that derived classes override also lead to each override.
- */
 async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) => void) {
   const nodes = new Map<string, Node>();
   let truncated = false;
   const bases = await classBases(root);
-  const overridden = new Map<string, Promise<CallItem[]>>();   // method key → its overrides
-  nameIdx = null; taken = null;   // a new crawl reads the text again
-  // one program traced (one start): its entry's file decides between definitions every port or example repeats
+  const overridden = new Map<string, Promise<CallItem[]>>();
+  nameIdx = null; taken = null;
   const entry = starts.length === 1 ? uriToFile(starts[0].uri) : '';
   const fromText = textDefinitions(root, entry), stable = stableDefinitions(root, entry);
 
-  /** Overrides of a method, if its class has derived classes that define a method of that name. */
   const overridesOf = (it: CallItem): Promise<CallItem[]> => {
     const k = keyOf(it);
     let p = overridden.get(k);
     if (p) return p;
     p = (async () => {
-      // clangd's detail for a method is its class ("Shape", "ns::Shape"); some servers give "Shape::area"
       const parts = (it.detail ?? '').split('::').filter(Boolean);
       const cls = parts[parts.length - 1] === it.name ? parts[parts.length - 2] ?? '' : parts[parts.length - 1] ?? '';
       if (it.kind !== 6 || !cls) return [];
@@ -301,20 +242,17 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
     await pool(fresh, CONCURRENCY, async (it) => {
       const node = nodes.get(keyOf(it))!;
       const [raw, subs] = await Promise.all([outgoing(it), overridesOf(it)]);
-      // a callee known only by its declaration (the index still loading): its definition, found from the text
       await Promise.all(raw.map(async (c) => {
         if (!c.to || !c.fromRanges?.length || !inProject(uriToFile(c.to.uri))) return;
         if (declOnly(c.to)) { const d = await fromText(c.to); if (d) c.to = d; }
-        // a C function with one definition per port: the same one every session
         else if (c.to.kind === 12 && /^\w+$/.test(c.to.name) && /\.c$/i.test(uriToFile(c.to.uri))) { const d = await stable(c.to, uriToFile(it.uri)); if (d) c.to = d; }
       }));
-      node.raw = raw;   // every call with every call site, library ones too: the analyser places each one
+      node.raw = raw;
       for (const c of raw) {
         if (!c.fromRanges?.length || !inProject(uriToFile(c.to.uri))) continue;
         node.calls.push({ to: keyOf(c.to), at: firstRange(c.fromRanges), virtual: false });
         if (!nodes.has(keyOf(c.to))) next.push(c.to);
       }
-      // an override runs where the method it overrides is called: drawn from that method, after its own calls
       for (const o of subs) {
         node.calls.push({ to: keyOf(o), at: { line: 1e9, character: 0 }, virtual: true });
         if (!nodes.has(keyOf(o))) next.push(o);
@@ -326,11 +264,8 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   return { nodes, truncated };
 }
 
-// ---------- programs: names, and which one starts which ----------
-
 const SPAWN_RE = /\b(?:std::)?(?:system|_?popen|_?exec(?:l|lp|le|v|vp|vpe|ve)|posix_spawnp?|CreateProcess[AW]?|ShellExecute(?:Ex)?[AW]?|_?spawn(?:l|lp|v|vp)e?|QProcess::(?:start|execute|startDetached)|\.start|boost::process::\w+)\s*\(/g;
 
-/** The name a main is known by: its build target, else its folder (for main.cpp), else its file name. */
 function programName(file: string, targets: { name: string; sources: string[] }[]) {
   const t = targets.find((x) => x.sources.includes(file));
   if (t) return t.name;
@@ -338,22 +273,16 @@ function programName(file: string, targets: { name: string; sources: string[] }[
   return /^(main|app|program)$/i.test(stem) ? basename(file.replace(/[\\/][^\\/]+$/, '')) : stem;
 }
 
-/**
- * The call graph from the given entry points (the flow page passes the one chosen), or, with none, from a library's
- * public API. Only what they reach is traced: the rest of a large project costs nothing.
- */
 export async function buildFlow(root: string, onProgress?: (n: number) => void, starts0: CallItem[] = []): Promise<FlowGraph> {
   const t0 = performance.now();
   const mains = starts0;
   const apiItems = mains.length ? [] : await findApi(root);
   const targets = mains.length > 1 ? ((await api.fs.targets(root).catch(() => [])) as { name: string; sources: string[] }[]) : [];
-  // one lane per main; a library's whole API is one lane, numbered in the order its headers declare it
   const laneStarts: CallItem[][] = mains.length ? mains.map((m) => [m]) : apiItems.length ? [apiItems] : [];
   const starts = await Promise.all(laneStarts.flat().map((s) => withBody(s)));
   const { nodes, truncated } = await crawl(root, starts, onProgress);
   lastCrawl = { root, nodes };
 
-  // every file a function was reached in, read (in parallel) before the numbering walks them
   await pool([...new Set([...nodes.values()].map((n) => uriToFile(n.item.uri)))], 16, (f) => readText(f));
 
   const fns = new Map<string, FlowFn>();
@@ -392,11 +321,10 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
           const edge = edgeMap.get(ek) ?? { from: file, to: callee.file, nums: [], thread: false, virtual: true, lanes: [] };
           if (!edge.nums.includes(calleeNum)) edge.nums.push(calleeNum);
           edge.thread = edge.thread || spawns;
-          edge.virtual = edge.virtual && c.virtual;   // dashed only when every call it carries is through an override
+          edge.virtual = edge.virtual && c.virtual;
           if (!edge.lanes.includes(P)) edge.lanes.push(P);
           edgeMap.set(ek, edge);
         }
-        // numbers assigned while visiting this call repeat with every loop around the call site
         const after = sub ? t : n;
         if (after <= before || off < 0) continue;
         for (const lp of loopsAt(tree, text, off, file)) {
@@ -411,7 +339,6 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
     for (let k = 0; k < laneStarts[e].length; k++) await visit(keyOf(starts[si++]), false, 0);
   }
 
-  // boxes: every file reached, with every function defined in it (numbered when it runs)
   const byFile = new Map<string, FlowFn[]>();
   for (const f of fns.values()) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f]);
   const order = (s: string) => { const m = s.match(/^([A-Z]*)(t?)(\d+)/); return m ? (m[1] ? [...m[1]].reduce((a, ch) => a * 27 + ch.charCodeAt(0) - 64, 0) * 1e6 : 0) + (m[2] ? 5e5 : 0) + Number(m[3]) : 9e9; };
@@ -436,14 +363,12 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
       thread: list.every((f) => f.nums.every((x) => /^[A-Z]*t/.test(x))), dead: false,
     });
   }
-  // files the entry point does not reach: listed, not parsed (a large project has thousands)
   const reached = new Set(byFile.keys());
   for (const f of (await api.fs.sources(root)) as string[]) {
     if (reached.has(f) || !/\.(c|cc|cpp|cxx)$/i.test(f)) continue;
     boxes.push({ file: f, fns: [], loops: [], entries: [], thread: false, dead: true });
   }
 
-  // programs: what each reaches, the code they share, and which starts which
   const lanes: FlowLane[] = laneStarts.map((_, e) => {
     const P = multi ? laneId(e) : '';
     const mine = [...fns.values()].filter((f) => f.nums.some((x) => (P ? x.startsWith(P) && !/[A-Z]/.test(x[P.length] ?? '') : true)));
@@ -459,7 +384,6 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
       const k = l.files.filter((f) => shared.includes(f)).length;
       if (k) links.push({ from: l.id, to: 'shared', kind: 'shares', text: `${k} file${k > 1 ? 's' : ''}` });
     }
-    // a program that runs another by name: system("./server"), execl(".../worker", …), CreateProcess(L"tool.exe", …)
     const defsByFile = new Map<string, FnDef[]>();
     for (const l of lanes) {
       const own = [...fns.values()].filter((f) => f.nums.some((x) => x.startsWith(l.id) && !/[A-Z]/.test(x[l.id.length] ?? '')));
@@ -495,41 +419,26 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
   };
 }
 
-/**
- * How several programs connect: which starts which (by name, through system/exec/CreateProcess…), and the files
- * they share. Traces each one; the program on screen keeps its own trace.
- */
 export async function connectPrograms(root: string, starts: CallItem[], onProgress?: (n: number) => void): Promise<Pick<FlowGraph, 'lanes' | 'links' | 'shared'>> {
   const keep = lastCrawl;
   try { const g = await buildFlow(root, onProgress, starts); return { lanes: g.lanes, links: g.links, shared: g.shared }; }
   finally { lastCrawl = keep; }
 }
 
-// ---------- the run: one entry point's steps in execution order (src/shared/flowrun.ts) ----------
-
 let lastCrawl: { root: string; nodes: Map<string, Node> } | null = null;
-/** A function's facts, kept while its file's text and the calls clangd reports for it (the index still loading names declarations; once loaded, definitions) stay the same. */
 const flowCache = new Map<string, { text: string; calls: string; info: FnInfo }>();
-/** Forgets every file text, parse tree and analysed function, so the next build reads everything again. */
 export function clearFlowCaches() { texts.clear(); flowCache.clear(); candidates.clear(); }
 
-/**
- * Every step from one entry point (a lane's start key), numbered in execution order, with loops, conditions,
- * early exits, threads and indirect calls placed exactly. Uses the graph of the last buildFlow and asks clangd for
- * the syntax tree of each function it reaches (cached by the file's text).
- */
 export async function buildRun(start: string, onProgress?: (done: number, total: number) => void): Promise<Run> {
   if (!lastCrawl) throw new Error('build the flow first');
   const { nodes } = lastCrawl;
   const target = (it: CallItem): Target => ({ key: keyOf(it), name: it.name, project: nodes.has(keyOf(it)), ctor: it.kind === 9, container: `${it.detail ?? ''} ${it.uri}` });
-  // what the start reaches, overrides included
   const reach = new Set<string>([start]);
   for (const k of reach) for (const c of nodes.get(k)?.calls ?? []) reach.add(c.to);
   const byFile = new Map<string, string[]>();
   for (const k of reach) { const n = nodes.get(k); if (n) { const f = uriToFile(n.item.uri); byFile.set(f, [...(byFile.get(f) ?? []), k]); } }
   const flows = new Map<string, FnInfo>();
   let done = 0;
-  // file by file, so each file is opened once and stays open while its functions are read
   await pool([...byFile.keys()], 12, async (file) => {
     const { text } = await readText(file);
     await ensureOpen(file);
@@ -542,7 +451,9 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
       const ast = functionNode((await api.lsp.request('textDocument/ast', { textDocument: { uri: it.uri }, range: it.range }).catch(() => null)) as AstNode | null);
       const flow = ast ? analyseFunction(ast, text, node.raw.filter((c) => c.fromRanges?.length).map((c) => ({ to: target(c.to), fromRanges: c.fromRanges }))) : { body: [], dropped: [] };
       const overrides = node.calls.filter((c) => c.virtual).map((c) => nodes.get(c.to)).filter((x): x is Node => !!x).map((x) => target(x.item));
-      const info: FnInfo = { name: it.name, file, line: it.selectionRange.start.line, ...fnExtent(ast, it.range), flow, overrides, effects: ast ? { ...effects(ast, text), owner: it.kind === 6 || it.kind === 9 ? it.detail : undefined } : undefined };
+      let fx: FnInfo['effects'];
+      if (ast) { try { fx = { ...effects(ast, text), owner: it.kind === 6 || it.kind === 9 ? it.detail : undefined }; } catch { fx = undefined; } }
+      const info: FnInfo = { name: it.name, file, line: it.selectionRange.start.line, ...fnExtent(ast, it.range), flow, overrides, effects: fx };
       if (ast) flowCache.set(ck, { text, calls, info });
       flows.set(k, info);
     }));
@@ -550,28 +461,22 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
     onProgress?.(done, reach.size);
   });
   const run = walkRun(start, (k) => flows.get(k));
-  // calls the bodies make to the project's own functions that the graph doesn't list: the graph isn't complete yet
   const defined = await nameIndex(lastCrawl.root), unlisted = new Set<string>();
   for (const f of flows.values()) for (const n of f.flow.unlisted ?? []) if (defined.has(n)) unlisted.add(n);
   run.unlisted = [...unlisted];
-  // a call through a pointer: the functions whose address the code takes are what it may reach (probable)
   const ind = run.rows.filter((r) => r.kind === 'indirect');
   if (ind.length) {
     const t = await addressTakenIn(lastCrawl.root);
     for (const r of ind) {
       const from = r.caller != null ? run.rows[r.caller].file : '', dir = from.replace(/[\\/][^\\/]*$/, '');
-      // those defined beside the caller first, then by name (each one's place worked out once, not per comparison)
       r.could = t.map(([n, files]) => ({ n, far: +!files.some((f) => f.startsWith(dir)) })).sort((a, b) => a.far - b.far || byName.compare(a.n, b.n)).map((x) => x.n).slice(0, 12);
     }
   }
   return run;
 }
 
-/** The order String.prototype.localeCompare gives, without making a collator per comparison. */
 const byName = new Intl.Collator();
-/** Functions of the project whose address some source file takes, with the files that define them; once per crawl. */
 let taken: { root: string; p: Promise<[string, string[]][]> } | null = null;
-/** Each file's candidate names (addressCandidates), kept while its text is the same: a crawl only checks them against its names. */
 const candidates = new Map<string, { text: string; names: string[] }>();
 function addressTakenIn(root: string): Promise<[string, string[]][]> {
   if (taken?.root === root) return taken.p;

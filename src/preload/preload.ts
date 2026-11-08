@@ -1,4 +1,3 @@
-// The only bridge between the sandboxed interface and the main process.
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 const invoke = (ch: string, ...a: unknown[]) => ipcRenderer.invoke(ch, ...a);
@@ -72,7 +71,6 @@ const api = {
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),
   },
   repair: {
-    /** The checked fixes for the errors in a C/C++ file with this text (src/main/main.ts repair:check). */
     check: (file: string, uri: string, text: string, detail = false) => invoke('repair:check', file, uri, text, detail) as Promise<{ ok: boolean; message?: string; errors?: number; tries?: number; ms?: number;
       base?: string[]; tried?: { error: string; src: string; insert: string; cleared: number; after: string[] | null }[];
       suggestions?: { error: { range: { start: { line: number; character: number }; end: { line: number; character: number } }; message: string }; edit: { from: number; to: number; insert: string }; src: string; why: string; clang: boolean; cleared: number }[] }>,
@@ -82,7 +80,6 @@ const api = {
     start: (job: { root: string; entry: string; flags: string[]; folder?: string; label: string }) => invoke('setting:start', job) as Promise<{ ok: boolean; id?: string; message?: string }>,
     stop: () => invoke('setting:stop'),
     onDone: (cb: (r: any) => void) => on('setting:done', cb),
-    /** The hidden window's side: what to read, and the result. */
     job: () => invoke('setting:job') as Promise<{ id: string; root: string; entry?: string; entryRel?: string; entryName?: string; flags: string[]; label: string; texts?: boolean } | null>,
     done: (result: unknown) => invoke('setting:done', result),
   },
@@ -108,7 +105,6 @@ const api = {
     capture: (name: string) => invoke('smoke:capture', name),
     done: (report: unknown) => invoke('smoke:done', report),
     resize: (w: number, h: number) => invoke('smoke:resize', w, h),
-    /** Starts a CPU profile (no name), or stops it and writes logs/smoke-<name>.cpuprofile. */
     profile: (name: string | null) => invoke('smoke:profile', name) as Promise<string | null>,
   },
 };

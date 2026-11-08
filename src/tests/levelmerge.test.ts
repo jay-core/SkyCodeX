@@ -13,9 +13,9 @@ describe('preview level merge', () => {
     const fresh: L = { caller: { id: 'f' }, cards: [card('z'), card('a'), card('b')], focus: -1 };
     const m = mergeLevel(old, fresh, same);
     expect(m.focus).toBe(2);
-    expect(m.cards[1]).toBe(a);          // unchanged cards stay the same objects
+    expect(m.cards[1]).toBe(a);
     expect(m.cards[2]).toBe(b);
-    expect(m.caller).toBe(old.caller);   // so effects keyed on the caller don't reset pins
+    expect(m.caller).toBe(old.caller);
     expect(keepsDeeper(old, m)).toBe(true);
   });
 

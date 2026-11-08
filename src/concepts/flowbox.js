@@ -1,4 +1,3 @@
-/* ---------- flow as boxes and arrows: hover lists, click opens preview ---------- */
 const PV=(on,offs=[],fn='')=>`<span class="pv"><span class="on">${on}</span>${fn?`<span class="fn">${fn}</span>`:''}${offs.map(o=>`<span class="off">${o}</span>`).join('')}</span>`;
 const clamp=x=>Math.max(0,Math.min(1,x)),expo=p=>p>=1?1:1-Math.pow(2,-10*p),inC=p=>p*p*p,lerp=(a,b,p)=>a+(b-a)*p;
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];

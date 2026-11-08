@@ -1,5 +1,3 @@
-// Records the traversal prototype: steps through the walk in a hidden window with animations slowed down,
-// captures frames as JPEGs with their playback time. Run with Electron: electron record.cjs <page.html> <frames dir> <from> [slow]
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');

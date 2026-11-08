@@ -1,5 +1,3 @@
-// Reading the code as gcc or MSVC: finding the compilers, the commands written for them, which compilers clangd may
-// ask, and (with the real clangd) that a cl.exe command really puts clang into its MSVC mode.
 import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -35,7 +33,7 @@ describe('finding gcc', () => {
     const c = findGcc('', (exe) => out[exe] ?? '', [apple, path.join(d, 'missing/g++'), brew]);
     expect(c).toEqual({ kind: 'gcc', cxx: brew, cc: gcc, version: '14.2.0' });
     expect(findGcc('', (exe) => out[exe] ?? '', [apple])).toBeNull();
-    expect(findGcc(apple, (exe) => out[exe] ?? '')).toBeNull();   // a path given is still checked
+    expect(findGcc(apple, (exe) => out[exe] ?? '')).toBeNull();
   });
 });
 
@@ -51,7 +49,7 @@ describe('finding MSVC', () => {
     expect(c.cxx).toBe(cl);
     expect(c.version).toBe('14.40.33807');
     expect(c.include).toEqual([path.join(vs, 'VC/Tools/MSVC/14.40.33807/include'), ...['ucrt', 'shared', 'um', 'winrt'].map((s) => path.join(kits, 'Include/10.0.22621.0', s))]);
-    expect(msvcLayout(vs, kits, 'arm64')).toBeNull();   // no ARM64 tools in this install
+    expect(msvcLayout(vs, kits, 'arm64')).toBeNull();
   });
   it('writes gcc-style flags the way cl.exe spells them', () => {
     expect(msvcFlag('-I/src/include')).toBe('/I/src/include');
@@ -59,7 +57,7 @@ describe('finding MSVC', () => {
     expect(msvcFlag('-UFOO')).toBe('/UFOO');
     expect(msvcFlag('-std=c++17')).toBe('/std:c++17');
     expect(msvcFlag('-std=gnu++20')).toBe('/std:c++20');
-    expect(msvcFlag('-std=c++11')).toBe('/std:c++14');   // cl's oldest
+    expect(msvcFlag('-std=c++11')).toBe('/std:c++14');
     expect(msvcFlag('-std=c++2b')).toBe('/std:c++latest');
     expect(msvcFlag('-std=c17')).toBe('/std:c17');
     expect(msvcFlag('-Wall')).toBe('/clang:-Wall');
@@ -98,18 +96,15 @@ describe('a compile database written for another place', () => {
     const d = tmp(); made.push(d);
     const proj = path.join(d, 'proj'), cpp = touch(path.join(proj, 'src', 'a.cpp'), 'int main() {}\n');
     const write = (dir: string, where: string) => touch(path.join(dir, 'compile_commands.json'), JSON.stringify([{ directory: where, file: 'src/a.cpp', arguments: ['clang++', '-c', 'src/a.cpp'] }]));
-    // built here: used as it is
     write(proj, proj);
     expect(staleCompileCommands(proj)).toBe(false);
     expect(findCompileCommands(proj)).toBe(proj);
     expect(ensureCompileCommands(proj, path.join(d, 'state'))).toBeNull();
-    // built before the folder was moved (the old folder is gone): treated as none
     write(proj, path.join(d, 'old place', 'proj'));
     expect(staleCompileCommands(proj)).toBe(true);
     expect(findCompileCommands(proj)).toBeNull();
     const own = ensureCompileCommands(proj, path.join(d, 'state'))!;
     expect(JSON.parse(fs.readFileSync(path.join(own, 'compile_commands.json'), 'utf8')).map((e: { file: string }) => e.file)).toEqual([cpp]);
-    // a build folder's database is checked the same way; a relative folder is never called stale
     fs.rmSync(path.join(proj, 'compile_commands.json'));
     write(path.join(proj, 'build'), path.join(d, 'gone'));
     expect(findCompileCommands(proj)).toBeNull();
@@ -127,10 +122,10 @@ describe('the compilers clangd may ask (--query-driver)', () => {
     touch(path.join(proj, 'build/compile_commands.json'), JSON.stringify([
       { directory: proj, file: 'a.cpp', arguments: [gpp, '-c', 'a.cpp'] },
       { directory: proj, file: 'b.c', command: `${cross} -c b.c` },
-      { directory: proj, file: 'c.cpp', arguments: ['g++-13', '-c', 'c.cpp'] },               // found on the PATH
-      { directory: proj, file: 'd.cpp', arguments: [path.join(proj, 'tools/g++'), '-c', 'd.cpp'] },   // inside the project
-      { directory: proj, file: 'e.cpp', arguments: [path.join(bin, 'evil'), '-c', 'e.cpp'] },        // not a compiler by name
-      { directory: proj, file: 'f.cpp', arguments: [path.join(bin, 'g++-99'), '-c', 'f.cpp'] },      // not installed
+      { directory: proj, file: 'c.cpp', arguments: ['g++-13', '-c', 'c.cpp'] },
+      { directory: proj, file: 'd.cpp', arguments: [path.join(proj, 'tools/g++'), '-c', 'd.cpp'] },
+      { directory: proj, file: 'e.cpp', arguments: [path.join(bin, 'evil'), '-c', 'e.cpp'] },
+      { directory: proj, file: 'f.cpp', arguments: [path.join(bin, 'g++-99'), '-c', 'f.cpp'] },
     ]));
     expect(projectDrivers(path.join(proj, 'build'), proj, { PATH: bin }, 'darwin')).toEqual([gpp, cross, 'g++-13']);
     expect(projectDrivers(path.join(proj, 'nothing'), proj, { PATH: bin }, 'darwin')).toEqual([]);

@@ -1,4 +1,3 @@
-// Reads, validates and edits data/settings.toml without ever losing the user's comments.
 import { parse } from 'smol-toml';
 import { SETTINGS, SettingDef, SettingProblem, Settings, defaults, validate, RETIRED } from '../shared/settings-schema';
 
@@ -13,7 +12,6 @@ function flatten(obj: Record<string, unknown>, prefix = '', out: Record<string, 
   return out;
 }
 
-/** 1-based line of `key` in the text, or 0. */
 export function lineOf(text: string, key: string): number {
   const section = key.slice(0, key.lastIndexOf('.'));
   const name = key.slice(key.lastIndexOf('.') + 1);
@@ -32,7 +30,6 @@ export interface LoadResult {
   problems: SettingProblem[];
 }
 
-/** Parses settings text. Bad values fall back to their default and are reported; nothing throws. */
 export function loadSettings(text: string): LoadResult {
   const settings = defaults();
   const problems: SettingProblem[] = [];
@@ -60,7 +57,6 @@ function tomlValue(v: unknown): string {
   return String(v);
 }
 
-/** Splits "name = value   # comment" into its value span, honouring quotes. */
 function valueSpan(line: string): [number, number] {
   const eq = line.indexOf('=');
   let i = eq + 1;
@@ -78,7 +74,6 @@ function valueSpan(line: string): [number, number] {
   return [start, end];
 }
 
-/** Returns new file text with one setting changed; comments and layout are kept. */
 export function setSetting(text: string, key: string, value: unknown): string {
   const def: SettingDef | undefined = BY_KEY.get(key);
   if (!def) throw new Error(`unknown setting ${key}`);
@@ -92,7 +87,6 @@ export function setSetting(text: string, key: string, value: unknown): string {
     const [s, e] = valueSpan(line);
     const oldLen = e - s;
     const v = tomlValue(value);
-    // keep the comment column where it was when the new value fits
     const pad = line.slice(e).match(/^\s*/)![0];
     const rest = line.slice(e + pad.length);
     const newPad = rest ? ' '.repeat(Math.max(1, oldLen + pad.length - v.length)) : '';

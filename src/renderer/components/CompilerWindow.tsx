@@ -15,7 +15,6 @@ interface Info {
   readAs: { want: 'clang' | 'gcc' | 'msvc'; now: string; note: string; gcc: { path: string; version: string } | null; msvc: { path: string; version: string } | null };
   kinds: Record<Kind, { title: string; language: string; what: string }>;
 }
-// the other languages: each row installs one kind of pack
 const MORE: { language: string; kinds: Kind[] }[] = [
   { language: 'Rust', kinds: ['rust', 'rust-analyzer'] },
   { language: 'Python', kinds: ['python', 'pyright'] },
@@ -28,12 +27,11 @@ const mb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.rou
 const newer = (a: string, b: string) => { const pa = a.split(/[.\-]/).map(Number), pb = b.split(/[.\-]/).map(Number); for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0); return false; };
 const stored = () => { try { return JSON.parse(localStorage.getItem('litho.compiler.pos') ?? 'null') as { x: number; y: number } | null; } catch { return null; } };
 
-/** The compiler window: which clangd runs, whose standard headers are indexed, and installing, updating or removing packs. */
 export default function CompilerWindow() {
   const [info, { refetch }] = createResource(async () => (await api.compiler.info()) as Info);
   const [mini, setMini] = createSignal(false);
   const [pos, setPos] = createSignal(stored() ?? { x: Math.max(16, (window.innerWidth - 600) / 2), y: 80 });
-  const [rel, setRel] = createSignal<Record<string, Release[] | string>>({});   // kind → releases, or why they couldn't be listed
+  const [rel, setRel] = createSignal<Record<string, Release[] | string>>({});
   const [picking, setPicking] = createSignal(false);
   const [confirm, setConfirm] = createSignal<{ r: Release; replaces?: string } | null>(null);
   const [prog, setProg] = createSignal<Progress | null>(null);
@@ -46,13 +44,12 @@ export default function CompilerWindow() {
     a.pause(); afterPaint().then(() => a.play());
   });
 
-  // ---- moving: drag by the title bar, kept inside the window ----
   const drag = (e: PointerEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
     e.preventDefault();
     const sx = e.clientX - pos().x, sy = e.clientY - pos().y;
     const move = (m: PointerEvent) => setPos({ x: Math.min(window.innerWidth - 120, Math.max(-el.offsetWidth + 120, m.clientX - sx)), y: Math.min(window.innerHeight - 40, Math.max(0, m.clientY - sy)) });
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); try { localStorage.setItem('litho.compiler.pos', JSON.stringify(pos())); } catch { /* not kept */ } };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); try { localStorage.setItem('litho.compiler.pos', JSON.stringify(pos())); } catch {  } };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
 
@@ -68,12 +65,12 @@ export default function CompilerWindow() {
   const useEngine = async (value: string) => {
     await api.settings.set('clangd.path', value);
     await refetch();
-    restartLsp();   // the new engine takes over at once
+    restartLsp();
   };
   const readAs = async (value: string) => {
     await api.settings.set('compiler.read_as', value);
     await refetch();
-    restartLsp();   // clangd reads the project again as that compiler
+    restartLsp();
   };
   const install = async (r: Release, replaces?: string) => {
     setConfirm(null); setPicking(false); setPickKind(null);
@@ -110,7 +107,6 @@ export default function CompilerWindow() {
         <div class="cwin-b">
           <Show when={info()} fallback={<div class="sub">reading…</div>}>{(i) => (
             <>
-              {/* ---- language engine ---- */}
               <div class="csec">language engine</div>
               <div class="cbig">clangd {i().activeVersion ?? (i().active ? '' : '— not found')}</div>
               <div class="csub">{engineLabel(i())}{i().active ? ` · ${i().active}` : ''}</div>
@@ -133,7 +129,6 @@ export default function CompilerWindow() {
                 <Show when={typeof rel().clangd === 'string'}><span class="dim">{rel().clangd as string}</span></Show>
               </div>
 
-              {/* ---- the compiler the code is read as ---- */}
               <div class="csec">read the code as <span class="dim">· its headers, macros and language rules; clangd analyses it either way</span></div>
               <div class="copts">
                 <Opt on={i().readAs.want === 'clang'} label="clang" note="the toolchain below, else the system's" onPick={() => readAs('clang')} />
@@ -143,7 +138,6 @@ export default function CompilerWindow() {
               <Show when={i().readAs.note}><div class="csub bad">{i().readAs.note}</div></Show>
               <div class="csub">reading as {i().readAs.now} · a project's own compile_commands.json keeps the compilers it names</div>
 
-              {/* ---- toolchain ---- */}
               <div class="csec">compiler toolchain <span class="dim">· its standard headers are indexed with the project</span></div>
               <Show when={i().packs.some((p) => p.kind === 'toolchain')} fallback={<div class="csub">none installed — the system's headers are used</div>}>
                 <div class="copts">
@@ -178,7 +172,6 @@ export default function CompilerWindow() {
                 </div>
               </Show>
 
-              {/* ---- other languages ---- */}
               <div class="csec">more languages <span class="dim">· each in its own pack, used by the editor</span></div>
               <For each={MORE}>{(g) => (
                 <div class="clang">
@@ -214,7 +207,6 @@ export default function CompilerWindow() {
                 </div>
               )}</Show>
 
-              {/* ---- confirm a download ---- */}
               <Show when={confirm()}>{(c) => (
                 <div class="cconfirm">
                   <div>Download <b>{c().r.asset}</b> ({c().r.size ? mb(c().r.size) : 'size not published'}) from {c().r.source}?</div>
@@ -224,7 +216,6 @@ export default function CompilerWindow() {
                 </div>
               )}</Show>
 
-              {/* ---- progress ---- */}
               <Show when={prog()}>{(p) => (
                 <div class="cprog">
                   <div class="crow">
@@ -236,7 +227,6 @@ export default function CompilerWindow() {
                 </div>
               )}</Show>
 
-              {/* ---- headers and the folder ---- */}
               <div class="csec">standard headers</div>
               <div class="csub" classList={{ bad: !i().headers.ok }}>{i().headers.ok ? '✓ ' : ''}{i().headers.detail}</div>
               <div class="cfoot">

@@ -1,5 +1,3 @@
-// Draws the cascading sequence (time down, one column per file or folder) from flowtree.mjs's data, as a mock-up page.
-// usage: node seqgen.mjs <data.json> <out.html> <title> [lanes: file|folder] [max rows]
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const [dataPath, outPath, title, laneMode = 'file', maxRows = '40'] = process.argv.slice(2);
@@ -11,7 +9,6 @@ const lanes = [];
 for (const r of rows) if (!lanes.includes(laneOf(r.file, r))) lanes.push(laneOf(r.file, r));
 if (laneMode === 'depth') lanes.sort((a, b) => Number(a.split(' ')[1]) - Number(b.split(' ')[1]));
 const clipped = d.frames.filter((f) => f.to >= f.from && f.from < rows.length).map((f) => ({ ...f, to: Math.min(f.to, rows.length - 1) }));
-// on a big codebase only loops are frames; a condition is a short note on the first step it guards
 const frames = laneMode === 'depth' ? clipped.filter((f) => f.type === 'loop') : clipped;
 if (laneMode === 'depth') for (const f of clipped) if (f.type === 'branch' && !rows[f.from].cond) rows[f.from].cond = f.text;
 for (const r of rows) r.last = Math.min(r.last, rows.length - 1);
