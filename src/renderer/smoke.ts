@@ -1567,7 +1567,7 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
       if (live) walked++;
       const view = document.querySelector('.gview .gscroll') as HTMLElement | null;
       if (!view) { note('the grid is not drawn', it, status()); continue; }
-      for (let k = 0, last = ''; k < 60; k++) { const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; await nextFrames(3); }
+      for (let k = 0, last = `${view.scrollLeft},${view.scrollTop}`; k < 60; k++) { await nextFrames(1); const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; }
       const pane = view.getBoundingClientRect();
       const visible = (r: DOMRect) => r.width > 0 && r.bottom > pane.top && r.top < pane.bottom && r.right > pane.left && r.left < pane.right;
       if (document.querySelector('.gview .gnote')) note('a different view at this size (rule 5)', it, words(document.querySelector('.gview .gnote')!));
@@ -1617,7 +1617,7 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
           }
         }
       }
-      for (let k = 0, last = ''; k < 60; k++) { const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; await nextFrames(3); }
+      for (let k = 0, last = `${view.scrollLeft},${view.scrollTop}`; k < 60; k++) { await nextFrames(1); const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; }
       const fz = (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.getBoundingClientRect();
       const onSq = document.querySelector('.gview .gcell.on:not(.pk)') as HTMLElement | null;
       if (onSq) {
@@ -1684,7 +1684,7 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
       const cur = document.querySelector('.gview .gcell.on') as HTMLElement | null;
       if (cur) {
         cur.dispatchEvent(new MouseEvent('mouseenter'));
-        await nextFrames(2);
+        await nextFrames(1);
         const tag = document.querySelector('.gview .gtag') as HTMLElement | null;
         if (tag) {
           const tr = tag.getBoundingClientRect(), own = cur.getBoundingClientRect();
@@ -1807,7 +1807,8 @@ async function overlapsCheck(report: Record<string, unknown>) {
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   const inside = (r: DOMRect, x: number, y: number) => x > r.left + 0.5 && x < r.right - 0.5 && y > r.top + 0.5 && y < r.bottom - 0.5;
   const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
-  const shownAt = (el: Element, x: number, y: number) => { const top = document.elementsFromPoint(x, y).find((e) => !(e instanceof SVGElement)); return !!top && (el === top || el.contains(top) || top.contains(el)); };
+  const shownAt = (el: Element, x: number, y: number) => { const top = document.elementsFromPoint(x, y).find((e) => !(e instanceof SVGElement)); return !!top && (el === top || el.contains(top)); };
+  const arrowOver = (el: Element, x: number, y: number) => { const stack = document.elementsFromPoint(x, y), t = stack.findIndex((e) => e === el || el.contains(e)), h = stack.findIndex((e) => e instanceof SVGElement && !!e.closest('svg.glinks')); return t >= 0 && h >= 0 && h < t; };
   const mid = (a: DOMRect, b: DOMRect) => [(Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2, (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2] as const;
   const samples = (p: SVGPathElement) => { const o = (p.ownerSVGElement as SVGSVGElement).getBoundingClientRect(), L = p.getTotalLength(), out: Pt[] = []; for (let d = 0; d <= L; d += 2) { const q = p.getPointAtLength(d); out.push({ x: o.left + q.x, y: o.top + q.y }); } return out; };
   const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
@@ -1845,7 +1846,7 @@ async function overlapsCheck(report: Record<string, unknown>) {
           for (const p of [...document.querySelectorAll('.gview svg.glinks path.ln')] as SVGPathElement[]) {
             const pts = samples(p), end = pts[pts.length - 1], seen = new Set<Element>();
             for (const q of pts) for (const b of boxes) {
-              if (seen.has(b.e) || own.has(b.e) || !inside(b.r, q.x, q.y) || !shownAt(b.e, q.x, q.y)) continue;
+              if (seen.has(b.e) || own.has(b.e) || !inside(b.r, q.x, q.y) || !arrowOver(b.e, q.x, q.y)) continue;
               const nearEnd = Math.hypot(Math.max(b.r.left - end.x, 0, end.x - b.r.right), Math.max(b.r.top - end.y, 0, end.y - b.r.bottom)) < 4;
               if (nearEnd && !b.e.classList.contains('glab')) continue;
               seen.add(b.e); note('an arrow runs over text', it, `${p.classList[1]} arrow over "${words(b.e)}"`);

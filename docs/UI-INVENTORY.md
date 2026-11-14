@@ -236,6 +236,16 @@ the pinned call-count row (the check does not yet tell that apart), the dotted l
 waits for the user's choice). Open: the dotted link (42), labels in the smallest grids, one frozen heading over
 content in `kinds`. 85 of 392 fixed; 5 kept by verdict; 302 open.
 
+**Fixed (2026-11-14, the dotted link to the card, the user's choice from the mock-up):** `StepPreview.tsx:137` in the
+grid the link now starts at the end of the current row, past the totals, so it never runs over the grid. tinyhttp: the
+dotted link over text 42 → 0. The overlaps check was corrected twice: text counts as visible only where it, or what
+is inside it, is on top (an element clipped into the scrollbar's strip was counted before), and an arrow counts as
+crossing text only where the arrow is drawn above it (arrows passing under the pinned call-count row were counted
+before); with it, tinyhttp's arrows over text are 1 (a call arrow over box 12 at step 13). The `rules` scenario's
+waits were cut to what the app needs (one frame per check of the scroll, one for the hover tag): every count on
+tinyhttp and ThreadX unchanged, ThreadX's 549 steps in 164 s instead of 241 s. 86 of 392 fixed; 5 kept by verdict;
+301 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

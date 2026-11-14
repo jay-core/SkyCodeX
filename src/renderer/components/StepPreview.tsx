@@ -133,7 +133,8 @@ export default function StepPreview() {
     if (!sel || !box || !box.isConnected) { if (link.innerHTML) link.innerHTML = ''; return; }
     const a = sel.getBoundingClientRect(), b = box.getBoundingClientRect(), view = (sel.closest('.seqv, .gview') as HTMLElement).getBoundingClientRect();
     if (a.bottom < view.top || a.top > view.bottom) { if (link.innerHTML) link.innerHTML = ''; return; }
-    const x1 = a.right, y1 = a.top + a.height / 2, x2 = b.left, y2 = b.top + 22, m = x1 + (x2 - x1) * 0.55;
+    const rowEnd = sel.closest('.gview') ? (document.querySelector('.gview .gtot') as HTMLElement | null)?.getBoundingClientRect().right : undefined;
+    const x1 = rowEnd != null ? rowEnd + 2 : a.right, y1 = a.top + a.height / 2, x2 = b.left, y2 = b.top + 22, m = x1 + (x2 - x1) * 0.55;
     const d = `M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}`;
     if (link.dataset.d !== d) { link.dataset.d = d; link.innerHTML = `<path d="${d}" fill="none" stroke="#e3d6ad" stroke-width="0.9" stroke-dasharray="1.5 4" stroke-linecap="round"/><circle cx="${x1}" cy="${y1}" r="2.2" fill="#e3d6ad"/><circle cx="${x2}" cy="${y2}" r="2" fill="#e3d6ad"/>`; }
   };
