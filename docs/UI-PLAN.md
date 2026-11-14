@@ -146,6 +146,17 @@ layers. Phase 4 runs on each view as soon as phases 1 to 3 are done for it, so y
 1. Phase 2 steps 1 and 3 (named layers and scales; dead boxes view removed). Changed by the user on 2026-11-14:
    the named layers and the removal of the boxes view come first; the two scales move after the grid.
 2. The grid: phases 1, 3 and 4. Then the spacing scale and the type scale (phase 2 step 1, P5.S.3 to P5.S.5).
+   Decided by the user on 2026-11-14: fixes go class by class. Each class has one run of its checks before, all its
+   fixes, and one run after; anything that got worse is traced to its fix before the next class. The checks of
+   phase 1 step 1 (TEST-SUITE P5.R.4) are built first; the items needing the user's decision or a mock-up are
+   reviewed with the user once, before the classes start.
+   Reviewed and decided by the user on 2026-11-14: X1 and X5 as the mock-ups of 2026-11-13 show (already decided
+   then); the files × files view goes, by rule 5; repeats and recursion as the mock-up shows (×N in the caller's
+   square, ↻N for a call in a loop with every pass counted in times called, ↻ alone when the count is not known, ⟲ on
+   the square and the row for a call back into a function still running, with a hover sentence); folded calls as a
+   +N mark in the caller's square, listed by name and line on hover; file colours only separate neighbouring files,
+   the key says so, and every file band shows its name; captions and messages stay until the next key, click or step,
+   with no timer.
 3. The metro: phases 1, 3 and 4.
 4. The step card, right pane and preview: phases 1, 3 and 4.
 5. The editor's panes, windows and menus: phases 1, 3 and 4.

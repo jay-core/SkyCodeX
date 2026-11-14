@@ -90,11 +90,10 @@ with every check read from the drawn page:
 
 | Dimension | Values |
 |---|---|
-| Function name length | 1, 10, 40, 120, 300 characters; ASCII and wide non-ASCII |
-| Calls in one square | 1, 2, 3, 4, 8, 50 |
+| Function name length | 1, 10, 40, 120, 300 characters |
+| Repeated calls in main | g() 1, 2, 3, 4, 8 times in a row; g(), h(), g(); g() in a loop of 3 |
+| Recursion | a function calling itself; two functions calling each other |
 | Calls made by one step | 0, 1, 5, 20 |
-| Step-number digits | 1, 3, 5 |
-| Cells in the grid | 4, 400, 1,800, 1,801, 10,000, 90,000 |
 | Kinds of step | entry, step, repeat, indirect, value, folded, call to itself |
 | Files | 1, 10, 11, 60 (the file palette has 10 colours) |
 | Font size, interface scale, window | 9 / 13 / 24; 0.75 / 1 / 2; 760×480, 1440×900, 2560×1440 |

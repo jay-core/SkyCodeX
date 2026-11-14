@@ -101,8 +101,27 @@ tinyhttp, 30 steps: labels over a name or total 10 → 0, arrows over text 28 �
 labels over squares and over labels 0 → 0; typecheck, 31 test files, the default and boot scenarios unchanged.
 3 of the 387 faults fixed; 384 open.
 
+**Fixed (2026-11-14, second grid correction):** G `styles.css:840` (the three arrow colours are now one definition each,
+`--grid-in`, `--grid-out`, `--grid-call`, used by the arrows, their heads, their labels and the key, and explained on a
+second key line, "arrows from the current step", in sight at every width that shows the key). Checked by the
+`overlaps` scenario: arrow colours the key does not explain 25 → 0, arrow-key marks out of sight 90 → 0; arrows over
+text 18 → 18; the dotted link over text 58 → 59 (6 crossings gone, 6 new, net +1: the key line moves the grid down, and
+the link is one curve whatever lies between, fault `StepPreview.tsx:137`). Committed work up to the first correction
+and the colour definitions: commit 95720ff. 4 of 387 fixed; 383 open.
+
+**Fixed (2026-11-14, class B, X1 as approved 2026-11-13):** B `GridView.tsx:69`, `:71`, `:77`, `:79`: every grid
+arrow now starts and ends on the numbered box of its step (or its dot, or the opened square's step row), at the
+box's middle, measured from the drawn page; where a sideways approach would cross another box in the same square,
+the arrow comes in from above or below through the square's free strip. Checked by the `rules` scenario on the 23
+generated programs: an arrow ends away from its box or off its middle 36 → 0, every other check unchanged; the
+`overlaps` scenario on tinyhttp: arrows over text 18 → 18, the dotted link 59 → 59; typecheck, 31 test files. One
+run of files-11 hit the 5-minute limit; three runs alone passed in 7–9 s with counts identical to before (the random
+hang already in the log since 2026-11-13). 8 of 389 fixed; 381 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
-rules 24) were accepted on 2026-11-14. Still to review: the metro, the card and preview, the editor, windows and menus,
+rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
+not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the
+tables of §2 are not yet recounted. Still to review: the metro, the card and preview, the editor, windows and menus,
 the rest of the stylesheet, the shared logic and the main process.
 
 ## 3. Faults, by code
@@ -545,7 +564,7 @@ list above. Each is from reading only; none was seen in the running app. Codes a
 | `renderer/components/FilesPane.tsx:122` | predicted from the widths, not seen: four buttons on one line in a 180 px pane that hides overflow; the last are cut off |
 | `renderer/styles.css:807` | the followed value's words beside a row name (`.grh .gw`, GridView.tsx:406) are cut with an ellipsis, and the row's title (405) does not hold them; whether the same words show elsewhere was not traced |
 
-**G (52 faults, 60 lines)**
+**G (54 faults, 62 lines)**
 
 | Line | What |
 |---|---|
@@ -601,6 +620,8 @@ list above. Each is from reading only; none was seen in the running app. Codes a
 | `main/lsp.ts:67` | third_party, third-party and vendor are left out of the compile database SkyCodeX writes, so clangd does not understand their files |
 | `main/packs.ts:40` | an installed pack whose manifest cannot be read is left out of the list without a word |
 | `main/packs.ts:144` | the free-space message rounds up to whole gigabytes: a pack needing 50 MB "needs about 1 GB" |
+| `shared/gridmodel.ts:20` | a call back into a function still running (`recursive`, flowrun.ts:719) is drawn as an ordinary call: neither the square nor the row says so (seen in the app 2026-11-14 on recursion-direct and recursion-mutual) |
+| `shared/gridmodel.ts:28` | a call inside a loop counts once: g() in a loop of 3 shows one step and "×1" in times called (seen in the app 2026-11-14 on repeat-loop) |
 
 **O (4 faults, 4 lines)**
 

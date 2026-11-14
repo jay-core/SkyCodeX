@@ -96,6 +96,7 @@ export async function runSmoke() {
   if (info()?.scenario === 'arrows') return arrowsCheck(report);
   if (info()?.scenario === 'arrows-mock') return arrowsMock(report);
   if (info()?.scenario === 'overlaps') return overlapsCheck(report);
+  if (info()?.scenario === 'rules') return rulesCheck(report);
   if (info()?.scenario === 'hold') return;
   layerReport = {}; report.layers = layerReport;
   try {
@@ -1522,6 +1523,86 @@ async function arrowsCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
+async function rulesCheck(report: Record<string, unknown>) {
+  const T0 = Date.now(), BUDGET = 270000;
+  const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+  const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+  const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
+  const note = (kind: string, it: number, what: string) => { const t = tally[kind] ?? (tally[kind] = { count: 0, steps: new Set(), first: [] }); t.count++; t.steps.add(it + 1); if (t.first.length < 20) t.first.push(`step ${it + 1}: ${what}`); };
+  const words = (e: Element) => (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 40);
+  const TEXT = '.gview .ghd, .gview .gfb, .gview .gch b, .gview .grb span, .gview .grh span, .gview .grh b, .gview .grh .gw, .gview .glab, .gview .gtag, .gview .gtot .t, .gview .gmk .m, .gview .gcell.has, .gview .gstep code';
+  try {
+    report.lsp = (await until(() => lspState() === 'ready', 60000)) ? 'ready' : lspState();
+    setFlowView('grid');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 200000);
+    const s = seq();
+    if (!s) throw new Error(`no run: ${status()} ${runStatus()}`);
+    report.steps = s.items.length;
+    report.openedAfterMs = Date.now() - T0;
+    report.stepNames = s.items.slice(0, 50).map((i) => `${s.run.rows[i].kind} ${s.run.rows[i].name}`);
+    report.rows = s.run.rows.slice(0, 50).map((r) => `${r.kind} ${r.name} caller=${r.caller ?? '-'}`);
+    let walked = 0;
+    for (let it = 0; it < s.items.length; it++) {
+      if (Date.now() - T0 > BUDGET) { report.stoppedAtStep = it + 1; break; }
+      stepMove({ jump: it });
+      await nextFrames(3);
+      walked++;
+      const view = document.querySelector('.gview .gscroll') as HTMLElement | null;
+      if (!view) { note('the grid is not drawn', it, status()); continue; }
+      const pane = view.getBoundingClientRect();
+      const visible = (r: DOMRect) => r.width > 0 && r.bottom > pane.top && r.top < pane.bottom && r.right > pane.left && r.left < pane.right;
+      if (document.querySelector('.gview .gnote')) note('a different view at this size (rule 5)', it, words(document.querySelector('.gview .gnote')!));
+      const cells = [...document.querySelectorAll('.gview .gcell')] as HTMLElement[];
+      const far = cells.filter((c) => { const r = c.getBoundingClientRect(); return r.right < pane.left - pane.width || r.left > pane.right + pane.width || r.bottom < pane.top - pane.height || r.top > pane.bottom + pane.height; }).length;
+      if (far) note('squares built beyond one screen around the view (rule 5)', it, `${far} of ${cells.length}`);
+      const svg = document.querySelector('.gview svg.glinks') as SVGSVGElement | null;
+      const paths = svg ? ([...svg.querySelectorAll('path.ln')] as SVGPathElement[]) : [];
+      if (it === 0) { const calls = s.run.rows.filter((r) => r.caller === s.items[0]).length; if (calls && !paths.length) note('the entry step has no arrows (rule 6)', it, `${calls} calls`); }
+      if (svg && paths.length) {
+        const o = svg.getBoundingClientRect();
+        const boxes = [...document.querySelectorAll('.gview .gcell.has i, .gview .gcell.has .dots, .gview .gcell.pk .gstep')].map((e) => e.getBoundingClientRect());
+        for (const p of paths) {
+          if (!p.querySelector('title') && !p.closest('[title]')) note('an arrow without a hover (rule 8)', it, p.classList[1]);
+          const len = p.getTotalLength(), e = p.getPointAtLength(len), q = p.getPointAtLength(Math.max(0, len - 3));
+          const x = o.left + e.x, y = o.top + e.y, across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
+          let best = Infinity, mid = Infinity;
+          for (const b of boxes) { const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom)); if (d < best) { best = d; mid = across ? Math.abs(y - (b.top + b.height / 2)) : Math.abs(x - (b.left + b.width / 2)); } }
+          if (best > 1) note('an arrow ends away from its box (rule 2)', it, `${p.classList[1]} ${Math.round(best)} px`);
+          else if (mid > 1) note('an arrow ends off its box\'s middle (rule 2)', it, `${p.classList[1]} ${Math.round(mid)} px`);
+        }
+      }
+      const labs = ([...document.querySelectorAll('.gview .glab')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r));
+      const squares = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter(visible);
+      const names = ([...document.querySelectorAll('.gview .grh b, .gview .gch b, .gview .gtot .t, .gview .gmk .m')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r));
+      for (const l of labs) {
+        if (squares.some((q) => hit(l.r, q))) note('a label overlaps a square', it, words(l.e));
+        for (const m of labs) if (m !== l && m.r.left <= l.r.left && hit(l.r, m.r)) note('two labels overlap', it, `${words(l.e)} / ${words(m.e)}`);
+        for (const n of names) if (hit(l.r, n.r)) note('a label overlaps a name or total', it, `${words(l.e)} / ${words(n.e)}`);
+      }
+      const cur = document.querySelector('.gview .gcell.on') as HTMLElement | null;
+      if (cur) {
+        cur.dispatchEvent(new MouseEvent('mouseenter'));
+        await nextFrames(2);
+        const tag = document.querySelector('.gview .gtag') as HTMLElement | null;
+        if (tag) { const tr = tag.getBoundingClientRect(), own = cur.getBoundingClientRect(); if (squares.some((q) => hit(tr, q) && !(q.left === own.left && q.top === own.top))) note('the hover tag overlaps a square', it, words(tag)); }
+        view.dispatchEvent(new MouseEvent('mouseleave'));
+      }
+      for (const e of [...document.querySelectorAll(TEXT)] as HTMLElement[]) {
+        const r = e.getBoundingClientRect();
+        if (!visible(r) || !words(e)) continue;
+        if (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1) if (!e.closest('[title]')) note('a cut text out of reach (rule 4)', it, words(e));
+      }
+      if (it === 0) await shot('rules-step-1');
+    }
+    report.walked = walked;
+  } catch (e) { errors.push(`rules: ${e}`); }
+  report.rules = Object.fromEntries(Object.entries(tally).map(([k, t]) => [k, { count: t.count, steps: t.steps.size, first: t.first }]));
+  report.ms = Date.now() - T0;
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
 type Pt = { x: number; y: number };
 function cornersOf(d: string): Pt[] {
   const t = d.match(/[MLQ]|-?\d+(?:\.\d+)?/g) ?? [], out: Pt[] = [];
@@ -1663,6 +1744,7 @@ async function overlapsCheck(report: Record<string, unknown>) {
           const keyColours = new Set(([...document.querySelectorAll('.gview .gkey .ka')] as HTMLElement[]).map((e) => getComputedStyle(e).color));
           const unexplained = new Set(([...document.querySelectorAll('.gview svg.glinks path.ln')] as SVGPathElement[]).map((p) => `${p.classList[1]} ${getComputedStyle(p).stroke}`).filter((k) => !keyColours.has(k.slice(k.indexOf(' ') + 1))));
           for (const k of unexplained) note('an arrow colour the key does not explain', it, k);
+          for (const e of [...document.querySelectorAll('.gview .gkey .ka')] as HTMLElement[]) { const r = e.getBoundingClientRect(), k = (e.closest('.gkey') as HTMLElement).getBoundingClientRect(); if (r.left < k.left || r.right > k.right || r.width === 0) note('an arrow key mark out of sight', it, e.className); }
           if (it === 18) await shot('overlaps-grid-step19');
           const labs = boxes.filter((b) => b.e.classList.contains('glab'));
           const squares = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter(visible);

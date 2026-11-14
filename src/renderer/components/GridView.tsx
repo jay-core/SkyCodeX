@@ -82,6 +82,34 @@ function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number): { x: number; 
   return pts;
 }
 
+type Pt = { x: number; y: number };
+interface End { b: Rect; sq: Rect; others: Rect[] }
+function endOn(p: Pt[], at: End): Pt[] {
+  const { b, sq } = at, n = p.length, e = p[n - 1], q = p[n - 2], mx = b.x + b.w / 2, my = b.y + b.h / 2;
+  const across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
+  if (across) {
+    const lo = q.x < e.x ? sq.x : b.x + b.w, hi = q.x < e.x ? b.x : sq.x + sq.w;
+    if (at.others.some((o) => o.x < hi && o.x + o.w > lo && o.y < b.y + b.h && o.y + o.h > b.y)) {
+      const up = q.y <= my, ly = up ? (sq.y + b.y) / 2 : (b.y + b.h + sq.y + sq.h) / 2;
+      const r = p[n - 3], bend = !!r && Math.abs(r.x - q.x) < 0.5;
+      const tip = { x: mx, y: up ? b.y - 1 : b.y + b.h + 1 };
+      return bend ? [...p.slice(0, n - 2), { x: q.x, y: ly }, { x: mx, y: ly }, tip] : [...p.slice(0, n - 1), { x: q.x, y: ly }, { x: mx, y: ly }, tip];
+    }
+  }
+  const tip = across ? { x: q.x < e.x ? b.x - 1 : b.x + b.w + 1, y: my } : { x: mx, y: q.y < e.y ? b.y - 1 : b.y + b.h + 1 };
+  const r = p[n - 3], bend = !!r && (across ? Math.abs(r.x - q.x) < 0.5 : Math.abs(r.y - q.y) < 0.5);
+  if (bend) return [...p.slice(0, n - 2), across ? { x: q.x, y: my } : { x: mx, y: q.y }, tip];
+  if (across ? Math.abs(q.y - my) < 0.5 : Math.abs(q.x - mx) < 0.5) return [...p.slice(0, n - 1), tip];
+  const j = across ? (q.x + tip.x) / 2 : (q.y + tip.y) / 2;
+  return [...p.slice(0, n - 1), ...(across ? [{ x: j, y: q.y }, { x: j, y: my }] : [{ x: q.x, y: j }, { x: mx, y: j }]), tip];
+}
+function attach(pts: Pt[], from: End | undefined, to: End | undefined): Pt[] {
+  if (pts.length < 2) return pts;
+  let out = to ? endOn(pts, to) : pts;
+  if (from) out = endOn([...out].reverse(), from).reverse();
+  return out;
+}
+
 export default function GridView(props: { switcher: JSX.Element }) {
   const S = () => seq();
   const cur = () => trail()[trail().length - 1];
@@ -156,6 +184,21 @@ export default function GridView(props: { switcher: JSX.Element }) {
     for (const [i, x] of r.list.entries()) if (r.only < 0 || r.only === i) for (let k = 1; k < x.rows.length; k++) out.add(`${R()[x.rows[k - 1]].key}>${R()[x.rows[k]].key}`);
     return out;
   });
+  const [ends, setEnds] = createSignal<Map<number, Rect>>(new Map());
+  const measureEnds = () => {
+    const z = scroller?.querySelector('.gsz') as HTMLElement | null, m = new Map<number, Rect>();
+    if (z) {
+      const o = z.getBoundingClientRect();
+      const box = (e: Element): Rect => { const r = e.getBoundingClientRect(); return { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height }; };
+      for (const e of z.querySelectorAll('.gcell [data-it]')) m.set(Number((e as HTMLElement).dataset.it), box(e));
+      for (const e of z.querySelectorAll('.gcell [data-all]')) { const b = box(e); for (const it of (e as HTMLElement).dataset.all!.split(' ')) if (!m.has(Number(it))) m.set(Number(it), b); }
+    }
+    setEnds(m);
+  };
+  let measureFrame = 0;
+  createEffect(on([model, geo, pick, curAt, drill, order], () => { cancelAnimationFrame(measureFrame); measureFrame = requestAnimationFrame(measureEnds); }));
+  onMount(() => { document.fonts?.ready.then(() => measureEnds()); });
+  onCleanup(() => cancelAnimationFrame(measureFrame));
   const flowLinks = createMemo((): StepLinks | null => {
     const s = S(), c = cur();
     textTick();
@@ -163,7 +206,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     try { return stepLinks(s, c.at, (f) => lines(f)); } catch { return null; }
   });
   const drawn = createMemo(() => {
-    const L = flowLinks(), m = model(), c = cur();
+    const L = flowLinks(), m = model(), c = cur(), E = ends();
     if (!L || !m || !c) return null;
     const cs = cols(), rs = rows(), nc = cs.length, nr = rs.length, ci = colIdx(), ri = rowIdx();
     if (!nc || !nr) return null;
@@ -173,6 +216,12 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const sel = at(c.at);
     if (!sel) return null;
     const rect = (q: Cell) => rectOf(q.i, q.j);
+    const endAt = (it: number, q: Cell): End | undefined => {
+      const b = E.get(it);
+      if (!b) return undefined;
+      const sq = rect(q), inside = (r: Rect) => r.x >= sq.x - 0.5 && r.y >= sq.y - 0.5 && r.x + r.w <= sq.x + sq.w + 0.5 && r.y + r.h <= sq.y + sq.h + 0.5;
+      return { b, sq, others: [...E.values()].filter((r) => r !== b && inside(r) && !(r.x <= b.x && r.x + r.w >= b.x + b.w)) };
+    };
     const paths: { d: string; kind: string }[] = [], labels: (Rect & { text: string; kind: string })[] = [], placed: Rect[] = [];
     const labW = textBox('glab'), area: Rect = { x: SIDE, y: HEAD, w: geo().x.size, h: geo().y.size };
     const within = (t: Rect) => t.x >= area.x && t.y >= area.y && t.x + t.w <= area.x + area.w && t.y + t.h <= area.y + area.h;
@@ -197,7 +246,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
       done.add(key);
       const cells = lane(occ, used, nc, nr, a, b) ?? [a, { i: b.i, j: a.j }, b];
       markLane(used, nc, cells.filter((q, n) => n === 0 || q.i !== cells[n - 1].i || q.j !== cells[n - 1].j));
-      const pts = laneD(cells, rect, shift(l.kind));
+      const pts = attach(laneD(cells, rect, shift(l.kind)), endAt(l.from, a), endAt(l.to, b));
       if (pts.length) {
         paths.push({ d: rounded(pts), kind: l.kind });
         for (let q = 1; q < pts.length; q++) { const p0 = pts[q - 1], p1 = pts[q]; lines.push({ x: Math.min(p0.x, p1.x) - 1.5, y: Math.min(p0.y, p1.y) - 1.5, w: Math.abs(p1.x - p0.x) + 3, h: Math.abs(p1.y - p0.y) + 3 }); }
@@ -354,7 +403,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const choose = (c: string, r: string) => { const p = pick(); setPick(p && p.c === c && p.r === r ? null : { c, r }); canvas.focus(); };
   const callLine = (it: number) => { const r = R()[S()!.items[it]]; if (r.caller == null || !r.at) return { code: '', line: 0 }; return { code: lines(R()[r.caller].file)?.[r.at.line]?.trim() ?? '', line: r.at.line + 1 }; };
   const chip = (it: number, c: string, r: string) => (
-    <i classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); setPick({ c, r }); go(it); }}>{it + 1}</i>
+    <i data-it={it} classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); setPick({ c, r }); go(it); }}>{it + 1}</i>
   );
   const header = createMemo(() => { const s = S(), c = cur(); if (!s || !c) return ''; if (c.at >= s.items.length) return `Step ${s.items.length} of ${s.items.length} · end`; const n = nums()[c.at], r = R()[s.items[c.at]]; return `Step ${c.at + 1} of ${s.items.length} · ${n?.fn ? `ƒ${n.fn} ` : ''}${short(r.kind === 'ref' ? R()[r.ref!].name : r.kind === 'indirect' ? (r.text ?? r.name) : r.name)}`; });
   const keySteps = () => { const a = curAt(), n = S()?.items.length ?? 0; return { done: Math.max(1, a), now: a + 1, next: Math.min(n, a + 2) }; };
@@ -391,7 +440,9 @@ export default function GridView(props: { switcher: JSX.Element }) {
             <i class="kc">{keySteps().next}</i><span>to come</span>
             <span class="kt">· calls in a square in order: <b>4 · 9</b></span>
             <span class="dots"><b class="dn" /><b class="dn" /><b class="now" /><b /><b /><em>5</em></span><span>4 or more calls: a dot each</span>
-            <span class="kt">· arrows from the current step:</span>
+          </div>
+          <div class="gkey ar" onWheel={hwheel}>
+            <span>arrows from the current step:</span>
             <i class="ka in">⟵</i><span>where an input came from</span>
             <i class="ka out">⟶</i><span>who reads its result</span>
             <i class="ka call">⟶</i><span>the calls it makes</span>
@@ -438,12 +489,12 @@ export default function GridView(props: { switcher: JSX.Element }) {
                           onClick={() => { if (v()) choose(c.key, r.key); }}>
                           <Show when={v()} fallback={<s />}>{(l) => (
                             <Show when={isPick()} fallback={
-                              <Show when={l().length < 4} fallback={<span class="dots"><For each={l().slice(0, 8)}>{(it) => <b classList={{ dn: it < curAt(), now: it === curAt() }} />}</For><em>{l().length}</em></span>}>
+                              <Show when={l().length < 4} fallback={<span class="dots" data-all={l().join(' ')}><For each={l().slice(0, 8)}>{(it) => <b data-it={it} classList={{ dn: it < curAt(), now: it === curAt() }} />}</For><em>{l().length}</em></span>}>
                                 <For each={l()}>{(it, k) => <><Show when={k() > 0}><span class="sep">·</span></Show>{chip(it, c.key, r.key)}</>}</For>
                               </Show>
                             }>
                               <For each={l()}>{(it) => { const cl = callLine(it); return (
-                                <div class="gstep" classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); go(it); }}>
+                                <div class="gstep" data-it={it} classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); go(it); }}>
                                   <i>step {it + 1}</i><code>{cl.code}</code><small>:{cl.line}</small>
                                 </div>
                               ); }}</For>
