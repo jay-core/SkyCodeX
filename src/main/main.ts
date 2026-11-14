@@ -7,7 +7,7 @@ import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, listSourcesAsync, listFiles, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
 import { searchFolder, cancelSearch } from './search';
-import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb, findCompileCommands, type CompileEntry } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
@@ -326,6 +326,30 @@ ipcMain.handle('lsp:start', async (e, root: string) => {
   } catch (e) { return { ok: false, message: String(e) }; }
 });
 ipcMain.handle('lsp:stale', () => !!lspRoot && lsp.ccChanged(lspRoot));
+let builtCache: { key: string; files: string[] } | null = null;
+function builtFiles(ccDir: string, root: string): string[] | null {
+  let stamp = '';
+  try { stamp = String(fs.statSync(path.join(ccDir, 'compile_commands.json')).mtimeMs); } catch { return null; }
+  const key = `${ccDir}\n${root}\n${stamp}`;
+  if (builtCache?.key === key) return builtCache.files;
+  let db: CompileEntry[];
+  try { db = readCompileDb(ccDir); } catch { return null; }
+  let real = root;
+  try { real = fs.realpathSync.native(root); } catch {  }
+  const out = new Set<string>();
+  for (const x of db) {
+    if (!x || typeof x.file !== 'string') continue;
+    const abs = path.resolve(typeof x.directory === 'string' ? x.directory : root, x.file);
+    out.add(!abs.startsWith(root + path.sep) && abs.startsWith(real + path.sep) ? path.join(root, path.relative(real, abs)) : abs);
+  }
+  builtCache = { key, files: [...out] };
+  return builtCache.files;
+}
+ipcMain.handle('lsp:built', (e) => {
+  const c = clangdOf(e), root = fromWorker(e) ? settingJob?.root ?? '' : lspRoot;
+  if (!root || !c.ccDir || !lspRoot || !findCompileCommands(lspRoot)) return null;
+  return builtFiles(c.ccDir, root);
+});
 ipcMain.handle('lsp:request', (e, method: string, params: unknown) => clangdOf(e).request(method, params));
 
 const lspCheck = new LspClient((m, p) => checkNotify(m, p), (line) => log(`clangd (repair): ${line}`));
@@ -640,5 +664,5 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => { lsp.stop(); for (const c of langServers.values()) c.stop(); });
-const smokeLimit = scenario === 'large' ? 15 : 5;
+const smokeLimit = scenario === 'probe' ? 180 : scenario === 'large' ? 15 : 5;
 if (smoke) setTimeout(() => { log(`smoke: timed out after ${smokeLimit} minutes`); app.exit(2); }, smokeLimit * 60_000).unref();

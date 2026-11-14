@@ -1,0 +1,99 @@
+{
+ "platform": "darwin",
+ "clangd": {
+  "active": "tools/clangd/bin/clangd",
+  "version": "23.1.0",
+  "inbuilt": true
+ },
+ "lsp": "ready",
+ "previewCards": 11,
+ "definition": true,
+ "seqRows": 31,
+ "viewSteps": [
+  "main",
+  "load_config",
+  "read_env",
+  "Server",
+  "start",
+  "listen",
+  "run",
+  "flush",
+  "accept",
+  "handle",
+  "parse_headers",
+  "split",
+  "trim",
+  "is_space",
+  "route",
+  "match_path",
+  "send_response",
+  "write_all",
+  "record",
+  "keep_alive",
+  "to_lower",
+  "close",
+  "stop"
+ ],
+ "seqAround": {
+  "before": 31,
+  "after": 11,
+  "folds": 2,
+  "collisions": []
+ },
+ "seqCode": {
+  "rows": 35,
+  "collisions": []
+ },
+ "seqCollisions": [],
+ "seqCodeLines": 3,
+ "seqCallCode": 3,
+ "seqFold": true,
+ "seqChapters": 7,
+ "seqUses": [
+  "uses close 22"
+ ],
+ "seqHeader": "14 / 23",
+ "gridSquares": 25,
+ "gridKeptStep": true,
+ "gridCollisionsAfterTab": [],
+ "seqKeptStep": true,
+ "gridRoutes": 2,
+ "entry": "src/main.cpp",
+ "runSteps": [
+  "main",
+  "load_config",
+  "read_env",
+  "Server",
+  "start",
+  "listen",
+  "run",
+  "flush",
+  "accept",
+  "handle",
+  "parse_headers",
+  "split",
+  "trim",
+  "is_space",
+  "route",
+  "match_path",
+  "send_response",
+  "write_all",
+  "record",
+  "keep_alive",
+  "to_lower",
+  "close",
+  "stop"
+ ],
+ "runIndirect": [
+  "std::function handler"
+ ],
+ "runMissing": 0,
+ "refresh": {
+  "button": true,
+  "finished": true,
+  "ms": 663,
+  "toast": "refreshed · 24 functions traced",
+  "seqRows": 31
+ },
+ "errors": []
+}

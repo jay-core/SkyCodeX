@@ -90,7 +90,7 @@ export default function App() {
         </Show>
         <Split onDrag={(dx) => { setFilesW(Math.max(140, filesW() - dx)); redraw(); }} />
         <div style={{ width: `${filesW()}px`, flex: 'none' }}><FilesPane /></div>
-        <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `${filesW() + 5}px`, 'z-index': 6 }}><SearchPanel /></div></Show>
+        <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `${filesW() + 5}px`, 'z-index': 'var(--z-search-panel)' }}><SearchPanel /></div></Show>
         <svg class="links" ref={overlay} />
       </div>
       <Show when={page() === 'flow'}><div style={{ flex: 1, 'min-height': 0 }}><Flow /></div></Show>
@@ -100,7 +100,7 @@ export default function App() {
       <AppMenu />
       <Show when={compilerOpen()}><CompilerWindow /></Show>
       <Show when={startOpen() && !root()}><StartWindow /></Show>
-      <Show when={toast()}><div class="toast" role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '52px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 40, 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
+      <Show when={toast()}><div class="toast" role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '52px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 'var(--z-toast)', 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>
   );

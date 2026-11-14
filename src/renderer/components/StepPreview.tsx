@@ -5,14 +5,19 @@ import { stepWays, stepNumbers, ordinal } from '../../shared/flowseq';
 import { detailCard, DetailCard } from '../../shared/metrofacts';
 import { openFile } from '../lib/store';
 import { basename } from '../lib/api';
-import { lines } from '../lib/seqtext';
+import { lines, textTick } from '../lib/seqtext';
 import SeqCode, { CodeCall } from './SeqCode';
+import { hwheel } from '../lib/hwheel';
+import { stepLinks, sourceOf } from '../../shared/gridlinks';
+import { junctionWords, Junction } from '../../shared/junctions';
 
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 const escH = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const underlineCall = (text: string, name: string) => { const e = escH(text), n = escH(name), i = e.indexOf(n); return i < 0 ? e : `${e.slice(0, i)}<span class="cbx on">${n}</span>${e.slice(i + n.length)}`; };
 
 export const [gridPick, setGridPick] = createSignal<{ at: number; cell: number[] } | null>(null);
+export const [junctionPick, setJunctionPick] = createSignal<Junction | null>(null);
+export const junctionNav: { next?: (dir: number) => void; whatIf?: (j: Junction) => { ask: string; go: () => void } | null } = {};
 
 const CARD_KEY = 'flow.cardH', CARD_MIN = 170, CODE_MIN = 110;
 const savedCard = (() => { try { const v = Number(localStorage.getItem(CARD_KEY)); return v >= CARD_MIN ? v : 260; } catch { return 260; } })();
@@ -55,24 +60,58 @@ export default function StepPreview() {
     } catch { return null; }
   });
   const go = (it: number) => { stepMove({ jump: it }); };
+  const jp = () => { const j = junctionPick(), s = S(); return j && s && s.items[j.owner] === j.ownerRow ? j : null; };
+  const links = createMemo(() => {
+    const s = S(), c = cur();
+    textTick();
+    if (!s || !c || c.at >= s.items.length) return null;
+    try { return stepLinks(s, c.at, (f) => lines(f)); } catch { return null; }
+  });
+  const jcard = createMemo(() => {
+    const j = jp(), s = S();
+    if (!j || !s) return null;
+    textTick();
+    try {
+      const R = s.run.rows, owner = R[j.ownerRow], w = junctionWords(s, j), get = (f: string) => lines(f);
+      const next = j.after + 1 <= s.lastItem[j.owner] ? s.items[j.after + 1] : owner.last + 1;
+      const words = [...new Set(j.cond.match(/[A-Za-z_]\w*/g) ?? [])].filter((v) => !/^(?:if|else|of|while|switch|case|default|return|true|false|nullptr|this|sizeof)$/.test(v) && !new RegExp(`\\b${v}\\s*\\(`).test(j.cond));
+      const decided = words.flatMap((v) => {
+        const src = sourceOf(s, j.ownerRow, next, v, get);
+        if (!src) return [];
+        const at = R[src.row].at;
+        return [{ v, text: src.kind === 'param' ? src.text : `${src.text} · step ${s.itemOf[src.row] + 1}${at ? ` · ${basename(owner.file)}:${at.line + 1}` : ''}` }];
+      });
+      const steps = j.kind === 'exit' ? (j.steps > 0 ? `steps ${j.after + 2}–${s.lastItem[j.owner] + 1}` : '') : j.span ? `steps ${j.span[0] + 1}–${j.span[1] + 1}` : '';
+      return {
+        head: `${j.cond} · ${basename(j.file)}:${j.line + 1}`, owner: short(owner.name), fn: nums()[j.owner]?.fn ?? owner.n,
+        then: `${w.then} · line ${j.thenLine + 1}${j.kind === 'exit' && steps ? ` · ${steps} don’t run` : j.kind === 'arm' && steps ? ` · ${steps}` : ''}`,
+        else: `${w.else}${j.kind === 'exit' && steps ? ` · ${steps}` : j.kind === 'arm' && steps ? ` · ${steps} don’t run` : ''}`,
+        decided, junctions: j.inFn, whatIf: junctionNav.whatIf?.(j) ?? null,
+        waysOut: (s.run.exits?.[owner.key] ?? []).filter((x) => x.kind === 'return' || x.kind === 'throw' || x.kind === 'co_return' || x.kind === 'noreturn').map((x) => `${x.text.replace(/;\s*$/, '')} · line ${x.line + 1}`),
+      };
+    } catch { return null; }
+  });
   const code = createMemo(() => {
-    const c = cur(), s = S();
-    if (!c || !s || c.at >= s.items.length) return null;
-    const r = s.run.rows[s.items[c.at]];
-    const fnRow = r.kind === 'indirect' || r.kind === 'value' ? r.caller! : r.kind === 'ref' ? r.ref! : s.items[c.at];
+    const c = cur(), s = S(), j = jp();
+    if (!c || !s || (!j && c.at >= s.items.length)) return null;
+    let fnRow: number, hl = -1;
+    if (j) { fnRow = j.ownerRow; hl = j.line; }
+    else {
+      const r = s.run.rows[s.items[c.at]];
+      fnRow = r.kind === 'indirect' || r.kind === 'value' ? r.caller! : r.kind === 'ref' ? r.ref! : s.items[c.at];
+      if (r.kind === 'indirect' || r.kind === 'value') hl = r.at!.line;
+      else if (c.at + 1 < s.items.length) { const nx = s.run.rows[s.items[c.at + 1]]; if (nx.caller === fnRow && nx.at) hl = nx.at.line; }
+    }
     const f = s.run.rows[fnRow];
     const L = lines(f.file);
     if (!L || !f.lines) return null;
-    let hl = -1;
-    if (r.kind === 'indirect' || r.kind === 'value') hl = r.at!.line;
-    else if (c.at + 1 < s.items.length) { const nx = s.run.rows[s.items[c.at + 1]]; if (nx.caller === fnRow && nx.at) hl = nx.at.line; }
     const calls: CodeCall[] = [];
     s.items.forEach((row, i) => {
       const x = s.run.rows[row];
       if (x.caller !== fnRow || !x.at || x.approx) return;
       const name = short(x.kind === 'ref' && x.ref != null ? s.run.rows[x.ref].name : x.kind === 'indirect' || x.kind === 'value' ? (x.via ?? x.name) : x.name);
       const line = L[x.at.line] ?? '', ch = line.indexOf(name, Math.max(0, x.at.character - name.length));
-      calls.push({ line: x.at.line, ch: ch >= 0 ? ch : x.at.character, len: name.length, item: i, now: i === c.at + 1 });
+      calls.push({ line: x.at.line, ch: ch >= 0 ? ch : x.at.character, len: name.length, item: i, now: !j && i === c.at + 1 });
     });
     return { file: f.file, start: f.start, text: L.slice(f.start, f.start + f.lines).join('\n'), hl, calls };
   });
@@ -89,7 +128,7 @@ export default function StepPreview() {
   const drawLink = () => {
     raf = requestAnimationFrame(drawLink);
     const picked = gridPick() ? (document.querySelector('.gview .gcell.pk') as HTMLElement | null) : null;
-    const sel = picked ?? (document.querySelector('.seqv .srow.sel, .gview .gcell.on') as HTMLElement | null);
+    const sel = picked ?? (document.querySelector(jp() ? '.seqv .sjn.on' : '.seqv .srow.sel, .gview .gcell.on') as HTMLElement | null);
     if (!link) return;
     if (!sel || !box || !box.isConnected) { if (link.innerHTML) link.innerHTML = ''; return; }
     const a = sel.getBoundingClientRect(), b = box.getBoundingClientRect(), view = (sel.closest('.seqv, .gview') as HTMLElement).getBoundingClientRect();
@@ -122,27 +161,59 @@ export default function StepPreview() {
       <svg class="slink" ref={link} aria-hidden="true" />
       <Show when={cur() && S()} fallback={<div class="empty">{runStatus() || 'the code of each step shows here'}</div>}>
         <div class="ph" style={{ padding: '0 20px' }}>
-          <Show when={here()} fallback={<span style={{ color: 'var(--bright)' }}>{atEnd() ? 'end of the run' : ''}</span>}>{(h) => (
+          <Show when={jcard()} fallback={
+            <Show when={here()} fallback={<span style={{ color: 'var(--bright)' }}>{atEnd() ? 'end of the run' : ''}</span>}>{(h) => (
+              <>
+                <span class="pstep"><i class="selmk" />STEP<b>{h().step}</b>of {h().of}</span>
+                <span class="pfn" title={`${h().fn ? `ƒ${h().fn} ` : ''}${h().name} · its ${ordinal(h().call)} call`}>{h().fn ? `ƒ${h().fn} ` : ''}{h().name}<small>{ordinal(h().call)} call</small></span>
+              </>
+            )}</Show>
+          }>{(jc) => (
             <>
-              <span class="pstep">STEP<b>{h().step}</b>of {h().of}</span>
-              <span class="pfn" title="the function's own number, and which of its calls this is">{h().fn ? `ƒ${h().fn} ` : ''}{h().name}<small>{ordinal(h().call)} call</small></span>
+              <span class="pstep"><i class="selmk" />JUNCTION</span>
+              <span class="pfn" title={`${jc().fn ? `ƒ${jc().fn} ` : ''}${jc().owner}`}>{jc().fn ? `ƒ${jc().fn} ` : ''}{jc().owner}</span>
             </>
           )}</Show>
-          <span class="grow" /><Show when={!atEnd()}><button class="chip" onClick={openStep}>open file ›</button></Show>
+          <span class="grow" /><Show when={jp() || !atEnd()}><button class="chip" onClick={() => { const j = jp(); if (j) openFile(j.file, { line: j.line, character: 0 }); else openStep(); }}>open file ›</button></Show>
         </div>
-        <Show when={calledFrom()}>
-          <div class="sfrom"><span class="h">from <b>ƒ{calledFrom()!.n} {calledFrom()!.name}</b> · {calledFrom()!.file} line {calledFrom()!.line}</span><code innerHTML={underlineCall(calledFrom()!.text, calledFrom()!.call)} /></div>
+        <Show when={!jp() && calledFrom()}>
+          <div class="sfrom"><span class="h">from <b>ƒ{calledFrom()!.n} {calledFrom()!.name}</b> · {calledFrom()!.file} line {calledFrom()!.line}</span><code onWheel={hwheel} innerHTML={underlineCall(calledFrom()!.text, calledFrom()!.call)} /></div>
           <div class="sconn" />
         </Show>
-        <Show when={code()?.calls.length}><div class="clk">{here() ? `step ${here()!.step} · ƒ${here()!.fn} ${here()!.name}, ${ordinal(here()!.call)} call · ` : ''}click an outlined call to go to its step</div></Show>
+        <Show when={!jp() && code()?.calls.length}><div class="clk">{here() ? `step ${here()!.step} · ƒ${here()!.fn} ${here()!.name}, ${ordinal(here()!.call)} call · ` : ''}click an outlined call to go to its step</div></Show>
         <div class="scodewrap"><Show when={code()} keyed>{(c) => <SeqCode file={c.file} text={c.text} start={c.start} hl={c.hl} calls={c.calls} onJump={go} />}</Show></div>
         <Show when={!atEnd()}><div class="ways pv"><For each={ways()}>{([k, w]) => <span><b>{k}</b> {w}</span>}</For></div></Show>
-        <Show when={card()}>{(cd) => (
+        <Show when={jcard()}>{(jc) => (
           <>
             <div class="hdiv" role="separator" aria-orientation="horizontal" title="drag to share the height between the code and the card" onPointerDown={dragCard}><span class="grip" /></div>
             <div class="ibx full" ref={box} style={{ height: `${cardH()}px` }}>
               <div class="in" ref={inner}>
-                <div class="h"><span class="tg">{cd().tag}</span><span class="w">{cd().head}</span></div>
+                <div class="h"><span class="tg">JUNCTION</span><span class="w" title={jc().head}>{jc().head}</span></div>
+                <Sec t="the two tracks"><div class="kv">
+                  <span>then</span><span>{jc().then}</span>
+                  <span>else</span><span>{jc().else}</span>
+                </div></Sec>
+                <Show when={jc().decided.length}><Sec t="decided by"><div class="kv"><For each={jc().decided}>{(d) => <><span>{d.v}</span><span>{d.text}</span></>}</For></div></Sec></Show>
+                <Sec t={`in ${jc().owner}`}><div class="kv">
+                  <span>junctions</span><span>{jc().junctions}</span>
+                  <Show when={jc().waysOut.length}><span>ways out</span><span>{jc().waysOut.join(' · ')}</span></Show>
+                </div></Sec>
+                <div class="jbtns">
+                  <Show when={jc().whatIf}>{(w) => <button class="chip" title="the existing what-if: which steps would not run" onClick={() => w().go()}>{w().ask} ⇄</button>}</Show>
+                  <button class="chip" title="the previous junction in the run" onClick={() => junctionNav.next?.(-1)}>◆ previous</button>
+                  <button class="chip" title="the next junction in the run" onClick={() => junctionNav.next?.(1)}>◆ next junction</button>
+                </div>
+                <div class="src">every fact from the parser and SkyCodeX’s analyses · Esc or a step returns to the step</div>
+              </div>
+            </div>
+          </>
+        )}</Show>
+        <Show when={!jp() && card()}>{(cd) => (
+          <>
+            <div class="hdiv" role="separator" aria-orientation="horizontal" title="drag to share the height between the code and the card" onPointerDown={dragCard}><span class="grip" /></div>
+            <div class="ibx full" ref={box} style={{ height: `${cardH()}px` }}>
+              <div class="in" ref={inner}>
+                <div class="h"><span class="tg">{cd().tag}</span><span class="w" title={cd().head}>{cd().head}</span></div>
                 <Sec t="times called"><div class="big2"><b>{cd().timesCalled}</b> call{cd().timesCalled === 1 ? '' : 's'} to {cd().callee.name} in this run · {cd().callers.map((c) => `${c.count} from ${c.name}`).join(', ')}</div></Sec>
                 <Sec t={cd().tag === 'SELECTED' ? 'the calls in this square' : 'every call'}>
                   <For each={cd().calls}>{(c) => (
@@ -169,6 +240,16 @@ export default function StepPreview() {
                   <Show when={cd().loops}><span>loops</span><span>{cd().loops}</span></Show>
                   <Show when={cd().waysOut.length}><span>ways out</span><span>{cd().waysOut.map((w) => `${w.text} (line ${w.line}${w.early ? ', early' : ''})`).join(' · ')}</span></Show>
                 </div></Sec>
+                <Show when={cd().tag.startsWith('STEP') && links()}>{(lk) => (
+                  <>
+                    <Show when={lk().takes.length}><Sec t="takes"><div class="kv"><For each={lk().takes}>{(t) => <><span>{t.param || 'argument'}</span><span><code>{t.arg}</code>{t.how ? ` · ${t.how}` : ''}{t.from ? ` · from ${t.from}` : ''}</span></>}</For></div></Sec></Show>
+                    <Show when={lk().gives.to.length || lk().decisions.length}><Sec t="gives"><div class="kv">
+                      <Show when={lk().gives.what}><span>value</span><span><code>{lk().gives.what}</code></span></Show>
+                      <Show when={lk().gives.to.length}><span>read by</span><span>{lk().gives.to.join(' · ')}</span></Show>
+                      <Show when={lk().decisions.length}><span>decides</span><span>{lk().decisions.map((d) => `${d.text} · line ${d.line + 1}`).join(' · ')}</span></Show>
+                    </div></Sec></Show>
+                  </>
+                )}</Show>
                 <Sec t="effects"><div class="kv">
                   <span>changes</span><span>{cd().effects.changes}</span>
                   <span>outside</span><span>{cd().effects.outside}</span>

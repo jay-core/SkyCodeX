@@ -260,7 +260,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
 
   return (
     <div class="pane prev" style={{ flex: 1 }} ref={area}>
-      <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 2, padding: 0 }}>
+      <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 'var(--z-preview-heading)', padding: 0 }}>
         <For each={[0, 1]}>{(c) => (
           <>
             <span style={{ width: `${c === 0 ? w1() : w2()}px`, flex: 'none', 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>

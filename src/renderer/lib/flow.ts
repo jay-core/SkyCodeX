@@ -1,4 +1,5 @@
-import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename } from './api';
+import { api, CallItem, DocSymbol, OutgoingCall, Pos, uriToFile, fileToUri, basename, normPath } from './api';
+import { inBuild, stablePick } from '../../shared/defpick';
 import { workspaceSymbols, callItemAt, outgoing, inProject, resolveDefinition, withBody, symbols, ensureOpen } from './lsp';
 import { states } from './store';
 import { parseCpp, loopsAt, functionDefs, definedNames, addressCandidates, offsetOf, THREAD_RE, FnDef } from '../../shared/flowcore';
@@ -151,7 +152,15 @@ function nameIndex(root: string): Promise<Map<string, string[]>> {
   return p;
 }
 
-function textDefinitions(root: string, entry: string) {
+export async function definitionFiles(root: string, name: string): Promise<string[]> {
+  return (await nameIndex(root)).get(name) ?? [];
+}
+async function builtSet(): Promise<Set<string> | null> {
+  const list = await api.lsp.built().catch(() => null);
+  return list?.length ? new Set(list.map(normPath)) : null;
+}
+
+function textDefinitions(root: string, entry: string, built: Set<string> | null) {
   const names = () => nameIndex(root);
   const found = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem): Promise<CallItem | null> => {
@@ -162,7 +171,7 @@ function textDefinitions(root: string, entry: string) {
         const { text, tree } = await src(file);
         for (const d of functionDefs(tree, text)) if (d.name === it.name || d.name.endsWith(`::${it.name}`)) hits.push({ file, d, text });
       }
-      const best = ownDefinition(hits, it.name, entry) ?? nearest(hits, uriToFile(it.uri));
+      const best = ownDefinition(hits, it.name, entry) ?? nearest(inBuild(hits, built, normPath), uriToFile(it.uri));
       if (!best) return null;
       const { file, d, text } = best, ch = Math.max(0, (text.split('\n')[d.line] ?? '').search(new RegExp(`\\b${it.name}\\s*\\(`)));
       return callItemAt(file, { line: d.line, character: ch });
@@ -181,7 +190,7 @@ function nearest<T extends { file: string }>(hits: T[], decl: string): T | null 
   const ranked = hits.map((h) => ({ h, s: shared(h.file) })).sort((a, b) => b.s - a.s);
   return ranked[0].s > ranked[1].s ? ranked[0].h : null;
 }
-function stableDefinitions(root: string, entry: string) {
+function stableDefinitions(root: string, entry: string, built: Set<string> | null) {
   const picked = new Map<string, Promise<CallItem | null>>();
   return (it: CallItem, caller: string): Promise<CallItem | null> => {
     const k = `${it.name}@${caller.replace(/[\\/][^\\/]*$/, '')}`;
@@ -195,10 +204,8 @@ function stableDefinitions(root: string, entry: string) {
         for (const d of functionDefs(tree, text)) if (d.name === it.name && !isStatic({ d, text })) hits.push({ file, d, text });
       }
       if (hits.length < 2) return null;
-      const dirs = (f: string) => f.split(/[\\/]/).slice(0, -1), c = dirs(caller);
-      const shared = (f: string) => { const a = dirs(f); let i = 0; while (i < a.length && i < c.length && a[i] === c[i]) i++; return i; };
-      const best = ownDefinition(hits, it.name, entry) ?? hits.sort((a, b) => shared(b.file) - shared(a.file) || a.file.localeCompare(b.file))[0];
-      if (best.file === uriToFile(it.uri)) return null;
+      const best = stablePick(hits, ownDefinition(hits, it.name, entry), caller, uriToFile(it.uri), built, normPath);
+      if (!best) return null;
       const ch = Math.max(0, (best.text.split('\n')[best.d.line] ?? '').search(new RegExp(`\\b${it.name}\\s*\\(`)));
       return callItemAt(best.file, { line: best.d.line, character: ch });
     })());
@@ -214,7 +221,8 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   const overridden = new Map<string, Promise<CallItem[]>>();
   nameIdx = null; taken = null;
   const entry = starts.length === 1 ? uriToFile(starts[0].uri) : '';
-  const fromText = textDefinitions(root, entry), stable = stableDefinitions(root, entry);
+  const built = await builtSet();
+  const fromText = textDefinitions(root, entry, built), stable = stableDefinitions(root, entry, built);
 
   const overridesOf = (it: CallItem): Promise<CallItem[]> => {
     const k = keyOf(it);

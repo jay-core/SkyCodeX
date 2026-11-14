@@ -55,7 +55,7 @@ export default function Programs(props: { switcher: unknown }) {
     const e = () => entries()[p.i];
     return (
       <button class="pr" classList={{ on: flat()[sel()] === p.i, top: p.big }} onMouseEnter={() => setSel(flat().indexOf(p.i))} onClick={() => pick(p.i)}>
-        <Marked text={e().kind === 'interrupt' ? `${e().label} · interrupt` : e().name === 'main' ? e().label : `${e().label} · ${e().name}`} q={q().trim()} /><span class="p"><Marked text={e().rel} q={q().trim()} /></span>
+        <Marked text={e().kind === 'interrupt' ? `${e().label} · interrupt` : e().name === 'main' ? e().label : `${e().label} · ${e().name}`} q={q().trim()} /><span class="p" title={e().rel}><Marked text={e().rel} q={q().trim()} /></span>
         <Show when={isChosen(p.i)}><span class="w">last opened</span></Show>
       </button>
     );

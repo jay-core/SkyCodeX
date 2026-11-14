@@ -66,6 +66,7 @@ const api = {
   lsp: {
     start: (root: string) => invoke('lsp:start', root),
     stale: () => invoke('lsp:stale') as Promise<boolean>,
+    built: () => invoke('lsp:built') as Promise<string[] | null>,
     request: (method: string, params: unknown) => invoke('lsp:request', method, params),
     notify: (method: string, params: unknown) => invoke('lsp:notify', method, params),
     onNotify: (cb: (method: string, params: any) => void) => on('lsp:notify', cb),

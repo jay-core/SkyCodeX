@@ -30,7 +30,7 @@ export default function Palette() {
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, sel() - 1)); }
   };
   return (
-    <div style={{ position: 'fixed', inset: 0, 'z-index': 30 }} onMouseDown={(e) => e.target === e.currentTarget && close()}>
+    <div style={{ position: 'fixed', inset: 0, 'z-index': 'var(--z-palette)' }} onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div class="pal" role="dialog" aria-label={palette()?.placeholder}>
         <input ref={input} value={q()} placeholder={palette()?.placeholder} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={key} spellcheck={false} aria-label={palette()?.placeholder} role="combobox" aria-expanded={!palette()?.prompt} aria-controls="pal-list" aria-activedescendant={palette()?.prompt ? undefined : `pal-${sel()}`} />
         <Show when={!palette()?.prompt}>

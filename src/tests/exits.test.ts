@@ -43,11 +43,12 @@ describe('every way out (tinyhttp)', () => {
   });
 });
 
+const THREADX = process.env.SKYCODEX_TEST_THREADX ?? '';
+const threadxHere = !!THREADX && fs.existsSync(path.join(THREADX, 'common/src/tx_thread_create.c'));
+
 describe('every way out (ThreadX\'s _tx_thread_create, recorded from clangd)', () => {
-  it('the closing return(TX_SUCCESS) is the normal end, not an early way out', () => {
-    const T = '/private/tmp/claude-501/-Users-jfalcon-Desktop-Lithograph-editor/c1841425-f45f-484d-b67c-7ad673cdcc99/scratchpad/ext/threadx';
-    if (!fs.existsSync(T)) return;
-    const { infos } = loadFixture(path.join(ROOT, 'src/tests/fixtures/txcreate-flow.json'), T);
+  it.skipIf(!threadxHere)('the closing return(TX_SUCCESS) is the normal end, not an early way out', () => {
+    const { infos } = loadFixture(path.join(ROOT, 'src/tests/fixtures/txcreate-flow.json'), THREADX);
     const f = [...infos.values()][0];
     expect(f.flow.body.at(-1)).toMatchObject({ t: 'call', approx: true });
     expect(exitsOf(f.flow.body).map((x) => `${x.line + 1} ${x.text} ${x.early ? 'early' : 'end'}`)).toEqual(['402 return(TX_SUCCESS) end']);

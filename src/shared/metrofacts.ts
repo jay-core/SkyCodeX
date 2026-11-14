@@ -50,6 +50,26 @@ export function resultOf(before: string, after: string): { text: string; tone: T
   return null;
 }
 
+export interface ResultTarget { text: string; tone: Tone; name: string }
+export function resultTarget(before: string, after: string): ResultTarget | null {
+  const res = resultOf(before, after);
+  if (!res) return null;
+  const each = res.text === '→ each item' ? /\bfor\s*\(\s*(?:const\s+)?auto\s*&{0,2}\s*([A-Za-z_]\w*)\s*:\s*$/.exec(before)?.[1] : undefined;
+  return { text: res.text, tone: res.tone, name: each ?? /^→ ([A-Za-z_]\w*)$/.exec(res.text)?.[1] ?? '' };
+}
+
+export function callResult(s: Seq, row: number, lines: (file: string) => string[] | null): { line: string | null; call: string | null; name: string; result: ResultTarget | null } {
+  const R = s.run.rows, r = R[row], caller = r.caller != null ? R[r.caller] : null;
+  const fnRow = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
+  const name = short(r.kind === 'indirect' || r.kind === 'value' ? (r.via ?? r.name) : fnRow.name);
+  if (!caller || !r.at) return { line: null, call: null, name, result: null };
+  const line = lines(caller.file)?.[r.at.line] ?? null;
+  const call = line != null ? callAt(line, r.at.character, name) : null;
+  if (line == null || !call) return { line, call, name, result: null };
+  const at = line.indexOf(call);
+  return { line, call, name, result: resultTarget(line.slice(0, at), line.slice(at + call.length)) };
+}
+
 export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: string) => string[] | null): MetroRow {
   const R = s.run.rows, row = s.items[it], r = R[row], n = nums[it];
   const fnRow = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
@@ -57,15 +77,9 @@ export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: s
   const notes: Note[] = [];
   let callText = '', inside = '', result = '', resultTone: Tone = '';
   if (caller && r.at) {
-    const L = lines(caller.file), line = L?.[r.at.line];
-    const name = short(r.kind === 'indirect' || r.kind === 'value' ? (r.via ?? r.name) : fnRow.name);
-    const c = line != null ? callAt(line, r.at.character, name) : null;
-    callText = c ?? (line?.includes(name) ? name : `${name}(${(r.args ?? []).join(', ')})`);
-    if (line != null && c) {
-      const at = line.indexOf(c);
-      const res = resultOf(line.slice(0, at), line.slice(at + c.length));
-      if (res) { result = res.text; resultTone = res.tone; }
-    }
+    const cr = callResult(s, row, lines);
+    callText = cr.call ?? (cr.line?.includes(cr.name) ? cr.name : `${cr.name}(${(r.args ?? []).join(', ')})`);
+    if (cr.result) { result = cr.result.text; resultTone = cr.result.tone; }
   } else callText = `${short(fnRow.name)}()`;
   const own = r.frames.map((f) => s.run.frames[f]).filter((f) => f.owner === r.caller && f.kind === 'loop');
   const fr: RunFrame | undefined = own[own.length - 1];

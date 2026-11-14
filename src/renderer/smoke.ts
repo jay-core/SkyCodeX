@@ -13,12 +13,16 @@ import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
 import { buildFlow, buildRun, findEntries, resolveEntry } from './lib/flow';
 import { rankEntries } from '../shared/entries';
-import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail, setting, comparing } from './lib/flowstore';
+import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail, setting, comparing, stepMove } from './lib/flowstore';
 import { pal } from './lib/lines';
 import { fileToUri } from './lib/api';
 import { fixesIn } from './lib/repair';
 import { applyEdit, isCast } from '../shared/repair';
 import { undo, undoDepth } from '@codemirror/commands';
+import { probeCheck } from './probe';
+import { stepLinks } from '../shared/gridlinks';
+import { lines as seqLines } from './lib/seqtext';
+import { rounded as roundedPath } from './lib/paths';
 
 const errors: string[] = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -59,6 +63,14 @@ async function quiet(cond: () => boolean, hold: number, ms: number) {
   return false;
 }
 
+let layerReport: Record<string, string[]> | null = null;
+const classPath = (el: Element) => { const parts: string[] = []; for (let e: Element | null = el; e && e !== document.documentElement; e = e.parentElement) parts.push(`${e.tagName.toLowerCase()}${e.classList.length ? `.${[...e.classList].sort().join('.')}` : ''}`); return parts.reverse().join('>'); };
+const layersNow = () => [...document.querySelectorAll('*')].flatMap((el) => { const z = getComputedStyle(el).zIndex; return z === 'auto' ? [] : [`${classPath(el)} ${z}`]; }).sort();
+async function shot(name: string) {
+  if (layerReport) layerReport[name] = layersNow();
+  await api.smoke.capture(name);
+}
+
 export async function runSmoke() {
   const report: Record<string, unknown> = {};
   if (info()?.scenario === 'compiler') return compilerDemo(report);
@@ -80,7 +92,12 @@ export async function runSmoke() {
   if (info()?.scenario === 'configs') return configsCheck(report);
   if (info()?.scenario === 'change') return changeCheck(report);
   if (info()?.scenario === 'repair') return repairCheck(report);
+  if (info()?.scenario === 'probe') return probeCheck(report);
+  if (info()?.scenario === 'arrows') return arrowsCheck(report);
+  if (info()?.scenario === 'arrows-mock') return arrowsMock(report);
+  if (info()?.scenario === 'overlaps') return overlapsCheck(report);
   if (info()?.scenario === 'hold') return;
+  layerReport = {}; report.layers = layerReport;
   try {
     await until(() => lspState() === 'ready', 20000);
     report.lsp = lspState();
@@ -98,7 +115,7 @@ export async function runSmoke() {
     report.level1Resolved = await until(() => (levels()[0]?.cards.length ?? 0) > 0 && !levels()[0].cards.some(unresolvedCard), 40000);
     await sleep(900);
     report.level1 = levels()[0]?.cards.map((c) => c.name);
-    await api.smoke.capture('1-editor-preview');
+    await shot('1-editor-preview');
     const callAt = v.state.doc.toString().indexOf('metrics_.record(') + 10;
     v.dispatch({ selection: { anchor: callAt } });
     await sleep(900);
@@ -113,7 +130,7 @@ export async function runSmoke() {
     const rec = boxes().find((e) => e.textContent === 'record');
     await hoverBox(rec);
     report.hoverConnector = { paths: linkPaths(), color: rec?.style.getPropertyValue('--c') ?? null };
-    await api.smoke.capture('1b-hover-call');
+    await shot('1b-hover-call');
     await hoverBox(document.querySelector('.shiftbar') ?? undefined);
     report.connectorsAfterHover = linkPaths();
     boxes().find((e) => e.textContent === 'parse_headers')?.click();
@@ -130,7 +147,7 @@ export async function runSmoke() {
       await until(() => !!levels()[1] && !levels()[1].cards.some(unresolvedCard) && levels()[1].cards.length > 0, 20000);
       await sleep(700);
       report.level2 = levels()[1]?.cards.map((c) => c.name);
-      await api.smoke.capture('2-level-two');
+      await shot('2-level-two');
       const src = () => [...document.querySelectorAll(`.pcol [data-card="0:${idx}"] .callbox`)] as HTMLElement[];
       await until(() => src().length > 0, 5000);
       report.pane2Source = { boxes: src().length, sites: levels()[1]?.cards.reduce((n, c) => n + c.fromRanges.length, 0) ?? 0 };
@@ -143,7 +160,7 @@ export async function runSmoke() {
       await sleep(200);
       await hoverBox(split);
       report.pane2Hover = linkPaths();
-      await api.smoke.capture('2b-pane2-click');
+      await shot('2b-pane2-click');
       await hoverBox(document.querySelector('.shiftbar') ?? undefined);
       report.stuckConnector = linkPaths();
       const p1 = document.querySelectorAll('.pcol')[0] as HTMLElement;
@@ -161,7 +178,7 @@ export async function runSmoke() {
     report.motion = {} as Record<string, unknown>;
     (report.motion as any).shift = await frames(() => (document.querySelector('.shiftbar button:last-child') as HTMLButtonElement)?.click(), 1300);
     report.afterShift = levels().length;
-    await api.smoke.capture('3-shifted');
+    await shot('3-shifted');
     (report.motion as any).shiftBack = await frames(() => (document.querySelector('.shiftbar button:first-child') as HTMLButtonElement)?.click(), 1100);
     const pc0 = document.querySelector('.pcol') as HTMLElement;
     pc0.scrollTop = pc0.scrollHeight;
@@ -185,20 +202,20 @@ export async function runSmoke() {
     await hoverBox(boxes().find((e) => e.dataset.call === `0:${lastK}`));
     const stub = [...document.querySelectorAll('svg.links text')].map((t) => t.textContent);
     report.offscreenHover = { card: levels()[0]?.cards[lastK]?.name, stub: stub[0] ?? null };
-    await api.smoke.capture('3c-hover-offscreen');
+    await shot('3c-hover-offscreen');
     await hoverBox(document.querySelector('.shiftbar') ?? undefined);
     pc0.scrollTop = 0;
 
     await quickOpen(); await sleep(400);
     report.quickOpenItems = palette()?.items?.length ?? 0;
-    await api.smoke.capture('3b-quick-open');
+    await shot('3b-quick-open');
     setPalette(null);
     const kaAt = v.state.doc.toString().indexOf('keep_alive(headers)') + 2;
     const edit = await api.lsp.request('textDocument/rename', { textDocument: { uri: 'file://' + encodeURI(file) }, position: offsetToPos(v.state.doc, kaAt), newName: 'wants_keep_alive' }) as any;
     report.renameFiles = await applyWorkspaceEdit(edit);
     report.renameApplied = [...states.entries()].filter(([, st]) => st.doc.toString().includes('wants_keep_alive')).map(([f]) => f.split('/').pop());
     (report.motion as any).settingsOpen = await frames(() => setSettingsOpen(true), 1200);
-    await api.smoke.capture('4-settings');
+    await shot('4-settings');
     const fonts = await installedFonts();
     report.fontsListed = fonts.length;
     report.monoFonts = fonts.filter((f) => f.mono).slice(0, 6).map((f) => f.name);
@@ -214,7 +231,7 @@ export async function runSmoke() {
     rng.value = '22'; rng.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(150);
     report.sliderLive = { bubble: sizeCtl.querySelector('.bubble')?.textContent, box: box.value, cssSize: document.documentElement.style.getPropertyValue('--code-size') };
-    await api.smoke.capture('4b-settings-slider');
+    await shot('4b-settings-slider');
     rng.value = '13'; rng.dispatchEvent(new Event('input', { bubbles: true })); rng.dispatchEvent(new Event('change', { bubbles: true }));
     await sleep(500);
     report.fontSizeRestored = settings()['font.size'];
@@ -223,7 +240,7 @@ export async function runSmoke() {
     await until(() => !!famCtl.querySelector('.combo-list button'), 4000);
     report.fontOptions = famCtl.querySelectorAll('.combo-list button').length;
     report.fontGroups = [...famCtl.querySelectorAll('.combo-g')].map((g) => g.textContent);
-    await api.smoke.capture('4c-settings-fonts');
+    await shot('4c-settings-fonts');
     (famCtl.querySelector('.combo input') as HTMLInputElement).blur();
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     const pageBtn = (n: string) => ([...document.querySelectorAll('.set .pv button')] as HTMLButtonElement[]).find((x) => x.textContent === n)!;
@@ -233,17 +250,17 @@ export async function runSmoke() {
     ([...wBtns].find((x) => x.firstChild?.textContent === 'light') as HTMLButtonElement).click();
     await sleep(400);
     report.editorWeight = getComputedStyle(document.querySelector('.cm-scroller')!).fontWeight;
-    await api.smoke.capture('4g-settings-weight');
+    await shot('4g-settings-weight');
     await api.settings.set('font.weight', 400);
     pageBtn('clangd').click(); await sleep(300);
-    await api.smoke.capture('4e-settings-clangd');
+    await shot('4e-settings-clangd');
     setSettingsOpen(false);
     await sleep(300);
     (document.querySelector('.wctl') as HTMLElement).style.transition = 'none';
     (document.querySelector('.wctl') as HTMLElement).style.opacity = '1';
     await sleep(100);
     report.windowIcons = [...document.querySelectorAll('.wctl svg')].map((s) => Math.round(s.getBoundingClientRect().width));
-    await api.smoke.capture('4d-window-controls');
+    await shot('4d-window-controls');
     (document.querySelector('.wctl') as HTMLElement).style.opacity = '';
     (document.querySelector('.wctl') as HTMLElement).style.transition = '';
 
@@ -257,7 +274,7 @@ export async function runSmoke() {
     report.flowRipple = [...document.querySelectorAll('.gview .grh.chg b, .gview .gch.chg b')].map(headText);
     report.flowChanged = [...changed()].map((i) => { const r = seq()!.run.rows[i]; return `${r.name} ${r.file.split('/').pop()}:${r.start}+${r.lines}`; });
     report.gridCollisions = auditGrid();
-    await api.smoke.capture('5-flow-grid');
+    await shot('5-flow-grid');
     {
       const sq = [...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[];
       const target = sq.find((e) => e.querySelectorAll('i').length >= 2) ?? sq[0];
@@ -266,11 +283,11 @@ export async function runSmoke() {
       const tag = document.querySelector('.gtag')?.getBoundingClientRect();
       report.gridHover = { tag: document.querySelector('.gtag')?.textContent ?? null, tinted: document.querySelectorAll('.gview .gcell.hl').length, outlined: !!document.querySelector('.gview .gcell.hv'), pointer: getComputedStyle(target).cursor,
         coversSquares: tag ? sq.filter((e) => e !== target && overlap(e.getBoundingClientRect(), tag)).length : -1 };
-      await api.smoke.capture('6-grid-hover');
+      await shot('6-grid-hover');
       target.click();
       await sleep(800);
       report.gridOpen = { steps: [...document.querySelectorAll('.gview .gcell.pk .gstep')].map((e) => e.textContent), card: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, cardHead: document.querySelector('.sprev .ibx.full .h .w')?.textContent ?? null, link: !!document.querySelector('svg.slink path') };
-      await api.smoke.capture('7-grid-open');
+      await shot('7-grid-open');
       const gs = [...document.querySelectorAll('.gview .gcell.pk .gstep')] as HTMLElement[], last = gs[gs.length - 1];
       const want = Number(/step (\d+)/.exec(last?.textContent ?? '')?.[1] ?? 0);
       last?.click();
@@ -301,7 +318,7 @@ export async function runSmoke() {
     if (sc) { sc.scrollLeft = 60; await sleep(100); }
     report.cardPans = sc ? sc.scrollLeft > 0 : 'no wide card';
     report.linksClipped = !!document.querySelector('svg.links g[clip-path]');
-    await api.smoke.capture('9a-std-source');
+    await shot('9a-std-source');
     try { localStorage.removeItem('litho.preview.split'); } catch {  }
     await api.settings.set('preview.include_std', true);
     report.tabsBefore = document.querySelectorAll('.hdr .tab').length;
@@ -313,7 +330,7 @@ export async function runSmoke() {
     report.tabsAfter = document.querySelectorAll('.hdr .tab').length;
     setMenuOpen(true); await sleep(400);
     report.menuItems = document.querySelectorAll('.appmenu button').length;
-    await api.smoke.capture('9b-menu');
+    await shot('9b-menu');
     setMenuOpen(false);
     COMMANDS.newFile(); await sleep(300);
     palette()?.prompt?.accept('smoke_new.cpp'); setPalette(null); await sleep(900);
@@ -331,7 +348,7 @@ export async function runSmoke() {
     const before = !!document.querySelector('.pane.prev .shiftbar');
     await api.settings.set('preview.enabled', false); await sleep(500);
     report.previewHidden = before && !document.querySelector('.pane.prev .shiftbar') && document.querySelector('svg.links')?.innerHTML === '';
-    await api.smoke.capture('9c-preview-hidden');
+    await shot('9c-preview-hidden');
     await api.settings.set('preview.enabled', true); await sleep(800);
     report.previewShownAgain = !!document.querySelector('.pane.prev .shiftbar');
     const probe = `${root()}/probe/probe.cpp`;
@@ -343,7 +360,7 @@ export async function runSmoke() {
       await sleep(800);
       report.callLike = (levels()[0]?.cards ?? []).map((c) => `${c.kind}:${c.name}`);
       report.dividers = { cards: document.querySelectorAll('.pcol .pdiv').length };
-      await api.smoke.capture('9d-call-like');
+      await shot('9d-call-like');
       await api.settings.set('preview.include_other', false);
       await until(() => !(levels()[0]?.cards ?? []).some((c) => c.kind !== 'call'), 8000);
       report.callLikeHidden = !(levels()[0]?.cards ?? []).some((c) => c.kind !== 'call');
@@ -355,13 +372,13 @@ export async function runSmoke() {
     ff.value = 'SERVER'; ff.dispatchEvent(new Event('input', { bubbles: true }));
     await until(() => document.querySelectorAll('.found .ti:not(.fdir)').length > 0, 8000);
     report.fileFilter = [...document.querySelectorAll('.found .ti:not(.fdir)')].map((e) => e.textContent);
-    await api.smoke.capture('10a-file-filter');
+    await shot('10a-file-filter');
     ff.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(200);
     report.fileFilterCleared = !document.querySelector('.found') && !!document.querySelector('.files .tree');
     openSearch('Keep_Alive');
     await until(() => !result.running && result.hits.length > 0, 15000); await sleep(300);
     report.contentSearch = { matches: result.matches, files: result.files, shown: document.querySelectorAll('.cres .hit').length, marked: document.querySelectorAll('.cres mark').length };
-    await api.smoke.capture('10b-content-search');
+    await shot('10b-content-search');
     (document.querySelector('.cres .hit') as HTMLElement)?.click(); await sleep(600);
     report.contentSearchOpened = { closed: !document.querySelector('.csearch'), file: basename(files.active), line: getMainView()?.state.doc.lineAt(getMainView()!.state.selection.main.head).number };
     await openFile(file);
@@ -369,7 +386,7 @@ export async function runSmoke() {
     const cv = document.querySelector('.pcol .card .cm-content') as HTMLElement | null;
     if (cv) { cv.focus(); COMMANDS.find(); await sleep(300); }
     report.cardSearch = !!document.querySelector('.pcol .card .cm-search') && !document.querySelector('.cm-editor .cm-search:not(.pcol *)');
-    await api.smoke.capture('10c-card-search');
+    await shot('10c-card-search');
     (document.querySelector('.pcol .card .cm-search input') as HTMLInputElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     setPage('flow'); setFlowView('metro');
     await until(() => !!document.querySelector('.seqv .playc'), 10000);
@@ -381,13 +398,13 @@ export async function runSmoke() {
     setFlowView('grid'); await until(() => !!document.querySelector('.gview') && !!document.querySelector('.playc'), 10000);
     report.pngExport = { offered: [...document.querySelectorAll('.ph .chip')].some((c) => c.textContent === 'export') };
     report.playControls = { stepMoved: a0 !== a1, playing: playingOn, restartPlays: restarted, boxes: document.querySelectorAll('.playc button').length };
-    await api.smoke.capture('10d-play-controls');
+    await shot('10d-play-controls');
     setPage('editor');
     const sub = `${root()}/src`;
     await openFolder(sub);
     report.reopenLsp = (await until(() => lspState() === 'ready', 15000)) ? 'ready' : lspState();
     await sleep(600);
-    await api.smoke.capture('9-reopened-folder');
+    await shot('9-reopened-folder');
   } catch (e) {
     errors.push(`smoke: ${e}`);
   }
@@ -409,7 +426,7 @@ async function compilerDemo(report: Record<string, unknown>) {
     await sleep(500);
     const w = document.querySelector('.cwin') as HTMLElement;
     report.window = { title: document.querySelector('.cwin-h .t')?.textContent, big: document.querySelector('.cwin .cbig')?.textContent, sub: document.querySelector('.cwin .csub')?.textContent };
-    await api.smoke.capture('c1-compiler');
+    await shot('c1-compiler');
     document.querySelector('.body')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     document.body.click();
     await sleep(200);
@@ -431,12 +448,12 @@ async function compilerDemo(report: Record<string, unknown>) {
     (document.querySelector('.cwin .cvers button') as HTMLButtonElement | null)?.click();
     await sleep(300);
     report.confirm = document.querySelector('.cwin .cconfirm')?.textContent ?? null;
-    await api.smoke.capture('c2-compiler-versions');
+    await shot('c2-compiler-versions');
     ([...document.querySelectorAll('.cwin .cconfirm .lnk')] as HTMLButtonElement[]).find((b) => b.textContent === 'cancel')?.click();
     (document.querySelector('.cwin-h button') as HTMLButtonElement).click();
     await sleep(200);
     report.minimised = !document.querySelector('.cwin-b');
-    await api.smoke.capture('c3-compiler-minimised');
+    await shot('c3-compiler-minimised');
     (document.querySelector('.cwin-h button') as HTMLButtonElement).click();
     await sleep(200);
     (document.querySelector('.cwin-h button.x') as HTMLButtonElement).click();
@@ -467,7 +484,7 @@ async function fontsDemo(report: Record<string, unknown>) {
     await until(() => lspState() === 'ready', 20000);
     await openFile(`${root()}/src/server.cpp`); await sleep(800);
     report.editorFont = getComputedStyle(document.querySelector('.cm-content')!).fontFamily;
-    await api.smoke.capture('f1-arx-f1');
+    await shot('f1-arx-f1');
   } catch (e) {
     errors.push(`fonts demo: ${e}`);
   }
@@ -496,9 +513,9 @@ async function defsDemo(report: Record<string, unknown>) {
     v.contentDOM.dispatchEvent(new MouseEvent('mousedown', { clientX: c.left + 2, clientY: c.top + 4, metaKey: true, bubbles: true, button: 0 }));
     await sleep(2500);
     report.afterClick = { active: files.active, cursor: cursorPos(), lines: getMainView()?.state.doc.lines, firstLine: getMainView()?.state.doc.line(1).text };
-    await api.smoke.capture('d1-after-click');
+    await shot('d1-after-click');
     if (r1) {
-      await openFile(r1.file, { line: r1.line, character: r1.character }); await sleep(800); report.openInclude = { active: files.active, lines: getMainView()?.state.doc.lines }; await api.smoke.capture('d2-include');
+      await openFile(r1.file, { line: r1.line, character: r1.character }); await sleep(800); report.openInclude = { active: files.active, lines: getMainView()?.state.doc.lines }; await shot('d2-include');
       const os = r1.file.replace(/thread$/, 'ostream');
       await openFile(os);
       await sleep(1500);
@@ -551,6 +568,7 @@ async function anyHeaderDemo(report: Record<string, unknown>) {
 }
 
 async function bootCheck(report: Record<string, unknown>) {
+  layerReport = {}; report.layers = layerReport;
   try {
     const ci = (await api.compiler.info()) as any;
     report.platform = info()?.platform;
@@ -578,13 +596,13 @@ async function bootCheck(report: Record<string, unknown>) {
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
     await sleep(700);
     report.seqAround = { before: allRows, after: document.querySelectorAll('.seqv .srow:not(.sfold)').length, folds: document.querySelectorAll('.seqv .sfold').length, collisions: auditSequence().slice(0, 3) };
-    await api.smoke.capture('boot-seq-around');
+    await shot('boot-seq-around');
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
     await sleep(900);
     report.seqCode = { rows: document.querySelectorAll('.seqv .sline').length, collisions: auditSequence().slice(0, 3) };
-    await api.smoke.capture('boot-seq-all-code');
+    await shot('boot-seq-all-code');
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true }));
     await sleep(300);
     report.seqCollisions = [] as string[];
@@ -597,7 +615,7 @@ async function bootCheck(report: Record<string, unknown>) {
     await press('Home');
     for (let i = 0; i < 14; i++) await press('ArrowRight');
     (report.seqCollisions as string[]).push(...auditSequence());
-    await api.smoke.capture('seq-handle');
+    await shot('seq-handle');
     report.seqCodeLines = document.querySelectorAll('.scode .cm-line').length;
     report.seqCallCode = document.querySelectorAll('.sband .scall > div:not(.from)').length;
     await press('Home'); for (let i = 0; i < 9; i++) await press('ArrowRight');
@@ -622,7 +640,7 @@ async function bootCheck(report: Record<string, unknown>) {
     report.gridSquares = document.querySelectorAll('.gview .gcell.has').length;
     report.gridKeptStep = !!stepName && [...document.querySelectorAll('.gview .grh.on b')].some((e) => e.textContent === stepName);
     report.gridCollisionsAfterTab = auditGrid();
-    await api.smoke.capture('grid-kept-step');
+    await shot('grid-kept-step');
     setFlowView('metro');
     await sleep(300);
     report.seqKeptStep = document.querySelector('.ph .seqk')?.textContent === report.seqHeader;
@@ -635,7 +653,7 @@ async function bootCheck(report: Record<string, unknown>) {
     headNamed('split')?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
     await sleep(500);
     report.gridRoutes = document.querySelectorAll('.bxr').length;
-    await api.smoke.capture('grid-routes');
+    await shot('grid-routes');
     (document.querySelector('.gview') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     setFlowView('metro');
     await sleep(300);
@@ -656,7 +674,7 @@ async function bootCheck(report: Record<string, unknown>) {
     report.refresh = { button: !!btn, finished: done, ms: Math.round(performance.now() - t0r), toast: document.querySelector('.toast')?.textContent ?? null, seqRows: document.querySelectorAll('.seqv .srow').length };
     setPage('editor');
     await sleep(500);
-    await api.smoke.capture('boot');
+    await shot('boot');
   } catch (e) { errors.push(`boot: ${e} ${String((e as Error)?.stack ?? '').split('\n').slice(1, 4).map((l) => l.trim()).join(' ← ')}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -674,11 +692,11 @@ function totalsInSight(): string[] {
   return out;
 }
 
-function auditGrid(): string[] {
+export function auditGrid(): string[] {
   const view = document.querySelector('.gview .gscroll')?.getBoundingClientRect();
   if (!view) return ['no grid'];
   const opaque = (el: Element | null) => !!el && getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(el).backgroundColor !== 'transparent';
-  const layerOf = (e: Element) => { const t = e.closest('.gtot'), m = e.closest('.gmk'); return t && opaque(t) ? 2 : m && opaque(m) ? 1 : 0; };
+  const layerOf = (e: Element) => { const c = e.closest('.gcorner'), t = e.closest('.gtot'), m = e.closest('.gmk'); return c && opaque(c) ? 5 : t && opaque(t) ? 4 : m && opaque(m) ? 3 : e.closest('.gch, .gfb') ? 2 : e.closest('.grh, .grb') ? 1 : 0; };
   const items = [...document.querySelectorAll('.gview .grh b, .gview .gch b, .gview .gch span, .gview .gfb, .gview .grb span, .gview .gax, .gview .gtot .t, .gview .gmk .m')]
     .map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 24), e, layer: layerOf(e) }))
     .filter((x) => x.t && x.r.width >= 1 && x.r.bottom > view.top && x.r.top < view.bottom && x.r.right > view.left && x.r.left < view.right);
@@ -741,7 +759,7 @@ async function largeCheck(report: Record<string, unknown>) {
       const t3 = performance.now();
       const ok = await until(() => document.querySelectorAll('.pcol .card').length > 0, 90000);
       steps.previewCards = { count: document.querySelectorAll('.pcol .card').length, ms: ok ? Math.round(performance.now() - t3) : 'timed out', text: (document.querySelector('.pcol')?.textContent ?? '').slice(0, 200) };
-      await api.smoke.capture('large-1-preview');
+      await shot('large-1-preview');
       const t4 = performance.now();
       const call = lines.findIndex((l, i) => i > ln && /\w+\(/.test(l));
       const name = (lines[call].match(/(\w+)\(/) ?? [])[1] ?? '';
@@ -754,7 +772,7 @@ async function largeCheck(report: Record<string, unknown>) {
     await until(() => document.querySelectorAll('.progs .pr').length > 0, 30000);
     steps.programsMs = Math.round(performance.now() - tp);
     steps.programs = { rows: document.querySelectorAll('.progs .pr').length, groups: [...document.querySelectorAll('.progs .grp b')].map((b) => b.textContent).slice(0, 10), top: document.querySelector('.progs .pr.top')?.textContent };
-    await api.smoke.capture('large-0-programs');
+    await shot('large-0-programs');
     steps.programsStatus = status();
     (document.querySelector('.progs .pr.top') as HTMLElement).click();
     const t5 = performance.now(), tClick = at();
@@ -765,7 +783,7 @@ async function largeCheck(report: Record<string, unknown>) {
     steps.entry = { count: entries().length, chosen: entries()[lane()]?.rel, name: entries()[lane()]?.name, start: entryStart() };
     steps.flow = { status: flowStatus(), drawn: drawn(), ms: fl ? Math.round(performance.now() - t5) : 'timed out' };
     await sleep(1500);
-    await api.smoke.capture('large-2-flow');
+    await shot('large-2-flow');
     const ix = await until(() => /indexing/.test(document.body.textContent ?? '') === false, 240000);
     await sleep(1000);
     await until(() => !/tracing/.test(flowStatus()), 240000);
@@ -777,7 +795,7 @@ async function largeCheck(report: Record<string, unknown>) {
     steps.run = { rows: seq()?.run.rows.length, steps: seq()?.run.rows.filter((r) => r.kind === 'step').length, ms: Math.round(performance.now() - t7) };
     const gridBad = auditGrid();
     steps.grid = { filesFirst: !!document.querySelector('.gview .gnote'), squares: document.querySelectorAll('.gview .gcell.has').length, rows: document.querySelectorAll('.gview .grh').length, cols: document.querySelectorAll('.gview .gch').length, collisions: gridBad.length, first: gridBad.slice(0, 2) };
-    await api.smoke.capture('large-4-grid');
+    await shot('large-4-grid');
     const block = [...document.querySelectorAll('.gview .gcell.has')].sort((a, b) => (parseInt(b.textContent ?? '0') || 0) - (parseInt(a.textContent ?? '0') || 0))[0] as HTMLElement | undefined;
     if (document.querySelector('.gview .gnote')) { block?.click(); await sleep(800); }
     const sq = document.querySelector('.gview .gcell.has') as HTMLElement | null;
@@ -785,7 +803,7 @@ async function largeCheck(report: Record<string, unknown>) {
     await sleep(300);
     const tr = document.querySelector('.gtag')?.getBoundingClientRect();
     steps.gridOpened = { squares: document.querySelectorAll('.gview .gcell.has').length, tagInside: tr ? tr.left >= 0 && tr.top >= 0 && tr.right <= innerWidth && tr.bottom <= innerHeight : null, collisions: auditGrid().length };
-    await api.smoke.capture('large-5-grid-block');
+    await shot('large-5-grid-block');
     setFlowView('metro');
     await until(() => document.querySelectorAll('.seqv .srow').length > 0, 30000);
     const sv = document.querySelector('.seqv') as HTMLElement, moves: number[] = [], seqBad: string[] = [];
@@ -799,7 +817,7 @@ async function largeCheck(report: Record<string, unknown>) {
     await sleep(600);
     seqBad.push(...auditSequence());
     steps.sequence = { rows: document.querySelectorAll('.seqv .srow').length, moveMsMax: Math.max(...moves), moveMsMedian: moves.sort((a, b) => a - b)[moves.length >> 1], collisions: seqBad.length, first: seqBad.slice(0, 2) };
-    await api.smoke.capture('large-6-sequence');
+    await shot('large-6-sequence');
     await api.smoke.profile(null);
     const tProf = performance.timeOrigin + performance.now();
     const key = (el: Element | null, k: string) => el?.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
@@ -828,13 +846,13 @@ async function largeCheck(report: Record<string, unknown>) {
     (document.querySelector('.progs .pr.top') as HTMLElement)?.click();
     steps.programsBack = { list: backList, again: await until(() => document.querySelectorAll('.gview .gcell').length > 0, 15000) };
     steps.flowIndexed = { indexed: ix, ms: Math.round(performance.now() - t5), status: flowStatus(), squares: document.querySelectorAll('.gview .gcell.has').length };
-    await api.smoke.capture('large-2b-flow-indexed');
+    await shot('large-2b-flow-indexed');
     setPage('editor');
     await sleep(3000);
     const t6 = performance.now(); await sleep(0); await new Promise((r) => requestAnimationFrame(r));
     steps.frameAfterIndexMs = Math.round(performance.now() - t6);
     steps.indexing = (document.querySelector('.pcol')?.textContent ?? '').match(/index[^\n]{0,60}/i)?.[0] ?? null;
-    await api.smoke.capture('large-3-after');
+    await shot('large-3-after');
     steps.settled = (await quiet(() => !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 3000, 180000)) ? at() : 'not settled';
     await sleep(2000);
   } catch (e) { errors.push(`large: ${e}`); }
@@ -851,7 +869,7 @@ async function colorsCheck(report: Record<string, unknown>) {
     if (src) { await openFile(src); const v = getMainView()!; const at = v.state.doc.toString().indexOf('auto handler = route(') + 6; v.dispatch({ selection: { anchor: at } }); }
     await until(() => document.querySelectorAll('.code .callbox').length > 3, 60000);
     await sleep(800);
-    await api.smoke.capture('colors-1-outlines');
+    await shot('colors-1-outlines');
     setSettingsOpen(true);
     await sleep(900);
     const appearance = [...document.querySelectorAll('.set .pv button')].find((b) => b.textContent === 'appearance') as HTMLButtonElement | undefined;
@@ -862,7 +880,7 @@ async function colorsCheck(report: Record<string, unknown>) {
     await sleep(400);
     report.colorSections = [...document.querySelectorAll('.set .sechead > span:first-child')].map((e) => e.textContent);
     report.colorControls = document.querySelectorAll('.set .colorctl').length;
-    await api.smoke.capture('colors-2-settings');
+    await shot('colors-2-settings');
     const kwCss = () => getComputedStyle(document.documentElement).getPropertyValue('--kw').trim();
     const before = kwCss(), snapshot = { ...settings() };
     const ctl = [...document.querySelectorAll('.set .ctl')].find((c) => c.querySelector('.lab')?.textContent?.startsWith('keyword'));
@@ -871,7 +889,7 @@ async function colorsCheck(report: Record<string, unknown>) {
     await sleep(300);
     const file = (await api.fs.read(info()!.settingsFile).catch(() => '')) as string;
     report.livePreview = { before, during: kwCss(), written: /^\s*keyword\s*=/m.test(file) };
-    await api.smoke.capture('colors-3-dragging');
+    await shot('colors-3-dragging');
     applySettings(snapshot, problems());
     await sleep(200);
     report.restored = kwCss() === before;
@@ -893,7 +911,7 @@ async function folderCheck(report: Record<string, unknown>) {
     report.filesVisible = !!pane && pane.getBoundingClientRect().width > 0 && pane.getBoundingClientRect().height > 0;
     report.fileRows = document.querySelectorAll('.files .ti').length;
     report.tabOn = tab?.classList.contains('on') ?? false;
-    await api.smoke.capture('folder-tab');
+    await shot('folder-tab');
   } catch (e) { errors.push(`folder: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -912,13 +930,13 @@ async function engineCheck(report: Record<string, unknown>) {
     const run = seq()!.run;
     report.rows = run.rows.map((r) => `${'  '.repeat(r.depth)}${r.kind === 'step' ? r.n : r.kind}${r.thread ? '(t)' : ''} ${r.kind === 'indirect' ? `${r.text} ⇢ ${(r.could ?? []).join(',')}` : r.name}`);
     report.virtualFrames = run.frames.filter((f) => f.kind === 'virtual').map((f) => f.text);
-    await api.smoke.capture('engine-1-main');
+    await shot('engine-1-main');
     (document.querySelector('.backp') as HTMLElement).click(); await sleep(400);
     const isr = [...document.querySelectorAll('.progs .pr')].find((b) => /USART1_IRQHandler/.test(b.textContent ?? '')) as HTMLElement | undefined;
     isr?.click();
     await until(() => (seq()?.run.rows[0]?.name ?? '').includes('USART1') && !runStatus(), 30000);
     report.isrRows = seq()?.run.rows.map((r) => `${r.kind === 'step' ? r.n : r.kind} ${r.kind === 'indirect' ? `${r.text} ⇢ ${(r.could ?? []).join(',')}` : r.name}`);
-    await api.smoke.capture('engine-2-isr');
+    await shot('engine-2-isr');
   } catch (e) { errors.push(`engine: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -946,7 +964,7 @@ async function watchCheck(report: Record<string, unknown>) {
     await choose('running_');
     report.watch = lit();
     report.watchDimmed = document.querySelectorAll('.seqv .srow.fq').length;
-    await api.smoke.capture('watch-1-running');
+    await shot('watch-1-running');
     check((report.watch as string[]).join(' | ') === 'start: ▲ sets running_ · ▽ reads running_ | run: → running_ passed on as running · ▽ reads running | stop: ▲ sets running_', `watching running_ shows ${(report.watch as string[]).join(' | ')}`);
     key('Escape');
     await sleep(300);
@@ -959,14 +977,14 @@ async function watchCheck(report: Record<string, unknown>) {
     report.journeyOptions = [...document.querySelectorAll('.spickl button')].map((b) => b.textContent);
     await choose('req.raw');
     report.journey = lit();
-    await api.smoke.capture('watch-2-journey');
+    await shot('watch-2-journey');
     check((report.journey as string[]).join(' | ') === 'parse_headers: → req.raw passed on as raw · a copy · ▽ reads raw | split: → raw passed on as s · a copy · ▽ reads s', `following req.raw shows ${(report.journey as string[]).join(' | ')}`);
     setFlowView('grid');
     await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
     report.journeyGrid = [...document.querySelectorAll('.gview .grh.fw')].map((r) => `${r.querySelector('b')?.textContent}: ${r.querySelector('.gw')?.textContent}`);
     const fwNames = [...new Set([...document.querySelectorAll('.gview .grh.fw b, .gview .gch.fw b')].map(headText))].sort();
-    await api.smoke.capture('watch-3-grid');
+    await shot('watch-3-grid');
     check(fwNames.join() === 'parse_headers,split', `the grid lights ${fwNames.join(', ')}`);
     check(auditGrid().length === 0, `text on text in the grid: ${auditGrid().slice(0, 3).join('; ')}`);
     check(totalsInSight().length === 0, `the grid's totals: ${totalsInSight().join('; ')}`);
@@ -988,14 +1006,14 @@ async function valuesCheck(report: Record<string, unknown>) {
     await sleep(500);
     report.said = [...document.querySelectorAll('.seqv .srow .sd')].map((s) => s.textContent);
     report.faded = document.querySelectorAll('.seqv .srow.sdead').length;
-    await api.smoke.capture('values-1-sequence');
+    await shot('values-1-sequence');
     check((report.said as string[]).includes('not in this call · clear is true here — passed by draw(true)'), `draw's else does not say why: ${(report.said as string[]).slice(0, 3).join(' | ')}`);
     check((report.faded as number) >= (report.said as string[]).length && (report.said as string[]).length > 0, 'no row fades');
     setFlowView('grid');
     await until(() => document.querySelectorAll('.gview .grh').length > 0, 20000);
     await sleep(800);
     report.gridDim = [...document.querySelectorAll('.gview .grh.dim b')].map((e) => e.textContent);
-    await api.smoke.capture('values-2-grid');
+    await shot('values-2-grid');
     check((report.gridDim as string[]).includes('inner'), `inner, called only where it cannot happen, is not faded in the grid: ${(report.gridDim as string[]).join(', ')}`);
     check(auditGrid().length === 0, `text on text in the grid: ${auditGrid().slice(0, 3).join('; ')}`);
     check(totalsInSight().length === 0, `the grid's totals: ${totalsInSight().join('; ')}`);
@@ -1017,12 +1035,12 @@ async function configsCheck(report: Record<string, unknown>) {
     await sleep(400);
     report.asBuilt = ghosts();
     check((report.asBuilt as string[]).join(' ; ') === 'narrow | not in this build · sizeof(void *) == 8 is true ; narrow | not in this build · sizeof(char) == 2 is false', `if constexpr ghosts as built: ${(report.asBuilt as string[]).join(' ; ')}`);
-    await api.smoke.capture('configs-1-as-built');
+    await shot('configs-1-as-built');
     check(click('.setc .chip'), 'no settings chip');
     await until(() => document.querySelectorAll('.setm .mr').length > 0, 10000);
     report.macros = [...document.querySelectorAll('.setm .mr .k')].map((k) => k.textContent);
     check((report.macros as string[]).join(',') === 'BOARD,DEBUG,NO_CHECKS', `the menu lists ${(report.macros as string[]).join(',')}`);
-    await api.smoke.capture('configs-2-menu');
+    await shot('configs-2-menu');
     const row = (k: string) => [...document.querySelectorAll('.setm .mr')].find((r) => r.querySelector('.k')?.textContent === k)!;
     ([...row('DEBUG').querySelectorAll('button')].find((b) => b.textContent === 'define') as HTMLElement).click();
     ([...row('BOARD').querySelectorAll('button')].find((b) => b.textContent === '2') as HTMLElement).click();
@@ -1042,7 +1060,7 @@ async function configsCheck(report: Record<string, unknown>) {
     (document.querySelector('.seqv') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     await sleep(700);
     report.only = only();
-    await api.smoke.capture('configs-3-debug-board2');
+    await shot('configs-3-debug-board2');
     check((report.only as string[]).join(' | ') === 'start: only with DEBUG · BOARD=2: log_line, init_board_b', `only with the setting: ${(report.only as string[]).join(' | ')}`);
     check((report.withSetting as string[])[0] === 'init_board_a | only as built', `as built's own call is not a ghost in place: ${(report.withSetting as string[]).join(' ; ')}`);
     click('.setc .chip');
@@ -1120,7 +1138,7 @@ async function repairCheck(report: Record<string, unknown>) {
     report.note = note();
     check(JSON.stringify(report.rows) === JSON.stringify([STRING, 'if (validate(r) && check_size(r)) { | closes the ( opened at column 6']), `fixes shown: ${JSON.stringify(report.rows)}`);
     check(report.note === '2 errors · 2 fixes found, each checked with clangd', `status note: ${report.note}`);
-    await api.smoke.capture('repair-1-fixes');
+    await shot('repair-1-fixes');
 
     rowOf(/closes the/)?.dispatchEvent(new MouseEvent('mouseenter'));
     await sleep(300);
@@ -1131,7 +1149,7 @@ async function repairCheck(report: Record<string, unknown>) {
     const over = (a: DOMRect, b: DOMRect) => a.width > 0 && b.width > 0 && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
     report.tipCovers = tb ? [...document.querySelectorAll('.code .cm-line, .code .rs .ed, .code .rs .src, .code .why0')].filter((el) => over(tb, textBox(el))).map((el) => el.textContent) : ['no tip'];
     check(!(report.tipCovers as string[]).length, `the reason covers: ${JSON.stringify(report.tipCovers)}`);
-    await api.smoke.capture('repair-2-reason');
+    await shot('repair-2-reason');
     rowOf(/closes the/)?.dispatchEvent(new MouseEvent('mouseleave'));
 
     const before = v().state.doc.toString();
@@ -1141,7 +1159,7 @@ async function repairCheck(report: Record<string, unknown>) {
     check(report.applied as boolean, `✓ changed: ${v().state.doc.line(15).text}`);
     check(!!document.querySelector('.code .applied'), 'no "applied" note on the line');
     report.afterYes = shown();
-    await api.smoke.capture('repair-3-applied');
+    await shot('repair-3-applied');
 
     report.rechecked = await until(() => shown().length === 2 && !!rowOf(/did you mean route/), 60000);
     report.afterCheck = shown();
@@ -1195,7 +1213,7 @@ async function changeCheck(report: Record<string, unknown>) {
     report.csum = document.querySelector('.setc .csum')?.textContent;
     report.marks = marks();
     report.gone = [...document.querySelectorAll('.seqv .sline .gh.gone')].map((g) => `${g.textContent} | ${g.nextElementSibling?.textContent ?? ''}`);
-    await api.smoke.capture('change-1-compared');
+    await shot('change-1-compared');
     check(report.csum === report.summary, 'the summary line is not shown');
     check(JSON.stringify(report.marks) === JSON.stringify({ start: ['◆ changed · 1 line   ~ in a macro'], handle: ['◆ changed · 2 lines', 'added: validate'], check_size: ['? validate(r) &&   added'], route: ['? if (validate(r) && check_size(r))   now inside if (validate(r) && check_size(r))'], 'end of the run': ['main returns'] }), `rows say ${JSON.stringify(report.marks)}`);
     check((report.gone as string[]).join(' ; ') === 'log_request | removed · in the last commit', `removed calls: ${(report.gone as string[]).join(' ; ')}`);
@@ -1206,7 +1224,7 @@ async function changeCheck(report: Record<string, unknown>) {
     const validateIsStep = seq()!.items.some((row) => /(^|::)validate$/.test(seq()!.run.rows[row].name));
     const validateRow = [...document.querySelectorAll('.gview .grh b')].some((b) => b.textContent === 'validate');
     report.validate = { step: validateIsStep, gridRow: validateRow };
-    await api.smoke.capture('change-2-grid');
+    await shot('change-2-grid');
     check(JSON.stringify(report.grid) === JSON.stringify({ added: ['check_size'], changed: ['handle', 'start'] }), `grid: ${JSON.stringify(report.grid)}`);
     check(!validateIsStep && !validateRow, `validate: ${JSON.stringify(report.validate)} (it runs inside handle's condition, so it has no step and no grid row)`);
     setFlowView('metro');
@@ -1239,7 +1257,7 @@ async function findingsCheck(report: Record<string, unknown>) {
     report.pairs = Object.entries(run.pairs ?? {}).flatMap(([k, us]) => us.map((u) => `${run.rows.find((r) => r.key === k)?.name}: ${u.what} ${u.name} line ${u.opened.line + 1} → ${u.exit.kind} ${u.exit.line + 1} | ${u.path.join(' / ')}`));
     const box = document.querySelector('.sfndl')?.getBoundingClientRect();
     if (box && (box.left < 0 || box.right > innerWidth)) errors.push(`findings: the list runs off the window (${Math.round(box.left)}–${Math.round(box.right)} of ${innerWidth})`);
-    await api.smoke.capture(`findings-${basename(root())}`);
+    await shot(`findings-${basename(root())}`);
   } catch (e) { errors.push(`findings: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -1261,7 +1279,7 @@ async function exitsCheck(report: Record<string, unknown>) {
     report.lit = lit;
     report.dimmed = rows.filter((r) => r.classList.contains('wq')).map((r) => r.getAttribute('data-name'));
     report.caption = document.querySelector('.scap')?.textContent ?? '';
-    await api.smoke.capture('exits-1-ways-out');
+    await shot('exits-1-ways-out');
     check(lit.some((l) => /^main: if \(setjmp\(restart\)\) → return 9 · 54 · \+1 more$/.test(l)), 'main does not show its two early ways out');
     check(lit.some((l) => /^parse: if \(!s\) → return -1 · 17 · \+3 more$/.test(l)), 'parse does not show its four early ways out');
     check(lit.some((l) => /^command: switch \(cmd\) · case 0 → return 0 · 30 · \+3 more$/.test(l)), 'command does not show its ways out');
@@ -1276,7 +1294,7 @@ async function exitsCheck(report: Record<string, unknown>) {
     (document.querySelector('.gview') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'E', bubbles: true }));
     await sleep(500);
     report.grid = [...new Set([...document.querySelectorAll('.gview .grh.lv b, .gview .gch.lv b')].map(headText))].sort();
-    await api.smoke.capture('exits-2-grid');
+    await shot('exits-2-grid');
     check((report.grid as string[]).join() === 'command,die,halt,main,open_all,parse', `the grid lights ${(report.grid as string[]).join(', ')}`);
     const metroLit = [...new Set(lit.map((l) => l.slice(0, l.indexOf(': '))))];
     check(metroLit.every((n) => (report.grid as string[]).includes(n)), `the metro lights ${metroLit.join(', ')} but the grid lights ${(report.grid as string[]).join(', ')}`);
@@ -1308,7 +1326,7 @@ async function jumpCheck(report: Record<string, unknown>) {
     const r0 = find()?.getBoundingClientRect();
     const ring = document.createElement('div');
     if (r0) { Object.assign(ring.style, { position: 'fixed', left: `${r0.left - 4}px`, top: `${r0.top - 4}px`, width: `${r0.width + 8}px`, height: `${r0.height + 8}px`, border: '2px solid #e0904f', pointerEvents: 'none', zIndex: '99' }); document.body.appendChild(ring); }
-    await api.smoke.capture(`jump-${name}-1-before`);
+    await shot(`jump-${name}-1-before`);
     ring.remove();
     const target = find();
     if (!target) { check(false, `${name}: the call ${call} (step ${want}) left the code preview before the click`); return null; }
@@ -1316,7 +1334,7 @@ async function jumpCheck(report: Record<string, unknown>) {
     target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: r.left + 2, clientY: r.top + r.height / 2 }));
     await sleep(900);
     const now = stepNow();
-    await api.smoke.capture(`jump-${name}-2-after`);
+    await shot(`jump-${name}-2-after`);
     check(now === want, `${name}: clicking ${call} (step ${want}) went to step ${now}, from ${before}`);
     return { call, from: before, want, now, outlined: boxes.length, fnBefore, fnAfter: document.querySelector('.sprev .pfn')?.textContent ?? null };
   };
@@ -1340,7 +1358,7 @@ async function jumpCheck(report: Record<string, unknown>) {
     await sleep(800);
     report.square = { steps: [...document.querySelectorAll('.gview .gcell.pk .gstep')].map((e) => e.textContent), tag: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, calls: document.querySelectorAll('.sprev .ibx.full .cl').length, link: !!document.querySelector('svg.slink path') };
     check((report.square as any).tag === 'SELECTED' && (report.square as any).steps.length >= 2 && (report.square as any).calls === (report.square as any).steps.length, `the opened square: ${JSON.stringify(report.square)}`);
-    await api.smoke.capture('jump-grid-3-square-open');
+    await shot('jump-grid-3-square-open');
     const div = document.querySelector('.sprev .hdiv') as HTMLElement;
     const cardH = () => Math.round((document.querySelector('.sprev .ibx.full') as HTMLElement).getBoundingClientRect().height);
     const drag = async (dy: number) => {
@@ -1355,10 +1373,10 @@ async function jumpCheck(report: Record<string, unknown>) {
     const codeH = () => Math.round(document.querySelector('.sprev .scodewrap')!.getBoundingClientRect().height);
     await drag(3000);
     const low = cardH(), codeLow = codeH();
-    await api.smoke.capture('jump-grid-4-card-low');
+    await shot('jump-grid-4-card-low');
     await drag(-3000);
     const high = cardH(), content = (document.querySelector('.sprev .ibx.full .in') as HTMLElement).scrollHeight, codeHigh = codeH();
-    await api.smoke.capture('jump-grid-5-card-high');
+    await shot('jump-grid-5-card-high');
     report.divider = { low, high, content, codeLow, codeHigh, cardBottom: cardBottom(), paneBottom: paneBottom() };
     check(low === 170, `dragged down, the card is ${low} px, not its 170 px minimum`);
     check(high <= content + 2, `dragged up, the card (${high} px) grows past its content (${content} px + 2 px border)`);
@@ -1367,6 +1385,44 @@ async function jumpCheck(report: Record<string, unknown>) {
     check(cardBottom() <= paneBottom(), `dragged up, the card ends at ${cardBottom()} px, below the pane (${paneBottom()} px)`);
     check(high > low || content + 2 <= 170, 'the divider does not move');
     try { localStorage.removeItem('flow.cardH'); } catch {  }
+    press('.gview', 'Escape'); await sleep(300);
+    const toStep = async (view: string, name: string) => {
+      press(view, 'Home'); await sleep(300);
+      for (let k = 0; k < 60 && !(document.querySelector('.sprev .pfn')?.textContent ?? '').includes(name); k++) { press(view, 'ArrowRight'); await sleep(200); }
+      await sleep(800);
+    };
+    await toStep('.gview', 'parse_headers');
+    const on = document.querySelector('.gview .gcell.on') as HTMLElement | null;
+    const labels = [...document.querySelectorAll('.gview .glab')].map((e) => e.textContent ?? '');
+    report.gridLinks = { step: stepNow(), lines: document.querySelectorAll('.gview .glinks .ln').length, labels, filled: on ? getComputedStyle(on).backgroundColor : null, card: [...document.querySelectorAll('.sprev .ibx.full .sec h6')].map((e) => e.textContent) };
+    check(document.querySelectorAll('.gview .glinks .ln').length >= 4, `grid arrows at parse_headers: ${document.querySelectorAll('.gview .glinks .ln').length} lines`);
+    check(labels.includes('◆ if (headers.empty()) · :26') && labels.some((t) => t.includes('reads headers')) && labels.includes('req.raw · a view'), `grid arrow labels at parse_headers: ${labels.join(' | ')}`);
+    check(on != null && getComputedStyle(on).backgroundColor === 'rgb(227, 214, 173)', 'the current square is not filled gold');
+    await shot('jump-grid-6-links');
+    setFlowView('metro');
+    await until(() => !!document.querySelector('.seqv .sjn'), 10000);
+    await sleep(800);
+    const jn = ([...document.querySelectorAll('.seqv .sjn')] as HTMLElement[]).find((e) => /headers\.empty/.test(e.textContent ?? ''));
+    jn?.click();
+    await sleep(800);
+    report.junction = {
+      rows: [...document.querySelectorAll('.seqv .sjn')].map((e) => e.textContent), picked: document.querySelector('.seqv .sjn.on')?.textContent ?? null,
+      tag: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null, sections: [...document.querySelectorAll('.sprev .ibx.full .sec h6')].map((e) => e.textContent),
+      head: document.querySelector('.sprev .pfn')?.textContent ?? null, header: document.querySelector('.seqk')?.textContent ?? null,
+    };
+    check(/headers\.empty/.test((report.junction as any).picked ?? '') && (report.junction as any).tag === 'JUNCTION', `the junction if (headers.empty()) did not open: ${JSON.stringify(report.junction)}`);
+    await shot('jump-metro-3-junction');
+    report.junctionCollisions = auditSequence();
+    check((report.junctionCollisions as string[]).length === 0, `text on text with a junction open: ${(report.junctionCollisions as string[]).slice(0, 3).join('; ')}`);
+    const buttons = [...document.querySelectorAll('.sprev .ibx.full .jbtns .chip')] as HTMLElement[];
+    buttons.find((b) => /next junction/.test(b.textContent ?? ''))?.click();
+    await sleep(1000);
+    report.junctionNext = { buttons: buttons.map((b) => b.textContent), picked: document.querySelector('.seqv .sjn.on')?.textContent ?? null, tag: document.querySelector('.sprev .ibx.full .tg')?.textContent ?? null };
+    check(!!(report.junctionNext as any).picked && (report.junctionNext as any).picked !== (report.junction as any).picked && (report.junctionNext as any).tag === 'JUNCTION', `next junction: ${JSON.stringify(report.junctionNext)}`);
+    await shot('jump-metro-4-next-junction');
+    press('.seqv', 'Escape'); await sleep(400);
+    report.junctionCleared = !document.querySelector('.seqv .sjn.on') && (document.querySelector('.sprev .ibx.full .tg')?.textContent ?? '').startsWith('STEP');
+    check(report.junctionCleared === true, 'Esc does not return from the junction to the step');
   } catch (e) { errors.push(`jump: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
@@ -1395,7 +1451,7 @@ async function revisitCheck(report: Record<string, unknown>) {
     };
     const kept = await reopen();
     report.kept = kept;
-    await api.smoke.capture('revisit-1-kept');
+    await shot('revisit-1-kept');
     await settled();
     const g = graph(), run = g ? await buildRun(g.lanes[0].start) : null;
     report.live = { steps: stepsOf(), status: status(), fresh: run?.rows.filter((r) => r.kind === 'step').map((r) => r.name.replace(/^.*::/, '')) };
@@ -1414,6 +1470,224 @@ async function revisitCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
+async function arrowsCheck(report: Record<string, unknown>) {
+  const TOL = 3, CAP = 200;
+  const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('grid');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 600000);
+    const s = seq()!;
+    report.program = entries()[lane()]?.rel;
+    report.steps = s.items.length;
+    if (!document.querySelector('.gview .gcell')) { report.mode = 'files × files'; errors.push('arrows: the grid shows files × files, so no arrows are drawn'); }
+    const far: string[] = [], off: string[] = [];
+    let arrows = 0, worstFar = 0, worstOff = 0;
+    const N = Math.min(s.items.length, CAP);
+    for (let it = 0; it < N; it++) {
+      stepMove({ jump: it });
+      await nextFrames(3);
+      const svg = document.querySelector('.gview svg.glinks') as SVGSVGElement | null;
+      if (!svg) continue;
+      const o = svg.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll('.gview .gcell.has i, .gview .gcell.has .dots, .gview .gcell.pk .gstep')].map((e) => e.getBoundingClientRect());
+      for (const p of [...svg.querySelectorAll('path.ln')] as SVGPathElement[]) {
+        const len = p.getTotalLength(), e = p.getPointAtLength(len), q = p.getPointAtLength(Math.max(0, len - 3));
+        const x = o.left + e.x, y = o.top + e.y, across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
+        let best = Infinity, mid = Infinity;
+        for (const b of boxes) {
+          const dx = Math.max(b.left - x, 0, x - b.right), dy = Math.max(b.top - y, 0, y - b.bottom), d = Math.hypot(dx, dy);
+          if (d < best) { best = d; mid = across ? Math.abs(y - (b.top + b.height / 2)) : Math.abs(x - (b.left + b.width / 2)); }
+        }
+        arrows++;
+        worstFar = Math.max(worstFar, best); worstOff = Math.max(worstOff, mid);
+        if (best > TOL) far.push(`step ${it + 1}: a ${p.classList[1]} arrow ends ${Math.round(best)} px from the nearest numbered box`);
+        if (mid > TOL) off.push(`step ${it + 1}: a ${p.classList[1]} arrow ends ${Math.round(mid)} px off its box's middle`);
+      }
+    }
+    stepMove({ jump: 0 });
+    await nextFrames(3);
+    const mainCalls = s.run.rows.filter((r) => r.caller === s.items[0]).length;
+    const mainArrows = document.querySelectorAll('.gview svg.glinks path.ln').length;
+    report.arrows = { stepsWalked: N, arrows, endsAwayFromBox: far.length, endsOffMiddle: off.length, worstAwayPx: Math.round(worstFar), worstOffMiddlePx: Math.round(worstOff), firstAway: far.slice(0, 5), firstOff: off.slice(0, 5) };
+    report.entry = { calls: mainCalls, arrows: mainArrows };
+    await shot('arrows-step-1');
+    if (N > 1) { stepMove({ jump: 1 }); await nextFrames(3); await shot('arrows-step-2'); }
+    if (far.length) errors.push(`arrows: ${far.length} of ${arrows} arrows end more than ${TOL} px from a numbered box (worst ${Math.round(worstFar)} px)`);
+    if (off.length) errors.push(`arrows: ${off.length} of ${arrows} arrows end more than ${TOL} px off their box's middle (worst ${Math.round(worstOff)} px)`);
+    if (mainCalls && !mainArrows) errors.push(`arrows: the first step makes ${mainCalls} calls and the grid draws no arrow for them`);
+  } catch (e) { errors.push(`arrows: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+type Pt = { x: number; y: number };
+function cornersOf(d: string): Pt[] {
+  const t = d.match(/[MLQ]|-?\d+(?:\.\d+)?/g) ?? [], out: Pt[] = [];
+  let lastL: Pt | null = null;
+  for (let k = 0; k < t.length;) {
+    const c = t[k++];
+    if (c === 'M') { out.push({ x: +t[k], y: +t[k + 1] }); k += 2; }
+    else if (c === 'L') { lastL = { x: +t[k], y: +t[k + 1] }; k += 2; }
+    else if (c === 'Q') { out.push({ x: +t[k], y: +t[k + 1] }); k += 4; lastL = null; }
+  }
+  if (lastL) out.push(lastL);
+  return out;
+}
+
+async function arrowsMock(report: Record<string, unknown>) {
+  const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+  const NS = 'http://www.w3.org/2000/svg';
+  const shots: string[] = [];
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('grid');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 600000);
+    const s = seq()!, R = s.run.rows;
+    const gsz = document.querySelector('.gview .gsz') as HTMLElement;
+    const chipsOf = (cell: Element) => [...cell.querySelectorAll('i')] as HTMLElement[];
+    const local = (r: DOMRect) => { const o = gsz.getBoundingClientRect(); return { left: r.left - o.left, right: r.right - o.left, top: r.top - o.top, bottom: r.bottom - o.top }; };
+    const draw = (paths: { d: string; kind: string }[]) => {
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'glinks mock');
+      svg.setAttribute('width', String(gsz.scrollWidth)); svg.setAttribute('height', String(gsz.scrollHeight));
+      for (const p of paths) { const e = document.createElementNS(NS, 'path'); e.setAttribute('class', `ln ${p.kind}`); e.setAttribute('d', p.d); e.setAttribute('marker-end', `url(#glk-${p.kind})`); e.setAttribute('style', 'stroke-width:1'); svg.appendChild(e); }
+      gsz.appendChild(svg);
+      return svg;
+    };
+    const markers = () => {
+      if (document.getElementById('glk-call')) return null;
+      const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+      svg.innerHTML = '<defs><marker id="glk-call" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" fill="#b9beb6" /></marker></defs>';
+      gsz.appendChild(svg);
+      return svg;
+    };
+    for (const it of [0, 4, 9, 22].filter((k) => k < s.items.length)) {
+      stepMove({ jump: it });
+      await nextFrames(4);
+      await shot(`mock-step${it + 1}-before`);
+      const old = document.querySelector('.gview svg.glinks:not(.mock)') as SVGSVGElement | null;
+      const made: { d: string; kind: string }[] = [];
+      const extra = markers();
+      if (old) {
+        const targets = new Set(stepLinks(s, it, (f) => seqLines(f)).links.map((l) => String(l.to + 1)));
+        for (const p of [...old.querySelectorAll('path.ln')] as SVGPathElement[]) {
+          const C = cornersOf(p.getAttribute('d') ?? ''), kind = p.classList[1];
+          if (C.length < 2) continue;
+          const end = C[C.length - 1], o = gsz.getBoundingClientRect();
+          const cells = [...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[];
+          const near = cells.map((c) => ({ c, r: local(c.getBoundingClientRect()) })).map((x) => ({ ...x, d: Math.hypot(Math.max(x.r.left - end.x, 0, end.x - x.r.right), Math.max(x.r.top - end.y, 0, end.y - x.r.bottom)) })).sort((a, b) => a.d - b.d)[0];
+          const chip = near && (chipsOf(near.c).find((e) => targets.has(e.textContent ?? '')) ?? chipsOf(near.c)[0]);
+          if (!chip) { made.push({ d: p.getAttribute('d')!, kind }); continue; }
+          const b = local(chip.getBoundingClientRect()), mx = (b.left + b.right) / 2, my = (b.top + b.bottom) / 2;
+          const prev = C[C.length - 2], across = Math.abs(end.x - prev.x) >= Math.abs(end.y - prev.y);
+          const N = C.map((q) => ({ ...q }));
+          if (across) { N[N.length - 1] = { x: end.x > prev.x ? b.left - 1.5 : b.right + 1.5, y: my }; N[N.length - 2].y = my; }
+          else { N[N.length - 1] = { x: mx, y: end.y > prev.y ? b.top - 1.5 : b.bottom + 1.5 }; N[N.length - 2].x = mx; }
+          made.push({ d: roundedPath(N), kind });
+          void o;
+        }
+        old.style.visibility = 'hidden';
+      } else if (R[s.items[it]].caller == null) {
+        const head = ([...document.querySelectorAll('.gview .gch')] as HTMLElement[]).find((h) => (h.querySelector('b')?.textContent ?? '').replace(/​/g, '') === R[s.items[it]].name.replace(/^.*::/, ''));
+        const calls = s.items.map((row, k) => ({ row, k })).filter((x) => R[x.row].caller === s.items[it]).map((x) => String(x.k + 1));
+        const chips = ([...document.querySelectorAll('.gview .gcell.has i')] as HTMLElement[]).filter((e) => calls.includes(e.textContent ?? ''));
+        if (head && chips.length) {
+          const h = local(head.getBoundingClientRect()), tops = chips.map((e) => local(e.getBoundingClientRect())).sort((a, b) => a.top - b.top);
+          const x = Math.round(Math.min(...tops.map((b) => b.left)) - 7);
+          for (const b of tops) { const my = (b.top + b.bottom) / 2; made.push({ d: roundedPath([{ x, y: h.bottom + 1 }, { x, y: my }, { x: b.left - 1.5, y: my }]), kind: 'call' }); }
+          report.entryArrows = chips.length;
+        }
+      }
+      const svg = draw(made);
+      await nextFrames(3);
+      await shot(`mock-step${it + 1}-after`);
+      shots.push(`step ${it + 1}: ${made.length} arrows redrawn`);
+      svg.remove(); extra?.remove();
+      if (old) old.style.visibility = '';
+    }
+    report.shots = shots;
+  } catch (e) { errors.push(`arrows-mock: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+async function overlapsCheck(report: Record<string, unknown>) {
+  const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+  const inside = (r: DOMRect, x: number, y: number) => x > r.left + 0.5 && x < r.right - 0.5 && y > r.top + 0.5 && y < r.bottom - 0.5;
+  const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+  const samples = (p: SVGPathElement) => { const o = (p.ownerSVGElement as SVGSVGElement).getBoundingClientRect(), L = p.getTotalLength(), out: Pt[] = []; for (let d = 0; d <= L; d += 2) { const q = p.getPointAtLength(d); out.push({ x: o.left + q.x, y: o.top + q.y }); } return out; };
+  const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
+  const note = (kind: string, it: number, what: string) => { const t = tally[kind] ?? (tally[kind] = { count: 0, steps: new Set(), first: [] }); t.count++; t.steps.add(it + 1); t.first.push(`step ${it + 1}: ${what}`); };
+  const loops = new Set<string>();
+  const moving = () => document.getAnimations().some((a) => {
+    if (a.playState !== 'running') return false;
+    if (a.effect?.getComputedTiming().endTime !== Infinity) return true;
+    loops.add(`${(a as CSSAnimation).animationName ?? a.constructor.name} on ${((a.effect as KeyframeEffect)?.target as Element | null)?.className ?? '?'}`);
+    return false;
+  });
+  const words = (e: Element) => (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 24);
+  try {
+    await until(() => lspState() === 'ready', 60000);
+    setFlowView('grid');
+    setPage('flow');
+    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 600000);
+    const s = seq()!, N = Math.min(s.items.length, 200);
+    for (const view of ['grid', 'metro'] as const) {
+      setFlowView(view);
+      await nextFrames(6);
+      for (let it = 0; it < N; it++) {
+        stepMove({ jump: it });
+        await nextFrames(3);
+        if (!(await until(() => !moving(), 5000))) note('still moving after 5 s', it, view);
+        await nextFrames(2);
+        const pane = (document.querySelector(view === 'grid' ? '.gview .gscroll' : '.seqv') as HTMLElement).getBoundingClientRect();
+        const visible = (r: DOMRect) => r.width > 0 && r.bottom > pane.top && r.top < pane.bottom && r.right > pane.left && r.left < pane.right;
+        const text = view === 'grid'
+          ? ([...document.querySelectorAll('.gview .gcell.has i, .gview .gcell.has .dots, .gview .glab, .gview .grh b, .gview .gch b, .gview .gtot .t, .gview .gmk .m')] as HTMLElement[])
+          : ([...document.querySelectorAll('.seqv .srow > *, .seqv .sline, .seqv .sjn, .seqv .sband .sum')] as HTMLElement[]);
+        const boxes = text.map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r) && words(x.e));
+        if (view === 'grid') {
+          const own = new Set([...document.querySelectorAll('.gview .gcell.on i, .gview .gcell.on .dots')]);
+          for (const p of [...document.querySelectorAll('.gview svg.glinks path.ln')] as SVGPathElement[]) {
+            const pts = samples(p), end = pts[pts.length - 1], seen = new Set<Element>();
+            for (const q of pts) for (const b of boxes) {
+              if (seen.has(b.e) || own.has(b.e) || !inside(b.r, q.x, q.y)) continue;
+              const nearEnd = Math.hypot(Math.max(b.r.left - end.x, 0, end.x - b.r.right), Math.max(b.r.top - end.y, 0, end.y - b.r.bottom)) < 4;
+              if (nearEnd && !b.e.classList.contains('glab')) continue;
+              seen.add(b.e); note('an arrow runs over text', it, `${p.classList[1]} arrow over "${words(b.e)}"`);
+            }
+          }
+          const keyColours = new Set(([...document.querySelectorAll('.gview .gkey .ka')] as HTMLElement[]).map((e) => getComputedStyle(e).color));
+          const unexplained = new Set(([...document.querySelectorAll('.gview svg.glinks path.ln')] as SVGPathElement[]).map((p) => `${p.classList[1]} ${getComputedStyle(p).stroke}`).filter((k) => !keyColours.has(k.slice(k.indexOf(' ') + 1))));
+          for (const k of unexplained) note('an arrow colour the key does not explain', it, k);
+          if (it === 18) await shot('overlaps-grid-step19');
+          const labs = boxes.filter((b) => b.e.classList.contains('glab'));
+          const squares = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter(visible);
+          for (const l of labs) {
+            if (squares.some((q) => hit(l.r, q))) note('an arrow label covers a square', it, `"${words(l.e)}"`);
+            for (const m of labs) if (m !== l && m.r.left <= l.r.left && hit(l.r, m.r)) note('two arrow labels overlap', it, `"${words(l.e)}" and "${words(m.e)}"`);
+            for (const b of boxes) if (!b.e.classList.contains('glab') && hit(l.r, b.r) && !b.e.closest('.gcell')) note('an arrow label covers a name or total', it, `"${words(l.e)}" over "${words(b.e)}"`);
+          }
+        } else {
+          for (const x of auditSequence()) note('text on text in the metro', it, x);
+        }
+        for (const p of [...document.querySelectorAll('svg.slink path')] as SVGPathElement[]) {
+          const seen = new Set<Element>();
+          for (const q of samples(p)) for (const b of boxes) if (!seen.has(b.e) && inside(b.r, q.x, q.y) && !b.e.closest('.on, .sel')) { seen.add(b.e); note(`the dotted link to the card runs over text (${view})`, it, `over "${words(b.e)}"`); }
+        }
+      }
+    }
+    report.steps = N;
+    report.overlaps = Object.fromEntries(Object.entries(tally).map(([k, t]) => [k, { count: t.count, steps: t.steps.size, all: t.first }]));
+    report.loopingAnimations = [...loops];
+  } catch (e) { errors.push(`overlaps: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
 async function programsCheck(report: Record<string, unknown>) {
   try {
     report.lsp = await until(() => lspState() === 'ready', 60000);
@@ -1424,24 +1698,24 @@ async function programsCheck(report: Record<string, unknown>) {
     btn?.click();
     report.connected = await until(() => !!document.querySelector('.plinks') && !/tracing/.test(document.querySelector('.plinks')?.textContent ?? ''), 60000);
     report.links = [...document.querySelectorAll('.plinks .pl')].map((e) => e.textContent);
-    await api.smoke.capture('programs-connect');
+    await shot('programs-connect');
     (document.querySelector('.progs .pr.top') as HTMLElement).click();
     report.flowAfter = await until(() => (seq()?.run.rows.length ?? 0) > 1, 30000);
     const back = document.querySelector('.backp') as HTMLElement | null, br = back?.getBoundingClientRect();
     report.switcher = { back: !!back && !!br && br.width > 0 && br.right <= innerWidth, chips: [...document.querySelectorAll('.lanes .chip')].map((c) => c.textContent) };
-    await api.smoke.capture('programs-flow');
+    await shot('programs-flow');
     await sleep(2500);
     report.later = { list: programs(), back: !!document.querySelector('.backp'), lane: lane() };
-    await api.smoke.capture('programs-flow-later');
+    await shot('programs-flow-later');
     setFlowView('grid');
     await until(() => document.querySelectorAll('.gview .gcell').length > 0, 15000);
     const shown = (e: Element) => { const r = e.getBoundingClientRect(), pane = e.closest('.pane')!.getBoundingClientRect(); return r.width > 0 && r.left >= pane.left - 1 && r.right <= pane.right + 1 && r.bottom <= pane.bottom && [[r.left + 2, r.top + r.height / 2], [r.right - 2, r.top + r.height / 2]].every(([x, y]) => e.contains(document.elementFromPoint(x, y))); };
     const vis = () => { const ctl = [...document.querySelectorAll('.ph.wrap .backp, .ph.wrap .lanes .chip, .ph.wrap > .chip, .ph.wrap .mgchips .chip')]; return ctl.length > 0 && ctl.every(shown) ? true : ctl.filter((e) => !shown(e)).map((e) => e.textContent); };
     report.gridBack = vis();
-    await api.smoke.capture('programs-grid');
+    await shot('programs-grid');
     await api.smoke.resize(900, 700); await sleep(600);
     report.narrowBack = vis();
-    await api.smoke.capture('programs-grid-narrow');
+    await shot('programs-grid-narrow');
   } catch (e) { errors.push(`programs: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);

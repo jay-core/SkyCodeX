@@ -2,9 +2,13 @@ import { For, Show, createSignal, createMemo, createEffect, on, onMount, onClean
 import { setWalkSpeed, seq, trail, status, runStatus, stepMove, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords, changed } from '../lib/flowstore';
 import { root, flash, settings } from '../lib/store';
 import { api, basename } from '../lib/api';
-import { lines } from '../lib/seqtext';
+import { lines, textTick } from '../lib/seqtext';
 import { move, loopsAt, Move, stepNumbers } from '../../shared/flowseq';
 import { buildGrid, GridOrder, GridFn } from '../../shared/gridmodel';
+import { stepLinks, StepLinks } from '../../shared/gridlinks';
+import { hwheel } from '../lib/hwheel';
+import { rounded } from '../lib/paths';
+import { textBox } from '../lib/measure';
 import { routesBetween, frameWords, RouteInfo } from '../../shared/flowboxes';
 import StepPreview, { openStep, StepSplit, stepW, setGridPick } from './StepPreview';
 import Magnifier from './Magnifier';
@@ -14,12 +18,69 @@ import { Skyline } from './Sequence';
 const SIDE = 236, HEAD = 84, TOT = 76, FOOT = 46, GAP = 4, OPEN_W = 270, LINE_H = 23, BIG = 1800, SKY = 62;
 const PAL = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
-const stem = (f: string) => basename(f).replace(/\.(c|cc|cpp|cxx|h|hpp)$/, '');
 const wrapName = (n: string) => n.replace(/_/g, '_​');
 const load = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 interface Pos { at: number[]; w: number[]; size: number }
 interface Rect { x: number; y: number; w: number; h: number }
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const overlapArea = (a: Rect, b: Rect) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+interface Cell { i: number; j: number }
+const DI = [1, 0, -1, 0], DJ = [0, 1, 0, -1];
+
+function markLane(used: Uint8Array, nc: number, cells: Cell[]) {
+  for (let k = 1; k < cells.length; k++) {
+    const p = cells[k - 1], q = cells[k], axis = p.j === q.j ? 0 : 1;
+    const steps = Math.max(Math.abs(q.i - p.i), Math.abs(q.j - p.j));
+    for (let t = 0; t <= steps; t++) { const i = p.i + Math.sign(q.i - p.i) * t, j = p.j + Math.sign(q.j - p.j) * t; used[(j * nc + i) * 2 + axis] = 1; }
+  }
+}
+
+function lane(occ: Uint8Array, used: Uint8Array, nc: number, nr: number, a: Cell, b: Cell): Cell[] | null {
+  const N = nc * nr * 4, dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), heap: [number, number][] = [];
+  const push = (c: number, s: number) => { heap.push([c, s]); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => {
+    const top = heap[0], last = heap.pop()!;
+    if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } }
+    return top;
+  };
+  const free = (i: number, j: number) => i >= 0 && j >= 0 && i < nc && j < nr && (!occ[j * nc + i] || (i === b.i && j === b.j));
+  for (let d = 0; d < 4; d++) { const i = a.i + DI[d], j = a.j + DJ[d]; if (!free(i, j)) continue; const st = (j * nc + i) * 4 + d; dist[st] = 1; prev[st] = -2; push(1, st); }
+  while (heap.length) {
+    const [c, st] = pop();
+    if (c > dist[st]) continue;
+    const cell = st >> 2, d = st & 3, i = cell % nc, j = (cell / nc) | 0;
+    if (i === b.i && j === b.j) { const out: Cell[] = []; for (let x = st; x >= 0; x = prev[x]) { const ce = x >> 2; out.push({ i: ce % nc, j: (ce / nc) | 0 }); } out.push(a); return out.reverse(); }
+    for (let e = 0; e < 4; e++) {
+      if (e === (d + 2) % 4) continue;
+      const ni = i + DI[e], nj = j + DJ[e];
+      if (!free(ni, nj)) continue;
+      const ns = (nj * nc + ni) * 4 + e, cost = c + 1 + (e === d ? 0 : 3) + (used[(nj * nc + ni) * 2 + (e % 2)] ? 4 : 0);
+      if (cost < dist[ns]) { dist[ns] = cost; prev[ns] = st; push(cost, ns); }
+    }
+  }
+  return null;
+}
+
+function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number): { x: number; y: number }[] {
+  const cs = cells.filter((q, n) => n === 0 || q.i !== cells[n - 1].i || q.j !== cells[n - 1].j);
+  if (cs.length < 2) return [];
+  const A = rect(cs[0]), B = rect(cs[cs.length - 1]), mid = (r: Rect) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  const n = cs.length, a0 = mid(A), b0 = mid(B);
+  const s = { x: Math.sign(cs[1].i - cs[0].i), y: Math.sign(cs[1].j - cs[0].j) }, e = { x: Math.sign(cs[n - 1].i - cs[n - 2].i), y: Math.sign(cs[n - 1].j - cs[n - 2].j) };
+  if (n === 2 && Math.abs(cs[1].i - cs[0].i) + Math.abs(cs[1].j - cs[0].j) === 1) {
+    if (s.x === 0) { const x0 = Math.max(A.x + A.w, B.x + B.w) + 1, ox = x0 + 10; return [{ x: A.x + A.w + 1, y: a0.y + k }, { x: ox, y: a0.y + k }, { x: ox, y: b0.y }, { x: B.x + B.w + 2, y: b0.y }]; }
+    const y0 = Math.max(A.y + A.h, B.y + B.h) + 1, oy = y0 + 8;
+    return [{ x: a0.x + k, y: A.y + A.h + 1 }, { x: a0.x + k, y: oy }, { x: b0.x, y: oy }, { x: b0.x, y: B.y + B.h + 2 }];
+  }
+  const last = cs[n - 1], onFinal = (q: Cell) => (e.x ? q.j === last.j : q.i === last.i);
+  let t = n - 1;
+  while (t > 0 && onFinal(cs[t - 1])) t--;
+  const kx = (q: number) => (e.y && q >= t ? 0 : k), ky = (q: number) => (e.x && q >= t ? 0 : k);
+  const pts = [{ x: a0.x + s.x * (A.w / 2 + 1) + (s.y ? kx(0) : 0), y: a0.y + s.y * (A.h / 2 + 1) + (s.x ? ky(0) : 0) }];
+  for (let q = 1; q < n - 1; q++) { const c = mid(rect(cs[q])); pts.push({ x: c.x + kx(q), y: c.y + ky(q) }); }
+  pts.push({ x: b0.x - e.x * (B.w / 2 + 2), y: b0.y - e.y * (B.h / 2 + 2) });
+  return pts;
+}
 
 export default function GridView(props: { switcher: JSX.Element }) {
   const S = () => seq();
@@ -95,6 +156,59 @@ export default function GridView(props: { switcher: JSX.Element }) {
     for (const [i, x] of r.list.entries()) if (r.only < 0 || r.only === i) for (let k = 1; k < x.rows.length; k++) out.add(`${R()[x.rows[k - 1]].key}>${R()[x.rows[k]].key}`);
     return out;
   });
+  const flowLinks = createMemo((): StepLinks | null => {
+    const s = S(), c = cur();
+    textTick();
+    if (!s || !c || c.at >= s.items.length || !model() || filesMode() || route()) return null;
+    try { return stepLinks(s, c.at, (f) => lines(f)); } catch { return null; }
+  });
+  const drawn = createMemo(() => {
+    const L = flowLinks(), m = model(), c = cur();
+    if (!L || !m || !c) return null;
+    const cs = cols(), rs = rows(), nc = cs.length, nr = rs.length, ci = colIdx(), ri = rowIdx();
+    if (!nc || !nr) return null;
+    const occ = new Uint8Array(nc * nr), filled: Rect[] = [];
+    cs.forEach((cc, i) => rs.forEach((rr, j) => { if (m.cells.get(`${cc.key}>${rr.key}`)) { occ[j * nc + i] = 1; filled.push(rectOf(i, j)); } }));
+    const at = (item: number): Cell | null => { const k = m.cellOf[item]; if (!k) return null; const p = k.indexOf('>'), i = ci.get(k.slice(0, p)), j = ri.get(k.slice(p + 1)); return i == null || j == null ? null : { i, j }; };
+    const sel = at(c.at);
+    if (!sel) return null;
+    const rect = (q: Cell) => rectOf(q.i, q.j);
+    const paths: { d: string; kind: string }[] = [], labels: (Rect & { text: string; kind: string })[] = [], placed: Rect[] = [];
+    const labW = textBox('glab'), area: Rect = { x: SIDE, y: HEAD, w: geo().x.size, h: geo().y.size };
+    const within = (t: Rect) => t.x >= area.x && t.y >= area.y && t.x + t.w <= area.x + area.w && t.y + t.h <= area.y + area.h;
+    const lines: Rect[] = [];
+    const covered = (t: Rect) => [...filled, ...placed, ...lines].reduce((n, f) => n + overlapArea(t, f), 0) + (within(t) ? 0 : t.w * t.h - overlapArea(t, area));
+    const label = (near: Cell, full: string, kind: string) => {
+      const text = full.length > 64 ? `${full.slice(0, 63)}…` : full;
+      const r = rect(near), w = labW(text), h = 15, my = r.y + (r.h - h) / 2;
+      const tries: Rect[] = [{ x: r.x + r.w + 6, y: my, w, h }, { x: r.x - w - 6, y: my, w, h }, { x: r.x, y: r.y - h - 3, w, h }, { x: r.x, y: r.y + r.h + 3, w, h }, { x: r.x + r.w - w, y: r.y - h - 3, w, h }, { x: r.x + r.w - w, y: r.y + r.h + 3, w, h }];
+      const ok = tries.find((t) => within(t) && !filled.some((f) => overlaps(t, f)) && !placed.some((p) => overlaps(t, p)) && !lines.some((l) => overlaps(t, l))) ?? tries.reduce((a, b) => (covered(b) < covered(a) ? b : a));
+      placed.push(ok); labels.push({ ...ok, text, kind });
+    };
+    const used = new Uint8Array(nc * nr * 2), count: Record<string, number> = { in: 0, out: 0, call: 0 }, done = new Set<string>();
+    const shift = (kind: string) => { const n = count[kind]++; return kind === 'in' ? -3 - 3 * n : kind === 'call' ? 3 + 3 * n : (n % 2 ? -1.5 : 1.5) * Math.ceil(n / 2); };
+    let callSaid = false;
+    const asks: [Cell, string, string][] = [];
+    for (const l of L.links) {
+      const a = at(l.from), b = at(l.to);
+      if (!a || !b || (a.i === b.i && a.j === b.j)) continue;
+      const key = `${l.kind}:${a.i},${a.j}>${b.i},${b.j}`;
+      if (done.has(key)) continue;
+      done.add(key);
+      const cells = lane(occ, used, nc, nr, a, b) ?? [a, { i: b.i, j: a.j }, b];
+      markLane(used, nc, cells.filter((q, n) => n === 0 || q.i !== cells[n - 1].i || q.j !== cells[n - 1].j));
+      const pts = laneD(cells, rect, shift(l.kind));
+      if (pts.length) {
+        paths.push({ d: rounded(pts), kind: l.kind });
+        for (let q = 1; q < pts.length; q++) { const p0 = pts[q - 1], p1 = pts[q]; lines.push({ x: Math.min(p0.x, p1.x) - 1.5, y: Math.min(p0.y, p1.y) - 1.5, w: Math.abs(p1.x - p0.x) + 3, h: Math.abs(p1.y - p0.y) + 3 }); }
+      }
+      if (l.kind === 'call') { if (!callSaid && L.calls) { asks.push([b, L.calls, 'call']); callSaid = true; } }
+      else if (l.label) asks.push([l.kind === 'in' ? a : b, l.label, l.kind]);
+    }
+    for (const [near, text, kind] of asks) label(near, text, kind);
+    for (const d of L.decisions) label(sel, `◆ ${d.text} · :${d.line + 1}`, 'dec');
+    return { paths, labels };
+  });
   const leaves = (key: string) => { const s = S(); if (!s) return false; const row = s.run.rows.findIndex((r) => r.kind === 'step' && r.key === key); return row >= 0 && earlyExits(s.run, row).length > 0; };
   const maxCell = createMemo(() => { let m = 1; for (const v of model()?.cells.values() ?? []) m = Math.max(m, v.length); return m; });
   const marks = createMemo(() => {
@@ -132,8 +246,9 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const i = colIdx().get(h.c), j = rowIdx().get(h.r);
     if (i == null || j == null) return null;
     const cname = short(cols()[i].name), rname = short(rows()[j].name), open = pick()?.c === h.c && pick()?.r === h.r;
-    const text = `${cname} → ${rname} · step${v.length > 1 ? 's' : ''} ${v.map((it) => it + 1).join(' · ')} · click to ${open ? 'close' : 'open'}`;
-    const w = Math.round(text.length * 6.3 + 18), a = rectOf(i, j), hh = 20;
+    const steps = v.length > 6 ? `${v.slice(0, 4).map((it) => it + 1).join(' · ')} · … · ${v[v.length - 1] + 1} (${v.length} calls)` : v.map((it) => it + 1).join(' · ');
+    const text = `${cname} → ${rname} · step${v.length > 1 ? 's' : ''} ${steps} · click to ${open ? 'close' : 'open'}`;
+    const w = textBox('gtag')(text), a = rectOf(i, j), hh = 20;
     const filled: Rect[] = [];
     for (const k of model()!.cells.keys()) {
       const [ck, rk] = [k.slice(0, k.indexOf('>')), k.slice(k.indexOf('>') + 1)], ci = colIdx().get(ck), rj = rowIdx().get(rk);
@@ -248,7 +363,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     <div class="body" style={{ height: '100%' }}>
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
-          <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd">{header()}</span></Show>
+          <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd"><i class="selmk" />{header()}</span></Show>
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()} restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />
@@ -258,7 +373,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
         </div>
         <div class="gview" classList={{ heat: heat(), focus: focus(), waysout: waysOut(), routed: !!route(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run as a grid: who calls whom" onKeyDown={onKey}>
           <Show when={summary()}>{(sm) => (
-            <div class="gtop">
+            <div class="gtop" onWheel={hwheel}>
               <span><b>{sm().fns}</b>functions called</span><span><b>{sm().callers}</b>callers</span><span><b>{sm().calls}</b>calls</span>
               <span class="xf"><b>{sm().cross}%</b>cross a file</span>
               <Show when={sm().most.length}><span class="mc">most called: <For each={sm().most}>{(r, i) => <><Show when={i() > 0}>, </Show><b>{r.name} ×{r.count}</b></>}</For></span></Show>
@@ -268,7 +383,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
               <span class="seg"><For each={[['file', 'by file'], ['run', 'run order'], ['count', 'most called']] as [GridOrder, string][]}>{([o, t]) => <button classList={{ on: order() === o }} title={o === 'file' ? 'grouped by file; within a file, by ƒ number (the order each function first ran)' : o === 'run' ? 'by ƒ number: the order each function first ran' : 'most called first'} onClick={() => { setOrder(o); canvas.focus(); }}>{t}</button>}</For></span>
             </div>
           )}</Show>
-          <div class="gkey">
+          <div class="gkey" onWheel={hwheel}>
             <span class="sws"><For each={model()?.files ?? []}>{(f) => <i style={{ background: col().get(f) }} />}</For></span><span>colour = file</span>
             <span class="kt">numbers in squares = steps (1–{S()?.items.length ?? 0}) · ƒ = function</span>
             <i class="kc dn">{keySteps().done}</i><span>run</span>
@@ -276,25 +391,33 @@ export default function GridView(props: { switcher: JSX.Element }) {
             <i class="kc">{keySteps().next}</i><span>to come</span>
             <span class="kt">· calls in a square in order: <b>4 · 9</b></span>
             <span class="dots"><b class="dn" /><b class="dn" /><b class="now" /><b /><b /><em>5</em></span><span>4 or more calls: a dot each</span>
+            <span class="kt">· arrows from the current step:</span>
+            <i class="ka in">⟵</i><span>where an input came from</span>
+            <i class="ka out">⟶</i><span>who reads its result</span>
+            <i class="ka call">⟶</i><span>the calls it makes</span>
           </div>
           <div class="gscroll" ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
             <Show when={model()} fallback={<div class="empty">{runStatus() || status() || 'building…'}</div>}>
-              <Show when={!filesMode()} fallback={<FilesGrid model={model()!} col={col()} onOpen={(rowFile, colFile) => setDrill({ rowFile, colFile })} />}>
+              <Show when={!filesMode()} fallback={<FilesGrid model={model()!} col={col()} sl={sl()} st={st()} onOpen={(rowFile, colFile) => setDrill({ rowFile, colFile })} />}>
                 <div class="gsz" style={{ width: `${SIDE + geo().x.size + TOT + 12}px`, height: `${HEAD + geo().y.size + FOOT + 8}px` }}>
-                  <div class="gax" style={{ left: `${SIDE - 92}px`, top: `${HEAD - 40}px` }}>caller →</div>
-                  <div class="gax" style={{ left: '40px', top: `${HEAD - 16}px` }}>called ↓</div>
+                  <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${SIDE + geo().x.size + 8}px`, height: `${HEAD - 4}px` }} />
+                  <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${SIDE - 4}px`, height: `${HEAD + geo().y.size + 4}px` }} />
+                  <div class="gcorner" style={{ left: `${sl()}px`, top: `${st()}px`, width: `${SIDE - 4}px`, height: `${HEAD - 4}px` }}>
+                    <div class="gax" style={{ left: `${SIDE - 92}px`, top: `${HEAD - 40}px` }}>caller →</div>
+                    <div class="gax" style={{ left: '40px', top: `${HEAD - 16}px` }}>called ↓</div>
+                  </div>
                   <For each={cols()}>{(c, i) => (
                     <>
-                      <Show when={i() === 0 || cols()[i() - 1].file !== c.file}>{(() => { const last = () => { let k = i(); while (k + 1 < cols().length && cols()[k + 1].file === c.file) k++; return k; }; return <div class="gfb" style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.at[last()] + geo().x.w[last()] - geo().x.at[i()] - 2}px`, '--c': col().get(c.file) }}>{stem(c.file)}</div>; })()}</Show>
-                      <div class="gch" classList={{ on: curCell().startsWith(`${c.key}>`), pk: pick()?.c === c.key, lv: waysOut() && leaves(c.key), fw: !!mk(c.key)?.fw, dim: !!mk(c.key)?.dim, cadd: !!mk(c.key)?.add, cchg: !!mk(c.key)?.chg, chg: !!mk(c.key)?.edit }} style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }} title={`${c.name} · ${basename(c.file)} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(c.key); }}>
+                      <Show when={i() === 0 || cols()[i() - 1].file !== c.file}>{(() => { const last = () => { let k = i(); while (k + 1 < cols().length && cols()[k + 1].file === c.file) k++; return k; }; return <div class="gfb" title={c.file} style={{ top: `${st() + 8}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.at[last()] + geo().x.w[last()] - geo().x.at[i()] - 2}px`, '--c': col().get(c.file) }}>{basename(c.file)}</div>; })()}</Show>
+                      <div class="gch" classList={{ on: curCell().startsWith(`${c.key}>`), pk: pick()?.c === c.key, lv: waysOut() && leaves(c.key), fw: !!mk(c.key)?.fw, dim: !!mk(c.key)?.dim, cadd: !!mk(c.key)?.add, cchg: !!mk(c.key)?.chg, chg: !!mk(c.key)?.edit }} style={{ top: `${st() + 30}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }} title={`${c.name} · ${basename(c.file)} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(c.key); }}>
                         <span>{c.fn ? `ƒ${c.fn}` : ''}</span><b>{wrapName(c.name)}</b>
                       </div>
                     </>
                   )}</For>
                   <For each={rows()}>{(r, j) => (
                     <>
-                      <Show when={j() === 0 || rows()[j() - 1].file !== r.file}>{(() => { const last = () => { let k = j(); while (k + 1 < rows().length && rows()[k + 1].file === r.file) k++; return k; }; return <div class="grb" style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().y.at[last()] + geo().y.w[last()] - geo().y.at[j()] - 2}px`, '--c': col().get(r.file) }}><span>{stem(r.file)}</span></div>; })()}</Show>
-                      <div class="grh" classList={{ on: curCell().endsWith(`>${r.key}`), pk: pick()?.r === r.key, lv: waysOut() && leaves(r.key), fw: !!mk(r.key)?.fw, dim: !!mk(r.key)?.dim, cadd: !!mk(r.key)?.add, cchg: !!mk(r.key)?.chg, chg: !!mk(r.key)?.edit }} style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }} title={`${r.name} · ${basename(r.file)}${mk(r.key)?.dim ? ' · called only where its values rule the call out' : ''} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(r.key); }}>
+                      <Show when={j() === 0 || rows()[j() - 1].file !== r.file}>{(() => { const last = () => { let k = j(); while (k + 1 < rows().length && rows()[k + 1].file === r.file) k++; return k; }; return <div class="grb" title={r.file} style={{ left: `${sl() + 12}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().y.at[last()] + geo().y.w[last()] - geo().y.at[j()] - 2}px`, '--c': col().get(r.file) }}><span>{basename(r.file)}</span></div>; })()}</Show>
+                      <div class="grh" classList={{ on: curCell().endsWith(`>${r.key}`), pk: pick()?.r === r.key, lv: waysOut() && leaves(r.key), fw: !!mk(r.key)?.fw, dim: !!mk(r.key)?.dim, cadd: !!mk(r.key)?.add, cchg: !!mk(r.key)?.chg, chg: !!mk(r.key)?.edit }} style={{ left: `${sl() + 40}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }} title={`${r.name} · ${basename(r.file)}${mk(r.key)?.dim ? ' · called only where its values rule the call out' : ''} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(r.key); }}>
                         <span>{r.fn ? `ƒ${r.fn}` : r.key.startsWith('indirect:') ? '→' : ''}</span><b>{r.name}</b><Show when={mk(r.key)?.fw}><em class="gw">{mk(r.key)!.fw}</em></Show>
                       </div>
                     </>
@@ -330,13 +453,28 @@ export default function GridView(props: { switcher: JSX.Element }) {
                       );
                     }}</For>
                   )}</For>
+                  <Show when={drawn()}>{(dr) => (
+                    <>
+                      <svg class="glinks" width={SIDE + geo().x.size + 8} height={HEAD + geo().y.size + 8} aria-hidden="true">
+                        <defs>
+                          <marker id="glk-in" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-in)' }} /></marker>
+                          <marker id="glk-out" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-out)' }} /></marker>
+                          <marker id="glk-call" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-call)' }} /></marker>
+                        </defs>
+                        <For each={dr().paths}>{(p) => <path class={`ln ${p.kind}`} d={p.d} marker-end={`url(#glk-${p.kind})`} />}</For>
+                      </svg>
+                      <For each={dr().labels}>{(l) => <div class={`glab ${l.kind}`} style={{ left: `${l.x}px`, top: `${l.y}px` }}>{l.text}</div>}</For>
+                    </>
+                  )}</Show>
                   <Show when={tag()}>{(t) => <div class="gtag" style={{ left: `${t().x}px`, top: `${t().y}px` }}>{t().text}</div>}</Show>
                   <div class="gtot" style={{ left: `${totX()}px`, top: '0px', height: `${HEAD + geo().y.size + 4}px` }}>
-                    <div class="gax w2" style={{ left: '6px', top: `${HEAD - 30}px` }}>times called</div>
+                    <div class="gtothd" style={{ top: `${st()}px`, height: `${HEAD - 4}px` }}><div class="gax w2" style={{ left: '6px', top: `${HEAD - 30}px` }}>times called</div></div>
                     <For each={rows()}>{(r, j) => <div class="t" classList={{ pk: pick()?.r === r.key }} style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }}><i style={{ width: `${Math.max(4, Math.round((r.count / maxRow()) * 28))}px` }} />×{r.count}</div>}</For>
                   </div>
-                  <div class="gmk" style={{ top: `${footY()}px`, width: `${SIDE + geo().x.size}px` }}>
+                  <div class="gcorner foot" style={{ left: `${sl()}px`, top: `${footY()}px`, width: `${SIDE - 4}px`, height: '40px' }}>
                     <div class="gax" style={{ left: '80px', top: '18px' }}>calls it makes →</div>
+                  </div>
+                  <div class="gmk" style={{ top: `${footY()}px`, width: `${SIDE + geo().x.size}px` }}>
                     <For each={cols()}>{(c, i) => <div class="m" classList={{ pk: pick()?.c === c.key }} style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }}><i style={{ height: `${Math.max(3, Math.round((c.count / maxCol()) * 14))}px` }} />{c.count}</div>}</For>
                   </div>
                 </div>
@@ -366,7 +504,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
   );
 }
 
-function FilesGrid(props: { model: ReturnType<typeof buildGrid>; col: Map<string, string>; onOpen: (rowFile: string, colFile: string) => void }) {
+function FilesGrid(props: { model: ReturnType<typeof buildGrid>; col: Map<string, string>; sl: number; st: number; onOpen: (rowFile: string, colFile: string) => void }) {
   const files = () => props.model.files;
   const counts = createMemo(() => {
     const m = new Map<string, number>(), cf = new Map(props.model.cols.map((c) => [c.key, c.file])), rf = new Map(props.model.rows.map((r) => [r.key, r.file]));
@@ -376,11 +514,15 @@ function FilesGrid(props: { model: ReturnType<typeof buildGrid>; col: Map<string
   const W = 96, H = 28;
   return (
     <div class="gsz" style={{ width: `${SIDE + files().length * W + 40}px`, height: `${HEAD + files().length * H + 40}px` }}>
-      <div class="gnote">a large run: files × files first · click a block for its functions</div>
-      <For each={files()}>{(f, i) => <div class="gch" style={{ left: `${SIDE + i() * W}px`, width: `${W - 2}px` }}><b style={{ color: props.col.get(f) }}>{basename(f)}</b></div>}</For>
+      <div class="gstrip top" style={{ left: '0px', top: `${props.st}px`, width: `${SIDE + files().length * W + 40}px`, height: `${HEAD - 4}px` }} />
+      <div class="gstrip side" style={{ left: `${props.sl}px`, top: '0px', width: `${SIDE - 4}px`, height: `${HEAD + files().length * H + 40}px` }} />
+      <div class="gcorner" style={{ left: `${props.sl}px`, top: `${props.st}px`, width: `${SIDE - 4}px`, height: `${HEAD - 4}px` }}>
+        <div class="gnote">a large run: files × files first · click a block for its functions</div>
+      </div>
+      <For each={files()}>{(f, i) => <div class="gch" title={f} style={{ top: `${props.st + 30}px`, left: `${SIDE + i() * W}px`, width: `${W - 2}px` }}><b style={{ color: props.col.get(f) }}>{basename(f)}</b></div>}</For>
       <For each={files()}>{(rf, j) => (
         <>
-          <div class="grh" style={{ top: `${HEAD + j() * H}px`, height: `${H - 2}px` }}><b style={{ color: props.col.get(rf) }}>{basename(rf)}</b></div>
+          <div class="grh" title={rf} style={{ left: `${props.sl + 40}px`, top: `${HEAD + j() * H}px`, height: `${H - 2}px` }}><b style={{ color: props.col.get(rf) }}>{basename(rf)}</b></div>
           <For each={files()}>{(cf, i) => { const n = counts().get(`${rf}|${cf}`) ?? 0; return <div class="gcell" classList={{ has: n > 0, same: rf === cf }} style={{ left: `${SIDE + i() * W}px`, top: `${HEAD + j() * H}px`, width: `${W - 2}px`, height: `${H - 2}px`, '--c': props.col.get(cf) }} onClick={() => n && props.onOpen(rf, cf)}>{n ? <i>{n}</i> : <s />}</div>; }}</For>
         </>
       )}</For>

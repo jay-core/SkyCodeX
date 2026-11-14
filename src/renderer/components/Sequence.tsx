@@ -12,11 +12,15 @@ import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
 import { metroRow, MetroRow } from '../../shared/metrofacts';
 import { hlLine } from '../lib/hlcode';
-import StepPreview, { openStep, StepSplit } from './StepPreview';
+import StepPreview, { openStep, StepSplit, junctionPick, setJunctionPick, junctionNav } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
+import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
+import { hwheel } from '../lib/hwheel';
+
+type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
 
 const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
@@ -54,6 +58,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const rowOf = (it: number) => R()[S()!.items[it]];
   const atEnd = () => (cur()?.at ?? 0) >= N();
   createEffect(on(seq, () => { setFolded(new Set<number>()); setPath(null); setWhat(null); }, { defer: true }));
+  createEffect(on([seq, () => cur()?.at], () => setJunctionPick(null), { defer: true }));
+  onCleanup(() => setJunctionPick(null));
   const [what, setWhat] = createSignal<WhatIf | null>(null);
   const [whatMenu, setWhatMenu] = createSignal<{ it: number; options: WhatIf[] } | null>(null);
   const [compare, setCompare] = createSignal(false);
@@ -163,19 +169,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   const CODE_H = 18;
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const code = createMemo(() => {
-    const s = S();
-    if (!s) return new Map();
-    const m = codeBlocks(s, detailOf, (f) => lines(f));
-    for (const g of s.run.ghosts ?? []) {
-      const it = s.itemOf[g.after], owner = s.itemOf[g.owner];
-      if (it == null || it < 0 || owner == null || owner < 0) continue;
-      const b = { owner, lines: [{ n: -1, depth: 0, text: `<span class="gh${g.kind === 'removed' ? ' gone' : ''}">${esc(g.names.map((n) => n.replace(/^.*::(?=[^:]+$)/, '')).join(' · '))}</span><span class="ghw">${esc(g.why)}</span>` }] };
-      m.set(it, [...(m.get(it) ?? []), b]);
-    }
-    return m;
-  });
-  const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n: number, b: { lines: unknown[] }) => n + b.lines.length, 0) * CODE_H + 4])));
+  const junctions = createMemo((): Junction[] => { const s = S(); textTick(); if (!s) return []; try { return junctionsOf(s, (f) => lines(f)); } catch { return []; } });
   const [around, setAround] = createSignal<boolean | null>(null);
   const [opened, setOpened] = createSignal<Set<number>>(new Set());
   const aroundOn = () => around() ?? (S()?.items.length ?? 0) > AROUND_AT;
@@ -194,6 +188,28 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const foldedAll = createMemo(() => (aroundOn() ? new Set([...aroundSet(), ...folded()]) : folded()));
   const hidden = createMemo(() => { const h = S() ? hiddenBy(S()!, foldedAll()) : new Set<number>(); const w = what(); if (w) for (let i = w.skip[0]; i <= w.skip[1]; i++) h.add(i); return h; });
+  const code = createMemo(() => {
+    const s = S();
+    if (!s) return new Map<number, CodeBlockJ[]>();
+    const m = codeBlocks(s, detailOf, (f) => lines(f)) as Map<number, CodeBlockJ[]>;
+    for (const g of s.run.ghosts ?? []) {
+      const it = s.itemOf[g.after], owner = s.itemOf[g.owner];
+      if (it == null || it < 0 || owner == null || owner < 0) continue;
+      const b = { owner, lines: [{ n: -1, depth: 0, text: `<span class="gh${g.kind === 'removed' ? ' gone' : ''}">${esc(g.names.map((n) => n.replace(/^.*::(?=[^:]+$)/, '')).join(' · '))}</span><span class="ghw">${esc(g.why)}</span>` }] };
+      m.set(it, [...(m.get(it) ?? []), b]);
+    }
+    const hid = hidden();
+    for (const j of junctions()) {
+      if (detailOf(j.ownerRow) !== 'calls') continue;
+      let a = j.after;
+      while (a > j.owner && hid.has(a)) a--;
+      if (hid.has(a)) continue;
+      const b: CodeBlockJ = { owner: j.owner, lines: [{ n: -2, depth: 0, text: '', jn: j }] };
+      m.set(a, [...(m.get(a) ?? []), b]);
+    }
+    return m;
+  });
+  const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n, b) => n + b.lines.reduce((k, l) => k + (l.jn ? ROW : CODE_H), 0), 0) + 4])));
   const geom = createMemo(() => {
     const s = S(), c = cur();
     if (!s || !c) return null;
@@ -243,6 +259,38 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return m;
   });
   const colOf = (it: number) => fileCol().get(metro(it).file) ?? fileCol().get(rowOf(it).file) ?? '#7b8279';
+  const codeRows = createMemo(() => {
+    const g = geom(), out: { x: number; top: number; it: number; n: number; text: string; jn?: Junction }[] = [];
+    if (!g) return out;
+    const vis = new Set(visible()), hid = hidden();
+    for (const [it, blocks] of code()) {
+      if (hid.has(it) || !vis.has(it)) continue;
+      let y = g.y[it] + g.h[it] - (codeExtra().get(it) ?? 0) + 2;
+      for (const b of blocks) for (const l of b.lines) {
+        out.push({ x: l.jn ? g.x[it] : g.x[b.owner] + 22 + l.depth * 12, top: y, it, n: l.n, text: l.text, jn: l.jn });
+        y += l.jn ? ROW : CODE_H;
+      }
+    }
+    return out;
+  });
+  const onTrack = (x1: number, y1: number, x2: number, y2: number, y: number) => {
+    const h = Math.min(16, (y2 - y1) * 0.6);
+    let lo = 0, hi = 1;
+    const at = (t: number, a: number, b: number, c: number, d: number) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * d;
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (at(m, y1, y1 + h, y2 - h, y2) < y) lo = m; else hi = m; }
+    return at((lo + hi) / 2, x1, x1, x2, x2);
+  };
+  const jmarks = createMemo(() => {
+    const g = geom(), s = S(), vs = visible();
+    if (!g || !s) return [];
+    return codeRows().filter((l) => l.jn).map((l) => {
+      const j = l.jn!, y = l.top + ROW / 2, k = vs.indexOf(l.it), nx = k >= 0 && k + 1 < vs.length ? vs[k + 1] : -1;
+      const x = nx >= 0 ? onTrack(g.barX[l.it], g.y[l.it] + ROW / 2, g.barX[nx], g.y[nx] + ROW / 2, y) : g.barX[l.it];
+      const end = j.kind === 'arm' && j.span ? j.span[1] + 1 : -1;
+      const bypass = end >= 0 && end < s.items.length && vs.includes(end) ? `M${x} ${y} C${x - 20} ${y + 14} ${g.barX[end] - 20} ${g.y[end] + ROW / 2 - 14} ${g.barX[end]} ${g.y[end] + ROW / 2}` : '';
+      return { j, x, y, col: colOf(j.owner), bypass };
+    });
+  });
   const rippleNote = createMemo(() => {
     const s = S(), c = changed();
     if (!s || !c.size) return '';
@@ -498,7 +546,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       n: () => { if (cur() && !atEnd()) setNoteOpen(true); }, N: () => { if (cur() && !atEnd()) setNoteOpen(true); },
       k: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); }, K: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); },
       ' ': () => setPlaying(!playing()), '+': () => setSpeed(Math.min(4, speed() * 1.5)), '=': () => setSpeed(Math.min(4, speed() * 1.5)), '-': () => setSpeed(Math.max(0.25, speed() / 1.5)),
-      Escape: () => { setHelp(false); setFollowed(null); setPick(null); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
+      Escape: () => { setJunctionPick(null); setHelp(false); setFollowed(null); setPick(null); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
     };
     if (k === 'ArrowDown' && cur() && !atEnd() && rowOf(cur()!.at).kind === 'indirect') { say({ key: '↓', what: 'step into', why: 'where it goes is known only at run time' }); e.preventDefault(); return; }
     if (k === 'Tab') return;
@@ -511,6 +559,26 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
 
   onMount(() => {
+    junctionNav.next = (dir: number) => {
+      const list = junctions().filter((j) => detailOf(j.ownerRow) === 'calls'), p = junctionPick();
+      const i = p ? list.findIndex((j) => j.id === p.id) : -1, n = list[i < 0 && dir < 0 ? list.length - 1 : i + dir];
+      if (!n) { say({ key: '◆', what: dir > 0 ? 'no junction after this one' : 'no junction before this one', why: '' }); return; }
+      go({ jump: n.after }, true);
+      setTimeout(() => setJunctionPick(n), 0);
+      canvas.focus();
+    };
+    junctionNav.whatIf = (j) => {
+      const s = S();
+      if (!s) return null;
+      const squash = (t: string) => t.replace(/\s+/g, '');
+      const fi = j.kind === 'arm' ? Number(j.id.slice(2)) : s.run.frames.findIndex((f) => f.kind === 'guard' && f.owner === j.ownerRow && squash(f.text) === squash(j.cond));
+      if (!(fi >= 0) || !s.span.has(fi)) return null;
+      let w: WhatIf | null = null;
+      try { w = whatIf(s, fi); } catch { w = null; }
+      const ask = w;
+      return ask ? { ask: ask.ask, go: () => { setJunctionPick(null); askWhat(ask); } } : null;
+    };
+    onCleanup(() => { delete junctionNav.next; delete junctionNav.whatIf; });
     let f = 0;
     const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); }); });
     ro.observe(canvas);
@@ -656,7 +724,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <Show when={header()} fallback={<span>{runStatus() || status()}</span>}>
-            <span class="seqk">{header()!.k}</span>
+            <span class="seqk"><i class="selmk" />{junctionPick() ? `junction · ${basename(junctionPick()!.file)}:${junctionPick()!.line + 1}` : header()!.k}</span>
             <Show when={header()!.loop}><span class="seqloop">{header()!.loop}</span></Show>
             <span class="seqpath">
               <For each={crumbs()}>{(c, i) => (
@@ -704,11 +772,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </Show>
           </span>
         </div>
-        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
+        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
             <div class="mlegend">
-              <div class="mfiles"><span>line colour = file</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f).replace(/\.(c|cc|cpp|cxx|h|hpp)$/, '')}</span>}</For></div>
+              <div class="mrow">
+                <div class="mfiles" onWheel={hwheel}><span>line colour = file</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f)}</span>}</For></div>
+                <div class="mkeys"><span><b>◆</b>decides</span><span><b class="x">⊣</b>way out</span><span><b class="l">↻</b>loop</span><span><b class="l">⑂</b>via pointer</span></div>
+              </div>
               <div class="mhead" style={{ left: `${geom()!.x[0] ?? 0}px`, width: `${Math.max(60, width() - SPINE - (geom()!.x[0] ?? 0) - 10)}px` }}>
                 <span class="h1">step · ƒ</span><span class="h2">who → the call as written</span><span class="h3">result goes to</span><span class="h4">notes</span>
               </div>
@@ -741,6 +812,25 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     </>
                   );
                 }}</For>
+                <defs><marker id="mloop" markerUnits="userSpaceOnUse" viewBox="0 0 6 5" refX="6" refY="2.5" markerWidth="6" markerHeight="5" orient="auto"><path d="M0 0 L6 2.5 L0 5 z" fill="#6f9e9e" /></marker></defs>
+                <For each={visFrames().filter((f) => { const sp = S()!.span.get(f)!; return sp[1] > sp[0] && sp[1] - sp[0] < 8 && !hidden().has(sp[1]); })}>{(f) => {
+                  const d = () => { const g = geom()!, [a, b] = S()!.span.get(f)!, ya = g.y[a] + ROW / 2, yb = g.y[b] + ROW / 2, x0 = Math.max(3, Math.min(g.barX[a], g.barX[b]) - 24); return `M${g.barX[b] - 6} ${yb} C${x0} ${yb} ${x0} ${ya} ${g.barX[a] - 8} ${ya}`; };
+                  return <path class="jloop" d={d()} marker-end="url(#mloop)" />;
+                }}</For>
+                <For each={visible().filter((it) => rowOf(it).kind === 'indirect' && (rowOf(it).could?.length ?? 0) > 0)}>{(it) => {
+                  const n = Math.min(3, rowOf(it).could!.length);
+                  return <For each={Array.from({ length: n }, (_, k) => k)}>{(k) => <path class="jfork" stroke={colOf(it)} d={`M${geom()!.barX[it] + 7} ${geom()!.y[it] + ROW / 2} L${geom()!.barX[it] + 20} ${geom()!.y[it] + ROW / 2 + (k - (n - 1) / 2) * 7}`} />}</For>;
+                }}</For>
+                <For each={jmarks()}>{(m) => (
+                  <>
+                    <Show when={m.bypass}><path d={m.bypass} stroke={m.col} stroke-width="1.6" fill="none" stroke-linecap="round" opacity="0.75" /></Show>
+                    <Show when={m.j.ends}>
+                      <path d={`M${m.x} ${m.y} C${m.x} ${m.y + 9} ${Math.max(6, m.x - 22)} ${m.y + 6} ${Math.max(6, m.x - 26)} ${m.y + 15}`} stroke={m.col} stroke-width="2.5" fill="none" stroke-linecap="round" />
+                      <path d={`M${Math.max(2, m.x - 34)} ${m.y + 15.5} L${Math.max(10, m.x - 18)} ${m.y + 15.5}`} stroke="#9ea39b" stroke-width="2" stroke-linecap="round" />
+                    </Show>
+                    <polygon points={`${m.x},${m.y - 6} ${m.x + 6},${m.y} ${m.x},${m.y + 6} ${m.x - 6},${m.y}`} fill={junctionPick()?.id === m.j.id ? '#e3d6ad' : '#171817'} stroke="#e3d6ad" stroke-width="1.6" />
+                  </>
+                )}</For>
               </svg>
               <For each={visBars()}>{(it) => (
                 <div class="sbar" classList={{ on: chain().has(S()!.items[it]) }} style={{ left: `${geom()!.barX[it]}px`, top: `${geom()!.y[it] + 4}px`, height: `${geom()!.y[S()!.lastItem[it]] + geom()!.h[S()!.lastItem[it]] - geom()!.y[it] - 8}px` }} />
@@ -759,11 +849,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   (el.querySelector('.hd') as SVGPathElement).animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: Math.max(400, len * 8) });
                 })}><path class="arc" d={r.d} /><path class="hd" d={r.head} /></svg>
               )}</Show>
-              <For each={[...code()].filter(([it]) => !hidden().has(it) && visible().includes(it))}>{([it, blocks]) => {
-                const top = () => geom()!.y[it] + geom()!.h[it] - codeExtra().get(it)! + 2;
-                const flat = () => (blocks as { owner: number; lines: { n: number; text: string; depth: number }[] }[]).flatMap((b) => b.lines.map((l) => ({ ...l, x: geom()!.x[b.owner] + 22 + l.depth * 12 })));
-                return <For each={flat()}>{(l, i) => <div class="sline" style={{ top: `${top() + i() * CODE_H}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>;
-              }}</For>
+              <For each={codeRows()}>{(l) => l.jn
+                ? (() => { const j = l.jn!, w = junctionWords(S()!, j); return (
+                  <div class="sjn" classList={{ on: junctionPick()?.id === j.id }} style={{ top: `${l.top}px`, left: `${l.x}px`, width: `${Math.max(60, width() - SPINE - l.x - 10)}px` }}
+                    title={`${j.cond} · then ${w.then} · else ${w.else} · ${basename(j.file)}:${j.line + 1} · click for the junction`} onClick={(e) => { e.stopPropagation(); setPeek(null); setJunctionPick(junctionPick()?.id === j.id ? null : j); canvas.focus(); }}>
+                    <span class="d">◆</span><span class="c">{j.cond}</span><span class="w">then <code>{w.then}</code> · else {w.else}</span>
+                  </div>
+                ); })()
+                : <div class="sline" style={{ top: `${l.top}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>
               <For each={visible()}>{(it) => {
                 const r = () => rowOf(it);
                 const e = () => ember().indexOf(it);
@@ -1058,7 +1151,7 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
     };
   });
   return <div class="ssky" ref={box} aria-label="the run bars: the run as a profile of call depth · click or drag to go · K hides it">
-    <div class="skyk">
+    <div class="skyk" onWheel={hwheel}>
       <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span>
       <span><i class="now" />now</span><span><i class="loop" />in a loop</span><span><i class="ed" />edited</span><span><i class="nt" />note</span><span>taller = deeper</span>
       <span class="grow" />

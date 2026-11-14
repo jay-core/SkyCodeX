@@ -13,7 +13,7 @@ export interface Effects {
   dropped: Range[];
   readsToo?: string[];
   globalReadsToo?: string[];
-  params?: { name: string; type: string }[];
+  params?: { name: string; type: string; canon?: string }[];
   paramWrites?: string[];
   paramReads?: string[];
   paramValues?: Record<string, string>;
@@ -87,9 +87,9 @@ export function effects(fn: AstNode, text: string): Effects {
     }
   }
   const proto = kids(fn).find((c) => c.kind === 'FunctionProto');
-  const parm = (n: AstNode) => /ParmVarDecl .* (?:used |referenced )?(\w+) '([^']*)'/.exec(arc(n));
-  const params: { name: string; type: string }[] = [];
-  for (const n of proto ? kids(proto) : []) { const m = n.kind === 'ParmVar' ? parm(n) : null; if (m && !params.some((p) => p.name === m[1])) params.push({ name: m[1], type: m[2] }); }
+  const parm = (n: AstNode) => /ParmVarDecl .* (?:used |referenced )?(\w+) '([^']*)'(?::'([^']*)')?/.exec(arc(n));
+  const params: { name: string; type: string; canon?: string }[] = [];
+  for (const n of proto ? kids(proto) : []) { const m = n.kind === 'ParmVar' ? parm(n) : null; if (m && !params.some((p) => p.name === m[1])) params.push(m[3] ? { name: m[1], type: m[2], canon: m[3] } : { name: m[1], type: m[2] }); }
   if (params.length) {
     out.params = params;
     const names = new Set(params.map((p) => p.name)), own = new Set(proto ? kids(proto) : []);
