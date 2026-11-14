@@ -219,6 +219,23 @@ records the positions). Not changed, pending the user's word: the "most called" 
 times called now counts loop passes; changing it changes the test `gridmodel.test.ts` "sorts by most called". 80 of
 392 fixed; 5 kept by verdict; 307 open.
 
+**Fixed (2026-11-14, the grid's phase 3, overlaps and overlays):** H `GridView.tsx:255–256` the caption no longer
+disappears after 2.6 s: it stays until the next key, click or step; O `GridView.tsx:315` Esc closes one thing at a
+time (the opened square, then the route, the followed value, focus); W `styles.css:668` the caption wraps within the
+view, `:783` the step heading is cut with its full text on hover, `:857` the hover tag is sized to the view and
+wraps: 5 faults. Also: the layer order follows §1 (the opened square above the arrow labels, arrows above the opened
+square); a square is scrolled into view from its computed place, so a square not yet built is reached (the current
+square under a frozen heading, 6 → 0 on ThreadX); the arrow colours changed at the user's request to three light,
+contrasting colours, lines 0.5 px. Checks: the hover tag is judged by §1 (it must not hide its own square or leave the
+view), a frozen heading must not cover content that is not scrolled under it, a caption must stay, one-line text must
+not run past its box; overlaps count only where the text is visible. Before → after (all 23 programs, tinyhttp,
+ThreadX 549 of 549 steps): captions on a timer 25 → 0, the hover tag outside the view 14 → 0, the current square
+under a frozen heading 6 → 0, labels over a name or total 23 → 20; tinyhttp's arrows over text 15 → 18 and the dotted
+link 40 → 42, all at step 17, where the fixed scroll now brings the square into view: the arrows there pass under
+the pinned call-count row (the check does not yet tell that apart), the dotted link crosses for real (its redesign
+waits for the user's choice). Open: the dotted link (42), labels in the smallest grids, one frozen heading over
+content in `kinds`. 85 of 392 fixed; 5 kept by verdict; 302 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

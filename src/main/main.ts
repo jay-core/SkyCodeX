@@ -26,22 +26,25 @@ const data = resolveDataDir({
   appDataFallback: app.getPath('appData'),
 });
 ensureLayout(data.dir);
-const CHROMIUM = path.join(data.dir, 'state', process.argv.includes('--smoke') ? 'smoke' : '', 'chromium');
-app.setPath('userData', CHROMIUM);
-app.setPath('sessionData', CHROMIUM);
-app.setPath('logs', path.join(data.dir, 'logs'));
-app.setPath('crashDumps', path.join(data.dir, 'logs', 'crashes'));
-
 const smokeIdx = process.argv.indexOf('--smoke');
 const smoke = smokeIdx > 0 ? path.resolve(process.argv[smokeIdx + 1] ?? '') : null;
 const scenarioIdx = process.argv.indexOf('--scenario');
 const scenario = scenarioIdx > 0 ? process.argv[scenarioIdx + 1] ?? null : null;
-const STATE = smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
+const smokeOutIdx = process.argv.indexOf('--smoke-out');
+const smokeOut = smoke && smokeOutIdx > 0 ? path.resolve(process.argv[smokeOutIdx + 1] ?? '') : null;
+const OUT = smokeOut ?? path.join(data.dir, 'logs');
+const STATE = smokeOut ? path.join(smokeOut, 'state') : smoke ? path.join(data.dir, 'state', 'smoke') : path.join(data.dir, 'state');
+const CHROMIUM = path.join(STATE, 'chromium');
+fs.mkdirSync(OUT, { recursive: true });
+app.setPath('userData', CHROMIUM);
+app.setPath('sessionData', CHROMIUM);
+app.setPath('logs', path.join(data.dir, 'logs'));
+app.setPath('crashDumps', path.join(data.dir, 'logs', 'crashes'));
 if (smoke) {
   const keep = process.env.SKYCODEX_SMOKE_KEEP === '1' ? new Set(['compile-db', 'flow-kept', 'chromium']) : new Set<string>();
   for (const e of fs.existsSync(STATE) ? fs.readdirSync(STATE) : []) if (!keep.has(e)) fs.rmSync(path.join(STATE, e), { recursive: true, force: true });
   fs.mkdirSync(path.join(STATE, 'buffers'), { recursive: true });
-  try { for (const f of fs.readdirSync(path.join(data.dir, 'logs'))) if (/^smoke-.*-(functions|files|folders)\.(svg|png)$/.test(f)) fs.rmSync(path.join(data.dir, 'logs', f), { force: true }); } catch {  }
+  try { for (const f of fs.readdirSync(OUT)) if (/^smoke-.*-(functions|files|folders)\.(svg|png)$/.test(f)) fs.rmSync(path.join(OUT, f), { force: true }); } catch {  }
 }
 
 const SETTINGS_FILE = smoke ? path.join(STATE, 'settings.toml') : path.join(data.dir, 'settings.toml');
@@ -121,7 +124,7 @@ ipcMain.handle('fs:pickFile', async (_e, dir: string) => {
   return r.canceled ? null : slashPath(r.filePaths[0]);
 });
 ipcMain.handle('fs:saveDialog', async (_e, defaultPath: string) => {
-  if (smoke) return slashPath(path.join(data.dir, 'logs', `smoke-${path.basename(defaultPath || 'untitled')}`));
+  if (smoke) return slashPath(path.join(OUT, `smoke-${path.basename(defaultPath || 'untitled')}`));
   const r = await dialog.showSaveDialog(win!, { defaultPath: defaultPath || undefined });
   return r.canceled ? null : slashPath(r.filePath);
 });
@@ -611,7 +614,7 @@ ipcMain.handle('win:close', () => win?.close());
 
 ipcMain.handle('smoke:capture', async (_e, name: string) => {
   const img = await win!.webContents.capturePage();
-  const out = path.join(data.dir, 'logs', `smoke-${name}.png`);
+  const out = path.join(OUT, `smoke-${name}.png`);
   fs.writeFileSync(out, img.toPNG());
   return out;
 });
@@ -627,13 +630,13 @@ ipcMain.handle('smoke:profile', async (_e, name: string | null) => {
     return null;
   }
   const { profile } = await dbg.sendCommand('Profiler.stop');
-  const out = path.join(data.dir, 'logs', `smoke-${name}.cpuprofile`);
+  const out = path.join(OUT, `smoke-${name}.cpuprofile`);
   fs.writeFileSync(out, JSON.stringify(profile));
   return out;
 });
 ipcMain.handle('smoke:done', (_e, report: unknown) => {
   if (smoke) fs.rmSync(path.join(smoke, 'smoke_new.cpp'), { force: true });
-  fs.writeFileSync(path.join(data.dir, 'logs', 'smoke-report.json'), JSON.stringify(report, null, 1));
+  fs.writeFileSync(path.join(OUT, 'smoke-report.json'), JSON.stringify(report, null, 1));
   setTimeout(() => app.quit(), 100);
 });
 

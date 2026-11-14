@@ -446,7 +446,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const cname = short(cols()[i].name), rname = short(rows()[j].name), open = pick()?.c === h.c && pick()?.r === h.r;
     const steps = v.length > 6 ? `${v.slice(0, 4).map((it) => it + 1).join(' · ')} · … · ${v[v.length - 1] + 1} (${v.length} calls)` : v.map((it) => it + 1).join(' · ');
     const text = `${cname} → ${rname} · step${v.length > 1 ? 's' : ''} ${steps} · click to ${open ? 'close' : 'open'}`;
-    const w = textBox('gtag')(text), a = rectOf(i, j), hh = 20;
+    const most0 = Math.max(80, vw() - 2 * EDGE), w = Math.min(textBox('gtag')(text), most0), a = rectOf(i, j), hh = textHeight('gtag')(text, w);
     const filled: Rect[] = [];
     for (const k of model()!.cells.keys()) {
       const [ck, rk] = [k.slice(0, k.indexOf('>')), k.slice(k.indexOf('>') + 1)], ci = colIdx().get(ck), rj = rowIdx().get(rk);
@@ -461,12 +461,11 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const free = (t: Rect) => t.x >= view.x && t.y >= view.y && t.x + t.w <= view.x + view.w && t.y + t.h <= view.y + view.h && !filled.some((f) => overlaps(t, f)) && !lab.some((f) => overlaps(t, f));
     const cover = (t: Rect) => [...filled, ...lab].reduce((n, f) => n + overlapArea(t, f), 0) + (t.w * t.h - overlapArea(t, view));
     const ok = tries.find(free) ?? tries.reduce((p, q) => (cover(q) < cover(p) ? q : p));
-    return { text, x: Math.max(4, ok.x), y: ok.y };
+    return { text, w, x: Math.max(sl() + EDGE, Math.min(ok.x, sl() + vw() - w - EDGE)), y: ok.y };
   });
 
   const [caption, setCaption] = createSignal<{ key: string; what: string; why: string } | null>(null);
-  let capTimer: ReturnType<typeof setTimeout> | undefined;
-  const say = (key: string, what: string, why = '') => { setCaption({ key, what, why }); clearTimeout(capTimer); capTimer = setTimeout(() => setCaption(null), 2600); };
+  const say = (key: string, what: string, why = '') => setCaption({ key, what, why });
   const report = (r: ReturnType<typeof stepMove>, quiet = false) => { if (r.note) say('', r.note); else if (r.state && !quiet) say(r.state.key, r.state.what, r.state.why); };
 
   const [playing, setPlaying] = createSignal(false);
@@ -494,7 +493,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
   }
   const stop = () => { playId++; setPlaying(false); };
   createEffect(() => setWalkSpeed(playing() ? speed() : 0));
-  onCleanup(() => { stop(); clearTimeout(capTimer); setWalkSpeed(0); setGridPick(null); });
+  onCleanup(() => { stop(); setWalkSpeed(0); setGridPick(null); });
 
   let routeFrom = -1;
   function pickRoute(key: string) {
@@ -511,9 +510,9 @@ export default function GridView(props: { switcher: JSX.Element }) {
   }
 
   createEffect(on([curCell, pick], () => requestAnimationFrame(() => {
-    const el = (scroller?.querySelector('.gcell.pk') ?? scroller?.querySelector('.gcell.on')) as HTMLElement | null;
-    if (!el) return;
-    const a = el.getBoundingClientRect(), b = scroller.getBoundingClientRect(), edge = (sel: string) => scroller.querySelector(sel)?.getBoundingClientRect();
+    const p = pick(), k = p ? `${p.c}>${p.r}` : curCell(), sep = k.indexOf('>'), i = colIdx().get(k.slice(0, sep)), j = rowIdx().get(k.slice(sep + 1));
+    if (!scroller || !k || i == null || j == null) return;
+    const q = rectOf(i, j), b = scroller.getBoundingClientRect(), a = { left: b.left + q.x - scroller.scrollLeft, top: b.top + q.y - scroller.scrollTop, width: q.w, height: q.h, right: b.left + q.x - scroller.scrollLeft + q.w, bottom: b.top + q.y - scroller.scrollTop + q.h }, edge = (sel: string) => scroller.querySelector(sel)?.getBoundingClientRect();
     const L = edge('.gstrip.side')?.right ?? b.left, T = edge('.gstrip.top')?.bottom ?? b.top, Rt = edge('.gtot')?.left ?? b.right, B = Math.min(edge('.gmk')?.top ?? b.bottom, b.bottom - skyH());
     if (a.left < L || a.right > Rt || a.top < T || a.bottom > B)
       scroller.scrollTo({ left: scroller.scrollLeft + a.left + a.width / 2 - (L + Rt) / 2, top: scroller.scrollTop + a.top + a.height / 2 - (T + B) / 2, behavior: settings()['motion.reduce'] ? 'auto' : 'smooth' });
@@ -521,12 +520,13 @@ export default function GridView(props: { switcher: JSX.Element }) {
 
   function onKey(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    setCaption(null);
     const key = e.key, sh = e.shiftKey;
     if (key === 'Tab') return;
     if (key === ' ') { e.preventDefault(); play(); return; }
     if (key === '+' || key === '=') { setSpeed(Math.min(3, speed() * 1.5)); return; }
     if (key === '-') { setSpeed(Math.max(0.25, speed() / 1.5)); return; }
-    if (key === 'Escape') { stop(); if (pick()) { setPick(null); return; } setFollowed(null); setRoute(null); setFocus(false); routeFrom = -1; return; }
+    if (key === 'Escape') { stop(); routeFrom = -1; if (pick()) setPick(null); else if (route()) setRoute(null); else if (followed()) setFollowed(null); else if (focus()) setFocus(false); return; }
     if (key === 'f' || key === 'F') { setFocus(!focus()); say('F', focus() ? 'focus: the current call’s row and column' : 'the whole grid'); return; }
     if (key === 'h' || key === 'H') { setHeat(!heat()); return; }
     if (key === 'e' || key === 'E') { const on = !waysOut(), n = S() ? leavingCount(S()!.run) : 0; setWaysOut(on); say('E', on ? `ways out: ${n} function${n === 1 ? '' : 's'} can leave early` : 'the whole run'); return; }
@@ -558,7 +558,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     flash(`saved ${basename(file)} · ${c.width} × ${c.height}`, 3000);
   }
 
-  const go = (it: number) => { stop(); report(stepMove({ jump: it })); canvas.focus(); };
+  const go = (it: number) => { stop(); setCaption(null); report(stepMove({ jump: it })); canvas.focus(); };
   const choose = (c: string, r: string) => { const p = pick(); setPick(p && p.c === c && p.r === r ? null : { c, r }); canvas.focus(); };
   const chip = (it: number, c: string, r: string) => (
     <i data-it={it} classList={{ now: curAt() === it, dn: it < curAt() }} title={`step ${it + 1} · click to go there`} onClick={(e) => { e.stopPropagation(); setPick({ c, r }); go(it); }}>{it + 1}</i>
@@ -570,7 +570,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     <div class="body" style={{ height: '100%' }}>
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
-          <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd"><i class="selmk" />{header()}</span></Show>
+          <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd" title={header()}><i class="selmk" />{header()}</span></Show>
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()} restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />
@@ -578,7 +578,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
           <button class="chip" classList={{ on: heat() }} aria-pressed={heat()} title="shade each square by how many calls it holds (H)" onClick={() => setHeat(!heat())}>how often</button>
           <button class="chip" title="save the grid as a PNG image" onClick={exportPng}>export</button>
         </div>
-        <div class="gview" classList={{ heat: heat(), focus: focus(), waysout: waysOut(), routed: !!route(), following: !!followed() }} style={{ '--sky-h': `${skyH()}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run as a grid: who calls whom" onKeyDown={onKey}>
+        <div class="gview" classList={{ heat: heat(), focus: focus(), waysout: waysOut(), routed: !!route(), following: !!followed() }} style={{ '--sky-h': `${skyH()}px` }} onPointerDown={() => setCaption(null)} ref={canvas} tabindex="0" role="application" aria-label="the run as a grid: who calls whom" onKeyDown={onKey}>
           <Show when={summary()}>{(sm) => (
             <div class="gtop" onWheel={hwheel}>
               <span><b>{sm().fns}</b>functions called</span><span><b>{sm().callers}</b>callers</span><span><b>{sm().calls}</b>calls</span>
@@ -676,7 +676,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
                       <For each={dr().labels}>{(l) => <div class={`glab ${l.kind}`} title={l.full} style={{ left: `${l.x}px`, top: `${l.y}px`, 'pointer-events': l.full ? 'auto' : undefined }}>{l.text}</div>}</For>
                     </>
                   )}</Show>
-                  <Show when={tag()}>{(t) => <div class="gtag" style={{ left: `${t().x}px`, top: `${t().y}px` }}>{t().text}</div>}</Show>
+                  <Show when={tag()}>{(t) => <div class="gtag" style={{ left: `${t().x}px`, top: `${t().y}px`, width: `${t().w}px` }}>{t().text}</div>}</Show>
                   <div class="gtot" style={{ left: `${totX()}px`, top: '0px', width: `${tot() - 2}px`, height: `${head() + geo().y.size + foot() + 8}px` }}>
                     <div class="gtothd" style={{ top: `${st()}px`, height: `${head() - EDGE}px` }}><div class="gax w2" style={{ left: `${NAME_GAP}px`, bottom: `${NAME_GAP - EDGE}px` }}>times called</div></div>
                     <For each={rows()}>{(r, j) => <div class="t" classList={{ pk: pick()?.r === r.key }} style={{ top: `${head() + geo().y.at[j()]}px`, height: `${geo().y.w[j()] - 2}px`, left: `${NAME_GAP}px`, gap: `${NAME_GAP}px` }}><i style={{ width: `${Math.max(4, Math.round((r.runs / maxRow()) * BAR_W))}px` }} />{timesText(r)}</div>}</For>

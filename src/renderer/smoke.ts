@@ -97,8 +97,9 @@ export async function runSmoke() {
   if (info()?.scenario === 'probe') return probeCheck(report);
   if (info()?.scenario === 'arrows') return arrowsCheck(report);
   if (info()?.scenario === 'arrows-mock') return arrowsMock(report);
+  if (info()?.scenario === 'link-mock') return linkMock(report);
   if (info()?.scenario === 'overlaps') return overlapsCheck(report);
-  if (info()?.scenario === 'rules') return rulesCheck(report);
+  if (info()?.scenario === 'rules' || info()?.scenario?.startsWith('rules@')) return rulesCheck(report, info()!.scenario!);
   if (info()?.scenario === 'hold') return;
   layerReport = {}; report.layers = layerReport;
   try {
@@ -1473,15 +1474,19 @@ async function revisitCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
+async function openGrid() {
+  await until(() => lspState() === 'ready', 60000);
+  setFlowView('grid');
+  setPage('flow');
+  await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 600000);
+  return seq()!;
+}
+
 async function arrowsCheck(report: Record<string, unknown>) {
   const TOL = 3, CAP = 200;
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   try {
-    await until(() => lspState() === 'ready', 60000);
-    setFlowView('grid');
-    setPage('flow');
-    await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 600000);
-    const s = seq()!;
+    const s = await openGrid();
     report.program = entries()[lane()]?.rel;
     report.steps = s.items.length;
     if (!document.querySelector('.gview .gcell')) { report.mode = 'files × files'; errors.push('arrows: the grid shows files × files, so no arrows are drawn'); }
@@ -1525,16 +1530,20 @@ async function arrowsCheck(report: Record<string, unknown>) {
   await api.smoke.done(report);
 }
 
-async function rulesCheck(report: Record<string, unknown>) {
-  const T0 = Date.now(), BUDGET = 270000;
+const canvasKey = (key: string) => (document.querySelector('.gview') as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+
+async function rulesCheck(report: Record<string, unknown>, scenario: string) {
+  const T0 = Date.now(), BUDGET = 270000, WARM = 20, snapshot = settings();
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
   const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
-  const note = (kind: string, it: number, what: string) => { const t = tally[kind] ?? (tally[kind] = { count: 0, steps: new Set(), first: [] }); t.count++; t.steps.add(it + 1); if (t.first.length < 20) t.first.push(`step ${it + 1}: ${what}`); };
+  let live = true;
+  const note = (kind: string, it: number, what: string) => { if (!live) return; const t = tally[kind] ?? (tally[kind] = { count: 0, steps: new Set(), first: [] }); t.count++; t.steps.add(it + 1); if (t.first.length < 20) t.first.push(`step ${it + 1}: ${what}`); };
   const words = (e: Element) => (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 40);
   const TEXT = '.gview .ghd, .gview .gfb, .gview .gch b, .gview .grb span, .gview .grh span, .gview .grh b, .gview .grh .gw, .gview .glab, .gview .gtag, .gview .gtot .t, .gview .gmk .m, .gview .gcell.has, .gview .gstep code';
   try {
     report.lsp = (await until(() => lspState() === 'ready', 60000)) ? 'ready' : lspState();
+    applySettings({ ...snapshot, 'motion.reduce': true }, problems());
     setFlowView('grid');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 200000);
@@ -1548,11 +1557,14 @@ async function rulesCheck(report: Record<string, unknown>) {
     const gm = buildGrid(s, stepNumbers(s)), RR = s.run.rows;
     let walked = 0;
     const shotKinds = new Set<string>();
-    for (let it = 0; it < s.items.length; it++) {
+    const part = /^rules@(\d+)\/(\d+)$/.exec(scenario), from = part ? Math.floor((+part[1] * s.items.length) / +part[2]) : 0, to = part ? Math.floor(((+part[1] + 1) * s.items.length) / +part[2]) : s.items.length;
+    report.slice = [from, to];
+    for (let it = Math.max(0, from - WARM); it < to; it++) {
       if (Date.now() - T0 > BUDGET) { report.stoppedAtStep = it + 1; break; }
+      live = it >= from;
       stepMove({ jump: it });
       await nextFrames(3);
-      walked++;
+      if (live) walked++;
       const view = document.querySelector('.gview .gscroll') as HTMLElement | null;
       if (!view) { note('the grid is not drawn', it, status()); continue; }
       for (let k = 0, last = ''; k < 60; k++) { const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; await nextFrames(3); }
@@ -1648,12 +1660,37 @@ async function rulesCheck(report: Record<string, unknown>) {
         (document.querySelector('.gview .gcell.pk') as HTMLElement | null)?.click();
         await nextFrames(4);
       }
+      if (view.scrollLeft === 0 && view.scrollTop === 0) {
+        const wide = view.scrollWidth > view.clientWidth + 1, tall = view.scrollHeight > view.clientHeight + 1;
+        const frozen = ([...document.querySelectorAll(`.gview .gstrip, .gview .gcorner:not(.foot)${wide ? '' : ', .gview .gtot'}${tall ? '' : ', .gview .gmk, .gview .gcorner.foot'}`)] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() }));
+        for (const q of [...document.querySelectorAll('.gview .gcell.has, .gview .glab')] as HTMLElement[]) { const r = q.getBoundingClientRect(); const f = frozen.find((x) => hit(x.r, r)); if (f) note('a frozen heading covers content that is not scrolled under it (frozen rule)', it, `${words(q)} under ${f.e.className}`); }
+      }
+      const bar = ([...document.querySelectorAll('.gview .ph > *')] as HTMLElement[]).filter((e) => e.getBoundingClientRect().width > 0 && !e.classList.contains('grow'));
+      for (let a = 0; a < bar.length; a++) for (let b = a + 1; b < bar.length; b++) if (hit(bar[a].getBoundingClientRect(), bar[b].getBoundingClientRect())) note('text runs past its box into a neighbour (rule W)', it, `${words(bar[a])} / ${words(bar[b])}`);
+      for (const e of [...document.querySelectorAll('.gview .ghd, .gview .gax, .gview .gtag')] as HTMLElement[]) { const r = e.getBoundingClientRect(); if (r.width && (r.right > pane.right + 0.5 || r.left < pane.left - 0.5 || e.scrollWidth > e.clientWidth + 1) && !e.closest('[title]') && !e.title) note('text runs past its box with no way to read it (rule W)', it, words(e)); }
+      if (it === 1) {
+        canvasKey('f');
+        await nextFrames(3);
+        const had = !!document.querySelector('.gview .scap');
+        await new Promise((r) => setTimeout(r, 3200));
+        if (had && !document.querySelector('.gview .scap')) note('a caption disappears on a timer (overlay rule)', it, 'after 3 s with no action');
+        const cap = document.querySelector('.gview .scap') as HTMLElement | null;
+        if (cap) { const r = cap.getBoundingClientRect(); if (r.left < pane.left - 0.5 || r.right > pane.right + 0.5) note('the caption reaches outside the view (overlay rule)', it, words(cap)); }
+        canvasKey('f');
+        await nextFrames(3);
+        canvasKey('Escape');
+        await nextFrames(3);
+      }
       const cur = document.querySelector('.gview .gcell.on') as HTMLElement | null;
       if (cur) {
         cur.dispatchEvent(new MouseEvent('mouseenter'));
         await nextFrames(2);
         const tag = document.querySelector('.gview .gtag') as HTMLElement | null;
-        if (tag) { const tr = tag.getBoundingClientRect(), own = cur.getBoundingClientRect(); if (squares.some((q) => hit(tr, q) && !(q.left === own.left && q.top === own.top))) note('the hover tag overlaps a square', it, words(tag)); }
+        if (tag) {
+          const tr = tag.getBoundingClientRect(), own = cur.getBoundingClientRect();
+          if (hit(tr, own)) note('the hover tag hides the square it describes (overlay rule)', it, words(tag));
+          if (tr.left < pane.left - 0.5 || tr.right > pane.right + 0.5 || tr.top < pane.top - 0.5 || tr.bottom > pane.bottom + 0.5) note('the hover tag reaches outside the view (overlay rule)', it, words(tag));
+        }
         view.dispatchEvent(new MouseEvent('mouseleave'));
       }
       for (const e of [...document.querySelectorAll(TEXT)] as HTMLElement[]) {
@@ -1667,6 +1704,7 @@ async function rulesCheck(report: Record<string, unknown>) {
     }
     report.walked = walked;
   } catch (e) { errors.push(`rules: ${e}`); }
+  applySettings(snapshot, problems());
   report.rules = Object.fromEntries(Object.entries(tally).map(([k, t]) => [k, { count: t.count, steps: t.steps.size, first: t.first }]));
   report.ms = Date.now() - T0;
   report.errors = errors;
@@ -1769,6 +1807,8 @@ async function overlapsCheck(report: Record<string, unknown>) {
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   const inside = (r: DOMRect, x: number, y: number) => x > r.left + 0.5 && x < r.right - 0.5 && y > r.top + 0.5 && y < r.bottom - 0.5;
   const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+  const shownAt = (el: Element, x: number, y: number) => { const top = document.elementsFromPoint(x, y).find((e) => !(e instanceof SVGElement)); return !!top && (el === top || el.contains(top) || top.contains(el)); };
+  const mid = (a: DOMRect, b: DOMRect) => [(Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2, (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2] as const;
   const samples = (p: SVGPathElement) => { const o = (p.ownerSVGElement as SVGSVGElement).getBoundingClientRect(), L = p.getTotalLength(), out: Pt[] = []; for (let d = 0; d <= L; d += 2) { const q = p.getPointAtLength(d); out.push({ x: o.left + q.x, y: o.top + q.y }); } return out; };
   const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
   const note = (kind: string, it: number, what: string) => { const t = tally[kind] ?? (tally[kind] = { count: 0, steps: new Set(), first: [] }); t.count++; t.steps.add(it + 1); t.first.push(`step ${it + 1}: ${what}`); };
@@ -1805,7 +1845,7 @@ async function overlapsCheck(report: Record<string, unknown>) {
           for (const p of [...document.querySelectorAll('.gview svg.glinks path.ln')] as SVGPathElement[]) {
             const pts = samples(p), end = pts[pts.length - 1], seen = new Set<Element>();
             for (const q of pts) for (const b of boxes) {
-              if (seen.has(b.e) || own.has(b.e) || !inside(b.r, q.x, q.y)) continue;
+              if (seen.has(b.e) || own.has(b.e) || !inside(b.r, q.x, q.y) || !shownAt(b.e, q.x, q.y)) continue;
               const nearEnd = Math.hypot(Math.max(b.r.left - end.x, 0, end.x - b.r.right), Math.max(b.r.top - end.y, 0, end.y - b.r.bottom)) < 4;
               if (nearEnd && !b.e.classList.contains('glab')) continue;
               seen.add(b.e); note('an arrow runs over text', it, `${p.classList[1]} arrow over "${words(b.e)}"`);
@@ -1819,16 +1859,16 @@ async function overlapsCheck(report: Record<string, unknown>) {
           const labs = boxes.filter((b) => b.e.classList.contains('glab'));
           const squares = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter(visible);
           for (const l of labs) {
-            if (squares.some((q) => hit(l.r, q))) note('an arrow label covers a square', it, `"${words(l.e)}"`);
+            if (squares.some((q) => hit(l.r, q) && shownAt(l.e, ...mid(l.r, q)))) note('an arrow label covers a square', it, `"${words(l.e)}"`);
             for (const m of labs) if (m !== l && m.r.left <= l.r.left && hit(l.r, m.r)) note('two arrow labels overlap', it, `"${words(l.e)}" and "${words(m.e)}"`);
-            for (const b of boxes) if (!b.e.classList.contains('glab') && hit(l.r, b.r) && !b.e.closest('.gcell')) note('an arrow label covers a name or total', it, `"${words(l.e)}" over "${words(b.e)}"`);
+            for (const b of boxes) if (!b.e.classList.contains('glab') && hit(l.r, b.r) && !b.e.closest('.gcell') && shownAt(l.e, ...mid(l.r, b.r))) note('an arrow label covers a name or total', it, `"${words(l.e)}" over "${words(b.e)}"`);
           }
         } else {
           for (const x of auditSequence()) note('text on text in the metro', it, x);
         }
         for (const p of [...document.querySelectorAll('svg.slink path')] as SVGPathElement[]) {
           const seen = new Set<Element>();
-          for (const q of samples(p)) for (const b of boxes) if (!seen.has(b.e) && inside(b.r, q.x, q.y) && !b.e.closest('.on, .sel')) { seen.add(b.e); note(`the dotted link to the card runs over text (${view})`, it, `over "${words(b.e)}"`); }
+          for (const q of samples(p)) for (const b of boxes) if (!seen.has(b.e) && inside(b.r, q.x, q.y) && !b.e.closest('.on, .sel') && shownAt(b.e, q.x, q.y)) { seen.add(b.e); note(`the dotted link to the card runs over text (${view})`, it, `over "${words(b.e)}"`); }
         }
       }
     }
@@ -1836,6 +1876,36 @@ async function overlapsCheck(report: Record<string, unknown>) {
     report.overlaps = Object.fromEntries(Object.entries(tally).map(([k, t]) => [k, { count: t.count, steps: t.steps.size, all: t.first }]));
     report.loopingAnimations = [...loops];
   } catch (e) { errors.push(`overlaps: ${e}`); }
+  report.errors = errors;
+  await api.smoke.done(report);
+}
+
+async function linkMock(report: Record<string, unknown>) {
+  const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
+  const NS = 'http://www.w3.org/2000/svg', shots: string[] = [];
+  try {
+    const s = await openGrid();
+    for (const it of [11, 18].filter((k) => k < s.items.length)) {
+      stepMove({ jump: it });
+      await nextFrames(8);
+      await shot(`link-mock-step${it + 1}-before`);
+      const old = document.querySelector('svg.slink') as SVGSVGElement | null, d = old?.querySelector('path')?.getAttribute('d') ?? '';
+      const on = document.querySelector('.gview .gcell.on') as HTMLElement | null, tot = document.querySelector('.gview .gtot') as HTMLElement | null;
+      const end = /(-?[\d.]+) (-?[\d.]+)$/.exec(d);
+      if (!old || !on || !tot || !end) { shots.push(`step ${it + 1}: nothing to redraw`); continue; }
+      const a = on.getBoundingClientRect(), t = tot.getBoundingClientRect(), x1 = t.right + 2, y1 = a.top + a.height / 2, x2 = +end[1], y2 = +end[2], m = x1 + (x2 - x1) * 0.55;
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('style', 'position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:999');
+      svg.innerHTML = `<path d="M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}" fill="none" stroke="#e3d6ad" stroke-width="0.9" stroke-dasharray="1.5 4" stroke-linecap="round"/><circle cx="${x1}" cy="${y1}" r="2.2" fill="#e3d6ad"/><circle cx="${x2}" cy="${y2}" r="2.2" fill="#e3d6ad"/>`;
+      old.style.visibility = 'hidden';
+      document.body.appendChild(svg);
+      await nextFrames(3);
+      await shot(`link-mock-step${it + 1}-after`);
+      svg.remove(); old.style.visibility = '';
+      shots.push(`step ${it + 1}: link from the row's end at ${Math.round(x1)},${Math.round(y1)}`);
+    }
+    report.shots = shots;
+  } catch (e) { errors.push(`link-mock: ${e}`); }
   report.errors = errors;
   await api.smoke.done(report);
 }
