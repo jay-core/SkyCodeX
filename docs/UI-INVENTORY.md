@@ -117,6 +117,28 @@ generated programs: an arrow ends away from its box or off its middle 36 → 0, 
 `overlaps` scenario on tinyhttp: arrows over text 18 → 18, the dotted link 59 → 59; typecheck, 31 test files. One
 run of files-11 hit the 5-minute limit; three runs alone passed in 7–9 s with counts identical to before (the random
 hang already in the log since 2026-11-13). 8 of 389 fixed; 381 open.
+Correction, found during class C: the `rules` scenario had not been run on tinyhttp for class B. Run there, it found 2
+arrows (steps 12 and 20) whose vertical approach into a box was shorter than the arrowhead, so the head pointed the
+wrong way. Fixed with class C: a vertical approach keeps a straight end at least one arrowhead long (`TIP`, the same
+constant the arrowhead markers use). tinyhttp: an arrow ends off its box's middle 2 → 0.
+
+**Fixed (2026-11-14, class C, the grid):** the 14 grid rows of §3 C, `styles.css:479` (`.gview .scap`), and the 4 grid
+rows of §3b C (`GridView.tsx:108`, `:304`, `styles.css:858`, `:862`), plus one more found while fixing:
+`.gscroll { padding-bottom: 62px }`, the run bars' height again. Arrow lanes are spaced by the square's size and the
+number of arrows that share it, never more than 3 px apart; detours are a quarter of the square's width and a third
+of its height, never more than 10 and 8 px; the headings, bands, axis labels, totals and call counts take their places
+from one layout source (`HEAD_NAMES`, `ROW_NAMES`, `BAND_*`, `NAME_GAP`, `TOT_GAP`, `FOOT_H`) shared with the PNG export;
+the run bars' height is measured, and the caption, the scroll padding and the visible height follow it; a square is
+scrolled into view between the measured frozen headings; the totals column and the call-count row reach the bottom of
+the view instead of casting fixed 60 and 90 px shadows; the hover tag may use any place inside the view. Checks added
+to the `rules` scenario: an arrow runs between rows, an arrow runs between columns, the current square is under a
+frozen heading, an axis label overlaps a heading (a heading hidden under a frozen corner does not count), and a
+screenshot of each step with a fault. Before → after, 23 programs and tinyhttp: arrows between rows or columns 2 → 0,
+arrows over text 18 → 17, the hover tag over a square 94 → 93 and 3 → 2, every other check unchanged; the current
+square under a frozen heading and an axis label over a heading 0 → 0 (these show only at other fonts and window
+sizes, which P5.R.4's conditions cover and which are not run yet). One run of repeat-mixed hit the 5-minute limit and
+one tinyhttp run found the metro "still moving" twice; run again (3 and 2 times), neither repeated. 28 of 390 fixed;
+362 open.
 
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion

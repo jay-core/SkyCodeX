@@ -1542,7 +1542,7 @@ async function rulesCheck(report: Record<string, unknown>) {
     report.openedAfterMs = Date.now() - T0;
     report.stepNames = s.items.slice(0, 50).map((i) => `${s.run.rows[i].kind} ${s.run.rows[i].name}`);
     report.rows = s.run.rows.slice(0, 50).map((r) => `${r.kind} ${r.name} caller=${r.caller ?? '-'}`);
-    let walked = 0;
+    let walked = 0, faultsSeen = 0, shotsTaken = 0;
     for (let it = 0; it < s.items.length; it++) {
       if (Date.now() - T0 > BUDGET) { report.stoppedAtStep = it + 1; break; }
       stepMove({ jump: it });
@@ -1580,6 +1580,33 @@ async function rulesCheck(report: Record<string, unknown>) {
         for (const m of labs) if (m !== l && m.r.left <= l.r.left && hit(l.r, m.r)) note('two labels overlap', it, `${words(l.e)} / ${words(m.e)}`);
         for (const n of names) if (hit(l.r, n.r)) note('a label overlaps a name or total', it, `${words(l.e)} / ${words(n.e)}`);
       }
+      if (svg && paths.length) {
+        const o = svg.getBoundingClientRect();
+        const cols = ([...document.querySelectorAll('.gview .gch')] as HTMLElement[]).map((e) => e.getBoundingClientRect());
+        const rows = ([...document.querySelectorAll('.gview .grh')] as HTMLElement[]).map((e) => e.getBoundingClientRect());
+        if (cols.length && rows.length) {
+          const x0 = Math.min(...cols.map((r) => r.left)), x1 = Math.max(...cols.map((r) => r.right)), y0 = Math.min(...rows.map((r) => r.top)), y1 = Math.max(...rows.map((r) => r.bottom));
+          for (const p of paths) {
+            const C = cornersOf(p.getAttribute('d') ?? '').map((q) => ({ x: o.left + q.x, y: o.top + q.y }));
+            for (let k = 1; k < C.length; k++) {
+              const a = C[k - 1], b = C[k];
+              if (Math.abs(a.y - b.y) < 0.5 && Math.max(a.x, b.x) > x0 && Math.min(a.x, b.x) < x1 && a.y > y0 && a.y < y1 && !rows.some((r) => a.y >= r.top - 0.5 && a.y <= r.bottom + 0.5)) note('an arrow runs between rows (rule 3)', it, `${p.classList[1]} at y ${Math.round(a.y - y0)}`);
+              if (Math.abs(a.x - b.x) < 0.5 && Math.max(a.y, b.y) > y0 && Math.min(a.y, b.y) < y1 && a.x > x0 && a.x < x1 && !cols.some((r) => a.x >= r.left - 0.5 && a.x <= r.right + 0.5)) note('an arrow runs between columns (rule 3)', it, `${p.classList[1]} at x ${Math.round(a.x - x0)}`);
+            }
+          }
+        }
+      }
+      for (let k = 0, last = ''; k < 60; k++) { const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; await nextFrames(3); }
+      const fz = (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.getBoundingClientRect();
+      const onSq = document.querySelector('.gview .gcell.on:not(.pk)') as HTMLElement | null;
+      if (onSq) {
+        const r = onSq.getBoundingClientRect(), L = fz('.gview .gstrip.side')?.right ?? -Infinity, T = fz('.gview .gstrip.top')?.bottom ?? -Infinity, R = fz('.gview .gtot')?.left ?? Infinity, B = Math.min(fz('.gview .gmk')?.top ?? Infinity, fz('.gview .ssky')?.top ?? Infinity);
+        if (r.left < L - 0.5 || r.top < T - 0.5 || r.right > R + 0.5 || r.bottom > B + 0.5) note('the current square is under a frozen heading (rule 3)', it, words(onSq));
+      }
+      const seen = (x: { e: HTMLElement; r: DOMRect }) => { const top = document.elementFromPoint(x.r.left + x.r.width / 2, x.r.top + x.r.height / 2); return !!top && (x.e === top || x.e.contains(top) || top.contains(x.e)); };
+      const axes = ([...document.querySelectorAll('.gview .gax')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r) && seen(x));
+      const heads = ([...document.querySelectorAll('.gview .gfb, .gview .gch b, .gview .gch span, .gview .grb span, .gview .grh b, .gview .grh span, .gview .gtot .t, .gview .gmk .m')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r) && seen(x));
+      for (const a of axes) for (const h of heads) if (hit(a.r, h.r)) note('an axis label overlaps a heading (rule 3)', it, `${words(a.e)} / ${words(h.e)}`);
       const cur = document.querySelector('.gview .gcell.on') as HTMLElement | null;
       if (cur) {
         cur.dispatchEvent(new MouseEvent('mouseenter'));
@@ -1594,6 +1621,9 @@ async function rulesCheck(report: Record<string, unknown>) {
         if (e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1) if (!e.closest('[title]')) note('a cut text out of reach (rule 4)', it, words(e));
       }
       if (it === 0) await shot('rules-step-1');
+      const faultsNow = Object.values(tally).reduce((n, t) => n + t.count, 0);
+      if (faultsNow > faultsSeen && shotsTaken < 8) { shotsTaken++; await shot(`rules-fault-step-${it + 1}`); }
+      faultsSeen = faultsNow;
     }
     report.walked = walked;
   } catch (e) { errors.push(`rules: ${e}`); }

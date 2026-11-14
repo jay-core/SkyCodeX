@@ -15,7 +15,9 @@ import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { Skyline } from './Sequence';
 
-const SIDE = 236, HEAD = 84, TOT = 76, FOOT = 46, GAP = 4, OPEN_W = 270, LINE_H = 23, BIG = 1800, SKY = 62;
+const SIDE = 236, HEAD = 84, TOT = 76, FOOT = 46, GAP = 4, OPEN_W = 270, LINE_H = 23, BIG = 1800;
+const EDGE = 4, PAD = 4, NAME_GAP = 6, BAND_TOP = 8, BAND_H = 16, BAND_X = 12, BAND_W = 20, FOOT_H = FOOT - NAME_GAP, TOT_GAP = 8, PX = 12;
+const HEAD_NAMES = BAND_TOP + BAND_H + NAME_GAP, ROW_NAMES = BAND_X + BAND_W + 2 * PAD;
 const PAL = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 const wrapName = (n: string) => n.replace(/_/g, '_​');
@@ -68,8 +70,8 @@ function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number): { x: number; 
   const n = cs.length, a0 = mid(A), b0 = mid(B);
   const s = { x: Math.sign(cs[1].i - cs[0].i), y: Math.sign(cs[1].j - cs[0].j) }, e = { x: Math.sign(cs[n - 1].i - cs[n - 2].i), y: Math.sign(cs[n - 1].j - cs[n - 2].j) };
   if (n === 2 && Math.abs(cs[1].i - cs[0].i) + Math.abs(cs[1].j - cs[0].j) === 1) {
-    if (s.x === 0) { const x0 = Math.max(A.x + A.w, B.x + B.w) + 1, ox = x0 + 10; return [{ x: A.x + A.w + 1, y: a0.y + k }, { x: ox, y: a0.y + k }, { x: ox, y: b0.y }, { x: B.x + B.w + 2, y: b0.y }]; }
-    const y0 = Math.max(A.y + A.h, B.y + B.h) + 1, oy = y0 + 8;
+    if (s.x === 0) { const x0 = Math.max(A.x + A.w, B.x + B.w) + 1, ox = x0 + Math.min(10, A.w / 4); return [{ x: A.x + A.w + 1, y: a0.y + k }, { x: ox, y: a0.y + k }, { x: ox, y: b0.y }, { x: B.x + B.w + 2, y: b0.y }]; }
+    const y0 = Math.max(A.y + A.h, B.y + B.h) + 1, oy = y0 + Math.min(8, A.h / 3);
     return [{ x: a0.x + k, y: A.y + A.h + 1 }, { x: a0.x + k, y: oy }, { x: b0.x, y: oy }, { x: b0.x, y: B.y + B.h + 2 }];
   }
   const last = cs[n - 1], onFinal = (q: Cell) => (e.x ? q.j === last.j : q.i === last.i);
@@ -83,6 +85,7 @@ function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number): { x: number; 
 }
 
 type Pt = { x: number; y: number };
+const TIP = 5, STUB = TIP + 1;
 interface End { b: Rect; sq: Rect; others: Rect[] }
 function endOn(p: Pt[], at: End): Pt[] {
   const { b, sq } = at, n = p.length, e = p[n - 1], q = p[n - 2], mx = b.x + b.w / 2, my = b.y + b.h / 2;
@@ -90,7 +93,7 @@ function endOn(p: Pt[], at: End): Pt[] {
   if (across) {
     const lo = q.x < e.x ? sq.x : b.x + b.w, hi = q.x < e.x ? b.x : sq.x + sq.w;
     if (at.others.some((o) => o.x < hi && o.x + o.w > lo && o.y < b.y + b.h && o.y + o.h > b.y)) {
-      const up = q.y <= my, ly = up ? (sq.y + b.y) / 2 : (b.y + b.h + sq.y + sq.h) / 2;
+      const up = q.y <= my, ly = up ? Math.min((sq.y + b.y) / 2, b.y - 1 - STUB) : Math.max((b.y + b.h + sq.y + sq.h) / 2, b.y + b.h + 1 + STUB);
       const r = p[n - 3], bend = !!r && Math.abs(r.x - q.x) < 0.5;
       const tip = { x: mx, y: up ? b.y - 1 : b.y + b.h + 1 };
       return bend ? [...p.slice(0, n - 2), { x: q.x, y: ly }, { x: mx, y: ly }, tip] : [...p.slice(0, n - 1), { x: q.x, y: ly }, { x: mx, y: ly }, tip];
@@ -132,12 +135,14 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const pickCell = createMemo(() => { const p = pick(); return p ? cellAt(p.c, p.r) ?? [] : []; });
 
   let scroller!: HTMLDivElement, canvas!: HTMLDivElement;
-  const [vw, setVw] = createSignal(900), [vh, setVh] = createSignal(600), [sl, setSl] = createSignal(0), [st, setSt] = createSignal(0);
+  const [vw, setVw] = createSignal(900), [fullH, setFullH] = createSignal(600), [skyH, setSkyH] = createSignal(0), [sl, setSl] = createSignal(0), [st, setSt] = createSignal(0);
+  const vh = () => fullH() - skyH();
   onMount(() => {
     let f = 0;
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setVw(scroller.clientWidth); setVh(scroller.clientHeight - SKY); }); });
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setVw(scroller.clientWidth); setFullH(scroller.clientHeight); setSkyH(canvas.querySelector('.ssky')?.getBoundingClientRect().height ?? 0); }); });
     onCleanup(() => cancelAnimationFrame(f));
     ro.observe(scroller); onCleanup(() => ro.disconnect());
+    createEffect(on(S, () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
     requestAnimationFrame(() => canvas?.focus());
   });
   const place = (list: GridFn[], size: (i: number) => number): Pos => {
@@ -159,8 +164,8 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const colIdx = createMemo(() => new Map(cols().map((c, i) => [c.key, i])));
   const rowIdx = createMemo(() => new Map(rows().map((r, j) => [r.key, j])));
   const rectOf = (i: number, j: number): Rect => ({ x: SIDE + geo().x.at[i], y: HEAD + geo().y.at[j], w: geo().x.w[i] - 2, h: geo().y.w[j] - 2 });
-  const totX = () => Math.min(SIDE + geo().x.size + 8, sl() + vw() - TOT);
-  const footY = () => Math.min(HEAD + geo().y.size + 6, st() + vh() - FOOT);
+  const totX = () => Math.min(SIDE + geo().x.size + TOT_GAP, sl() + vw() - TOT);
+  const footY = () => Math.min(HEAD + geo().y.size + NAME_GAP, st() + vh() - FOOT);
   const maxRow = createMemo(() => Math.max(1, ...rows().map((r) => r.count)));
   const maxCol = createMemo(() => Math.max(1, ...cols().map((c) => c.count)));
 
@@ -234,16 +239,20 @@ export default function GridView(props: { switcher: JSX.Element }) {
       const ok = tries.find((t) => within(t) && !filled.some((f) => overlaps(t, f)) && !placed.some((p) => overlaps(t, p)) && !lines.some((l) => overlaps(t, l))) ?? tries.reduce((a, b) => (covered(b) < covered(a) ? b : a));
       placed.push(ok); labels.push({ ...ok, text, kind });
     };
-    const used = new Uint8Array(nc * nr * 2), count: Record<string, number> = { in: 0, out: 0, call: 0 }, done = new Set<string>();
-    const shift = (kind: string) => { const n = count[kind]++; return kind === 'in' ? -3 - 3 * n : kind === 'call' ? 3 + 3 * n : (n % 2 ? -1.5 : 1.5) * Math.ceil(n / 2); };
+    const used = new Uint8Array(nc * nr * 2), count: Record<string, number> = { in: 0, out: 0, call: 0 }, total: Record<string, number> = { in: 0, out: 0, call: 0 }, done = new Set<string>();
+    const todo = L.links.flatMap((l) => {
+      const a = at(l.from), b = at(l.to);
+      if (!a || !b || (a.i === b.i && a.j === b.j)) return [];
+      const key = `${l.kind}:${a.i},${a.j}>${b.i},${b.j}`;
+      if (done.has(key)) return [];
+      done.add(key); total[l.kind]++;
+      return [{ l, a, b }];
+    });
+    const band = Math.min(geo().cw, geo().rh) / 2 - 3, step = Math.min(3, band / Math.max(1, total.in, total.call, Math.ceil(total.out / 2)));
+    const shift = (kind: string) => { const n = count[kind]++; return kind === 'in' ? -step * (1 + n) : kind === 'call' ? step * (1 + n) : (n % 2 ? -step : step) / 2 * Math.ceil(n / 2); };
     let callSaid = false;
     const asks: [Cell, string, string][] = [];
-    for (const l of L.links) {
-      const a = at(l.from), b = at(l.to);
-      if (!a || !b || (a.i === b.i && a.j === b.j)) continue;
-      const key = `${l.kind}:${a.i},${a.j}>${b.i},${b.j}`;
-      if (done.has(key)) continue;
-      done.add(key);
+    for (const { l, a, b } of todo) {
       const cells = lane(occ, used, nc, nr, a, b) ?? [a, { i: b.i, j: a.j }, b];
       markLane(used, nc, cells.filter((q, n) => n === 0 || q.i !== cells[n - 1].i || q.j !== cells[n - 1].j));
       const pts = attach(laneD(cells, rect, shift(l.kind)), endAt(l.from, a), endAt(l.to, b));
@@ -307,7 +316,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
       { x: a.x + a.w - w, y: a.y - hh - 3, w, h: hh }, { x: a.x, y: a.y - hh - 3, w, h: hh },
       { x: a.x + a.w - w, y: a.y + a.h + 3, w, h: hh }, { x: a.x, y: a.y + a.h + 3, w, h: hh },
     ];
-    const ok = tries.find((t) => t.x >= SIDE - 40 && t.y >= HEAD - 24 && !filled.some((f) => overlaps(t, f))) ?? tries[0];
+    const ok = tries.find((t) => t.x >= sl() && t.y >= st() && !filled.some((f) => overlaps(t, f))) ?? tries[0];
     return { text, x: Math.max(4, ok.x), y: ok.y };
   });
 
@@ -360,9 +369,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
   createEffect(on([curCell, pick], () => requestAnimationFrame(() => {
     const el = (scroller?.querySelector('.gcell.pk') ?? scroller?.querySelector('.gcell.on')) as HTMLElement | null;
     if (!el) return;
-    const a = el.getBoundingClientRect(), b = scroller.getBoundingClientRect(), m = 40;
-    if (a.left < b.left + SIDE || a.right > b.right - TOT || a.top < b.top + HEAD || a.bottom > b.bottom - FOOT - SKY)
-      scroller.scrollTo({ left: scroller.scrollLeft + a.left - b.left - b.width / 2 + a.width / 2, top: scroller.scrollTop + a.top - b.top - b.height / 2 + a.height / 2 + m / 2, behavior: settings()['motion.reduce'] ? 'auto' : 'smooth' });
+    const a = el.getBoundingClientRect(), b = scroller.getBoundingClientRect(), edge = (sel: string) => scroller.querySelector(sel)?.getBoundingClientRect();
+    const L = edge('.gstrip.side')?.right ?? b.left, T = edge('.gstrip.top')?.bottom ?? b.top, Rt = edge('.gtot')?.left ?? b.right, B = Math.min(edge('.gmk')?.top ?? b.bottom, b.bottom - skyH());
+    if (a.left < L || a.right > Rt || a.top < T || a.bottom > B)
+      scroller.scrollTo({ left: scroller.scrollLeft + a.left + a.width / 2 - (L + Rt) / 2, top: scroller.scrollTop + a.top + a.height / 2 - (T + B) / 2, behavior: settings()['motion.reduce'] ? 'auto' : 'smooth' });
   })));
 
   function onKey(e: KeyboardEvent) {
@@ -391,10 +401,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const G = geo(), W = SIDE + G.x.size + TOT + 20, H = HEAD + G.y.size + FOOT + 10, sc = Math.min(2, 16000 / W, 16000 / H);
     const c = document.createElement('canvas'); c.width = Math.round(W * sc); c.height = Math.round(H * sc);
     const g = c.getContext('2d')!; g.scale(sc, sc); g.fillStyle = '#171817'; g.fillRect(0, 0, W, H);
-    g.font = '12px "ArX F1", monospace'; g.textBaseline = 'middle';
-    cols().forEach((cc, i) => { g.fillStyle = col().get(cc.file)!; g.fillRect(SIDE + G.x.at[i], HEAD - 6, G.x.w[i] - 2, 2); g.fillStyle = '#9ea39b'; g.fillText(cc.name.slice(0, Math.max(4, Math.floor(G.x.w[i] / 7.5))), SIDE + G.x.at[i] + 4, HEAD - 18); });
-    rows().forEach((rr, j) => { g.fillStyle = col().get(rr.file)!; g.fillRect(36, HEAD + G.y.at[j], 2, G.y.w[j] - 2); g.fillStyle = '#9ea39b'; g.fillText(rr.name, 46, HEAD + G.y.at[j] + G.rh / 2); g.fillText(`×${rr.count}`, SIDE + G.x.size + 14, HEAD + G.y.at[j] + G.rh / 2); });
-    cols().forEach((cc, i) => { g.fillStyle = '#9ea39b'; g.fillText(String(cc.count), SIDE + G.x.at[i] + 4, HEAD + G.y.size + 20); rows().forEach((rr, j) => { const v = m.cells.get(`${cc.key}>${rr.key}`); if (!v) return; g.fillStyle = '#1f211f'; g.fillRect(SIDE + G.x.at[i], HEAD + G.y.at[j], G.x.w[i] - 2, G.y.w[j] - 2); g.fillStyle = '#c9cec6'; g.fillText(v.map((it) => it + 1).join(' · '), SIDE + G.x.at[i] + 6, HEAD + G.y.at[j] + G.rh / 2); }); });
+    g.font = `${PX}px "ArX F1", monospace`; g.textBaseline = 'middle';
+    cols().forEach((cc, i) => { g.fillStyle = col().get(cc.file)!; g.fillRect(SIDE + G.x.at[i], HEAD - NAME_GAP, G.x.w[i] - 2, 2); g.fillStyle = '#9ea39b'; g.fillText(cc.name.slice(0, Math.max(4, Math.floor(G.x.w[i] / 7.5))), SIDE + G.x.at[i] + PAD, HEAD - NAME_GAP - PX); });
+    rows().forEach((rr, j) => { g.fillStyle = col().get(rr.file)!; g.fillRect(BAND_X + BAND_W - 2, HEAD + G.y.at[j], 2, G.y.w[j] - 2); g.fillStyle = '#9ea39b'; g.fillText(rr.name, ROW_NAMES + NAME_GAP, HEAD + G.y.at[j] + G.rh / 2); g.fillText(`×${rr.count}`, SIDE + G.x.size + TOT_GAP + NAME_GAP, HEAD + G.y.at[j] + G.rh / 2); });
+    cols().forEach((cc, i) => { g.fillStyle = '#9ea39b'; g.fillText(String(cc.count), SIDE + G.x.at[i] + PAD, HEAD + G.y.size + FOOT / 2); rows().forEach((rr, j) => { const v = m.cells.get(`${cc.key}>${rr.key}`); if (!v) return; g.fillStyle = '#1f211f'; g.fillRect(SIDE + G.x.at[i], HEAD + G.y.at[j], G.x.w[i] - 2, G.y.w[j] - 2); g.fillStyle = '#c9cec6'; g.fillText(v.map((it) => it + 1).join(' · '), SIDE + G.x.at[i] + NAME_GAP, HEAD + G.y.at[j] + G.rh / 2); }); });
     await api.fs.writeBase64(file, c.toDataURL('image/png').split(',')[1]);
     flash(`saved ${basename(file)} · ${c.width} × ${c.height}`, 3000);
   }
@@ -420,7 +430,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
           <button class="chip" classList={{ on: heat() }} aria-pressed={heat()} title="shade each square by how many calls it holds (H)" onClick={() => setHeat(!heat())}>how often</button>
           <button class="chip" title="save the grid as a PNG image" onClick={exportPng}>export</button>
         </div>
-        <div class="gview" classList={{ heat: heat(), focus: focus(), waysout: waysOut(), routed: !!route(), following: !!followed() }} ref={canvas} tabindex="0" role="application" aria-label="the run as a grid: who calls whom" onKeyDown={onKey}>
+        <div class="gview" classList={{ heat: heat(), focus: focus(), waysout: waysOut(), routed: !!route(), following: !!followed() }} style={{ '--sky-h': `${skyH()}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run as a grid: who calls whom" onKeyDown={onKey}>
           <Show when={summary()}>{(sm) => (
             <div class="gtop" onWheel={hwheel}>
               <span><b>{sm().fns}</b>functions called</span><span><b>{sm().callers}</b>callers</span><span><b>{sm().calls}</b>calls</span>
@@ -447,28 +457,28 @@ export default function GridView(props: { switcher: JSX.Element }) {
             <i class="ka out">⟶</i><span>who reads its result</span>
             <i class="ka call">⟶</i><span>the calls it makes</span>
           </div>
-          <div class="gscroll" ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
+          <div class="gscroll" style={{ 'padding-bottom': `${skyH()}px` }} ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
             <Show when={model()} fallback={<div class="empty">{runStatus() || status() || 'building…'}</div>}>
               <Show when={!filesMode()} fallback={<FilesGrid model={model()!} col={col()} sl={sl()} st={st()} onOpen={(rowFile, colFile) => setDrill({ rowFile, colFile })} />}>
                 <div class="gsz" style={{ width: `${SIDE + geo().x.size + TOT + 12}px`, height: `${HEAD + geo().y.size + FOOT + 8}px` }}>
-                  <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${SIDE + geo().x.size + 8}px`, height: `${HEAD - 4}px` }} />
-                  <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${SIDE - 4}px`, height: `${HEAD + geo().y.size + 4}px` }} />
-                  <div class="gcorner" style={{ left: `${sl()}px`, top: `${st()}px`, width: `${SIDE - 4}px`, height: `${HEAD - 4}px` }}>
-                    <div class="gax" style={{ left: `${SIDE - 92}px`, top: `${HEAD - 40}px` }}>caller →</div>
-                    <div class="gax" style={{ left: '40px', top: `${HEAD - 16}px` }}>called ↓</div>
+                  <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${SIDE + geo().x.size + 8}px`, height: `${HEAD - EDGE}px` }} />
+                  <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${SIDE - EDGE}px`, height: `${HEAD + geo().y.size + EDGE}px` }} />
+                  <div class="gcorner" style={{ left: `${sl()}px`, top: `${st()}px`, width: `${SIDE - EDGE}px`, height: `${HEAD - EDGE}px` }}>
+                    <div class="gax" style={{ right: `${NAME_GAP}px`, top: `${(HEAD_NAMES + HEAD - NAME_GAP) / 2}px`, transform: 'translateY(-50%)' }}>caller →</div>
+                    <div class="gax" style={{ left: `${ROW_NAMES}px`, bottom: '0px' }}>called ↓</div>
                   </div>
                   <For each={cols()}>{(c, i) => (
                     <>
-                      <Show when={i() === 0 || cols()[i() - 1].file !== c.file}>{(() => { const last = () => { let k = i(); while (k + 1 < cols().length && cols()[k + 1].file === c.file) k++; return k; }; return <div class="gfb" title={c.file} style={{ top: `${st() + 8}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.at[last()] + geo().x.w[last()] - geo().x.at[i()] - 2}px`, '--c': col().get(c.file) }}>{basename(c.file)}</div>; })()}</Show>
-                      <div class="gch" classList={{ on: curCell().startsWith(`${c.key}>`), pk: pick()?.c === c.key, lv: waysOut() && leaves(c.key), fw: !!mk(c.key)?.fw, dim: !!mk(c.key)?.dim, cadd: !!mk(c.key)?.add, cchg: !!mk(c.key)?.chg, chg: !!mk(c.key)?.edit }} style={{ top: `${st() + 30}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }} title={`${c.name} · ${basename(c.file)} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(c.key); }}>
+                      <Show when={i() === 0 || cols()[i() - 1].file !== c.file}>{(() => { const last = () => { let k = i(); while (k + 1 < cols().length && cols()[k + 1].file === c.file) k++; return k; }; return <div class="gfb" title={c.file} style={{ top: `${st() + BAND_TOP}px`, height: `${BAND_H}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.at[last()] + geo().x.w[last()] - geo().x.at[i()] - 2}px`, '--c': col().get(c.file) }}>{basename(c.file)}</div>; })()}</Show>
+                      <div class="gch" classList={{ on: curCell().startsWith(`${c.key}>`), pk: pick()?.c === c.key, lv: waysOut() && leaves(c.key), fw: !!mk(c.key)?.fw, dim: !!mk(c.key)?.dim, cadd: !!mk(c.key)?.add, cchg: !!mk(c.key)?.chg, chg: !!mk(c.key)?.edit }} style={{ top: `${st() + HEAD_NAMES}px`, height: `${HEAD - HEAD_NAMES - NAME_GAP}px`, left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }} title={`${c.name} · ${basename(c.file)} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(c.key); }}>
                         <span>{c.fn ? `ƒ${c.fn}` : ''}</span><b>{wrapName(c.name)}</b>
                       </div>
                     </>
                   )}</For>
                   <For each={rows()}>{(r, j) => (
                     <>
-                      <Show when={j() === 0 || rows()[j() - 1].file !== r.file}>{(() => { const last = () => { let k = j(); while (k + 1 < rows().length && rows()[k + 1].file === r.file) k++; return k; }; return <div class="grb" title={r.file} style={{ left: `${sl() + 12}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().y.at[last()] + geo().y.w[last()] - geo().y.at[j()] - 2}px`, '--c': col().get(r.file) }}><span>{basename(r.file)}</span></div>; })()}</Show>
-                      <div class="grh" classList={{ on: curCell().endsWith(`>${r.key}`), pk: pick()?.r === r.key, lv: waysOut() && leaves(r.key), fw: !!mk(r.key)?.fw, dim: !!mk(r.key)?.dim, cadd: !!mk(r.key)?.add, cchg: !!mk(r.key)?.chg, chg: !!mk(r.key)?.edit }} style={{ left: `${sl() + 40}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }} title={`${r.name} · ${basename(r.file)}${mk(r.key)?.dim ? ' · called only where its values rule the call out' : ''} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(r.key); }}>
+                      <Show when={j() === 0 || rows()[j() - 1].file !== r.file}>{(() => { const last = () => { let k = j(); while (k + 1 < rows().length && rows()[k + 1].file === r.file) k++; return k; }; return <div class="grb" title={r.file} style={{ left: `${sl() + BAND_X}px`, width: `${BAND_W}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().y.at[last()] + geo().y.w[last()] - geo().y.at[j()] - 2}px`, '--c': col().get(r.file) }}><span>{basename(r.file)}</span></div>; })()}</Show>
+                      <div class="grh" classList={{ on: curCell().endsWith(`>${r.key}`), pk: pick()?.r === r.key, lv: waysOut() && leaves(r.key), fw: !!mk(r.key)?.fw, dim: !!mk(r.key)?.dim, cadd: !!mk(r.key)?.add, cchg: !!mk(r.key)?.chg, chg: !!mk(r.key)?.edit }} style={{ left: `${sl() + ROW_NAMES}px`, width: `${SIDE - ROW_NAMES - NAME_GAP}px`, top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }} title={`${r.name} · ${basename(r.file)}${mk(r.key)?.dim ? ' · called only where its values rule the call out' : ''} · ⇧-click: a route`} onClick={(e) => { if (e.shiftKey) pickRoute(r.key); }}>
                         <span>{r.fn ? `ƒ${r.fn}` : r.key.startsWith('indirect:') ? '→' : ''}</span><b>{r.name}</b><Show when={mk(r.key)?.fw}><em class="gw">{mk(r.key)!.fw}</em></Show>
                       </div>
                     </>
@@ -508,9 +518,9 @@ export default function GridView(props: { switcher: JSX.Element }) {
                     <>
                       <svg class="glinks" width={SIDE + geo().x.size + 8} height={HEAD + geo().y.size + 8} aria-hidden="true">
                         <defs>
-                          <marker id="glk-in" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-in)' }} /></marker>
-                          <marker id="glk-out" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-out)' }} /></marker>
-                          <marker id="glk-call" markerUnits="userSpaceOnUse" viewBox="0 0 5 4" refX="5" refY="2" markerWidth="5" markerHeight="4" orient="auto"><path d="M0 0 L5 2 L0 4 z" style={{ fill: 'var(--grid-call)' }} /></marker>
+                          <marker id="glk-in" markerUnits="userSpaceOnUse" viewBox={`0 0 ${TIP} 4`} refX={TIP} refY="2" markerWidth={TIP} markerHeight="4" orient="auto"><path d={`M0 0 L${TIP} 2 L0 4 z`} style={{ fill: 'var(--grid-in)' }} /></marker>
+                          <marker id="glk-out" markerUnits="userSpaceOnUse" viewBox={`0 0 ${TIP} 4`} refX={TIP} refY="2" markerWidth={TIP} markerHeight="4" orient="auto"><path d={`M0 0 L${TIP} 2 L0 4 z`} style={{ fill: 'var(--grid-out)' }} /></marker>
+                          <marker id="glk-call" markerUnits="userSpaceOnUse" viewBox={`0 0 ${TIP} 4`} refX={TIP} refY="2" markerWidth={TIP} markerHeight="4" orient="auto"><path d={`M0 0 L${TIP} 2 L0 4 z`} style={{ fill: 'var(--grid-call)' }} /></marker>
                         </defs>
                         <For each={dr().paths}>{(p) => <path class={`ln ${p.kind}`} d={p.d} marker-end={`url(#glk-${p.kind})`} />}</For>
                       </svg>
@@ -518,14 +528,14 @@ export default function GridView(props: { switcher: JSX.Element }) {
                     </>
                   )}</Show>
                   <Show when={tag()}>{(t) => <div class="gtag" style={{ left: `${t().x}px`, top: `${t().y}px` }}>{t().text}</div>}</Show>
-                  <div class="gtot" style={{ left: `${totX()}px`, top: '0px', height: `${HEAD + geo().y.size + 4}px` }}>
-                    <div class="gtothd" style={{ top: `${st()}px`, height: `${HEAD - 4}px` }}><div class="gax w2" style={{ left: '6px', top: `${HEAD - 30}px` }}>times called</div></div>
+                  <div class="gtot" style={{ left: `${totX()}px`, top: '0px', height: `${HEAD + geo().y.size + FOOT + 8}px` }}>
+                    <div class="gtothd" style={{ top: `${st()}px`, height: `${HEAD - EDGE}px` }}><div class="gax w2" style={{ left: `${NAME_GAP}px`, bottom: `${NAME_GAP - EDGE}px` }}>times called</div></div>
                     <For each={rows()}>{(r, j) => <div class="t" classList={{ pk: pick()?.r === r.key }} style={{ top: `${HEAD + geo().y.at[j()]}px`, height: `${geo().rh - 2}px` }}><i style={{ width: `${Math.max(4, Math.round((r.count / maxRow()) * 28))}px` }} />×{r.count}</div>}</For>
                   </div>
-                  <div class="gcorner foot" style={{ left: `${sl()}px`, top: `${footY()}px`, width: `${SIDE - 4}px`, height: '40px' }}>
-                    <div class="gax" style={{ left: '80px', top: '18px' }}>calls it makes →</div>
+                  <div class="gcorner foot" style={{ left: `${sl()}px`, top: `${footY()}px`, width: `${SIDE - EDGE}px`, height: `${FOOT_H}px` }}>
+                    <div class="gax" style={{ right: `${NAME_GAP}px`, bottom: `${NAME_GAP}px` }}>calls it makes →</div>
                   </div>
-                  <div class="gmk" style={{ top: `${footY()}px`, width: `${SIDE + geo().x.size}px` }}>
+                  <div class="gmk" style={{ top: `${footY()}px`, width: `${SIDE + geo().x.size}px`, height: `${Math.max(FOOT_H, st() + vh() - footY())}px` }}>
                     <For each={cols()}>{(c, i) => <div class="m" classList={{ pk: pick()?.c === c.key }} style={{ left: `${SIDE + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px` }}><i style={{ height: `${Math.max(3, Math.round((c.count / maxCol()) * 14))}px` }} />{c.count}</div>}</For>
                   </div>
                 </div>
