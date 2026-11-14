@@ -789,7 +789,12 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .gcell.on:not(.pk) .dots b { border-color: #6a6248; } .gcell.on:not(.pk) .dots b.dn { background: #6a6248; } .gcell.on:not(.pk) .dots b.now { background: #171817; border-color: #171817; }
 .gcell.on:not(.pk) .dots em { color: #171817; }
 .glinks { position: absolute; left: 0; top: 0; pointer-events: none; z-index: var(--z-grid-arrows); overflow: visible; }
-.glinks .ln { fill: none; stroke-width: .6; stroke-linecap: round; stroke-linejoin: round; }
+.glinks .ln { fill: none; stroke-width: .6; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.glinks .hit { fill: none; stroke: transparent; stroke-width: 7; pointer-events: stroke; cursor: help; }
+.gcell .gm { margin-left: 2px; font: 400 10.5px var(--ui); font-style: normal; color: #9ea39b; white-space: nowrap; }
+.gcell.on:not(.pk) .gm { color: #171817; }
+.grh .gr { flex: none; font: 400 11px var(--ui); font-style: normal; color: #9ea39b; }
+.gkey .gerr { color: var(--err); }
 .glinks .ln.in { stroke: var(--grid-in); } .glinks .ln.out { stroke: var(--grid-out); } .glinks .ln.call { stroke: var(--grid-call); }
 .glab { position: absolute; z-index: var(--z-grid-arrow-label); height: 15px; padding: 0 5px; font: 400 10.5px/15px var(--ui); white-space: nowrap; background: var(--bg); border-radius: 2px; pointer-events: none; }
 .glab.in { color: var(--grid-in); } .glab.out { color: var(--grid-out); } .glab.call { color: var(--grid-call); } .glab.dec { color: #171817; background: #e3d6ad; }

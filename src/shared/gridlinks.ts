@@ -120,7 +120,8 @@ export function stepLinks(s: Seq, it: number, lines: Lines): StepLinks {
       for (let l = r.at.line + 1; l <= end; l++) {
         const t = L[l] ?? '';
         if (set.test(t)) break;
-        if (readLines.has(l) || !/^\s*(?:\}\s*)?(?:else\s+)?(?:if|while|switch)\s*\(/.test(t) || !word.test(t)) continue;
+        const decides = /^\s*(?:\}\s*)?(?:else\s+)?(?:if|while|switch|for)\s*\(/.test(t) || /^\s*case\b/.test(t) || /\?[^:;]*:/.test(t) || /&&|\|\|/.test(t);
+        if (readLines.has(l) || !decides || !word.test(t)) continue;
         decisions.push({ text: condText(t), file: cf.file, line: l });
       }
     }
@@ -129,17 +130,18 @@ export function stepLinks(s: Seq, it: number, lines: Lines): StepLinks {
     if (t != null) decisions.push({ text: condText(t), file: cf.file, line: r.at.line });
   }
 
-  const per = new Map<string, number>();
+  const per = new Map<string, { name: string; full: string; n: number }>();
   if (r.kind === 'step') {
     for (let j = row + 1; j <= r.last; j++) {
       const x = R[j];
       if (x.caller !== row) continue;
-      const nm = nameOf(s, j);
-      per.set(nm, (per.get(nm) ?? 0) + 1);
+      const k = x.kind === 'step' || x.kind === 'ref' ? fnOf(s, j).key : `${x.kind}:${x.text ?? x.name}`, e = per.get(k) ?? { name: nameOf(s, j), full: x.kind === 'indirect' ? (x.text ?? x.name) : fnOf(s, j).name, n: 0 };
+      e.n++; per.set(k, e);
       const xi = itemOfRow(s, j);
       if (xi >= 0) add({ kind: 'call', from: it, to: xi, label: '' });
     }
   }
-  const calls = per.size ? `calls ${[...per].map(([n, k]) => `${n} ×${k}`).join(' · ')}` : '';
+  const named = [...per.values()], twice = (e: { name: string }) => named.filter((o) => o.name === e.name).length > 1;
+  const calls = named.length ? `calls ${named.map((e) => `${twice(e) ? e.full : e.name} ×${e.n}`).join(' · ')}` : '';
   return { links, decisions, takes, gives, calls };
 }

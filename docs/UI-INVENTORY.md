@@ -182,11 +182,42 @@ programs list, waits for the view to settle before judging arrows, counts arrow 
 records its box and path. ThreadX (a real RTOS codebase, 549 steps, 65 × 65 functions) added to the runs. Before →
 after: a different view at this size 549 → 0, squares built beyond one screen 608 → 0, arrows away from or off
 their box 0 → 0 on all 549 ThreadX steps, every check on the 23 programs and tinyhttp unchanged. ThreadX's grid is
-drawn and checked for the first time, which shows faults of other classes: column names that scroll under the
-sticky "times called" heading are drawn over it (656; their layer 8 is above the heading's 1: a new fault, phase 3),
-arrow labels over names (9), the hover tag over squares (9), arrows without a hover (296, rule 8). One run of
-recursion-direct and two of ThreadX hit the 5-minute limit; each ran again within it. 61 of 393 fixed; 5 kept by
-verdict; 327 open.
+drawn and checked for the first time, which shows faults of other classes: arrow labels over names (9), the hover
+tag over squares (9), arrows without a hover (296, rule 8). (Corrected during class G: the 656 "axis label over a
+heading" first counted here were column names hidden under the frozen corner, not visible overlaps; with the check
+narrowed to what is visible they are 0 before and after, and no new fault was added.) One run of recursion-direct
+and two of ThreadX hit the 5-minute limit; each ran again within it. 61 of 392 fixed; 5 kept by verdict; 326 open.
+
+**Fixed (2026-11-14, class G, the grid):** `GridView.tsx:172` the entry step now has its arrows, from its column
+down to each call it makes (X5, as the mock-up of 2026-11-13); `:187` a link between two steps in one square is drawn
+as a small arc; `:189` every link has its own arrow (V22); `:191` with no free route, an arrow crosses as few squares
+as it can (a cost per crossing, not a straight line through them); `:195` the "calls" label is placed by the current
+square, or by the squares it calls when there is no room; `:250` the hover tag stays in view and avoids squares and
+labels, falling back to the least-covered place; `:290` shift-click on a call through a pointer or a value says why
+there is no route; `:406` a function passed as a value is marked `&`; `gridmodel.ts:20` (§3 and §3b) a call back into
+a running function is marked ⟲ on its square and row, a call on a new thread ⇢; `gridmodel.ts:28` a call in a loop is
+marked ↻N and times called counts every pass ("+" when a loop's count is not known); repeated calls are counted ×N
+in their square; folded calls are marked +N with their names and lines on hover (the user's decisions of
+2026-11-14); `:92` the key says colours separate neighbouring files and each file is named; `:161` when a step's links
+cannot be worked out, the key line says so and why; `:449` every arrow has a hover saying what it is (rule 8);
+`:471` the grid's run bars show edited steps and notes (the notes and edited steps moved to `lib/runmarks.ts`, shared
+with the metro); `gridmodel.ts:13` and `gridlinks.ts:130` names that read the same are shown in full, and with their
+file when even that is the same; `gridlinks.ts:115` `for`, `case`, `?:`, `&&` and `||` count as decisions on a value;
+`flowstore.ts:50` when clangd has failed the grid says so instead of "building…". 19 faults. Checks added to the
+`rules` scenario: every link of the step has an arrow, a call back into a running function, a call in a loop, a call on
+a new thread, repeated calls and folded calls are marked, a function passed as a value is marked, no two names read
+the same; the axis-label check now counts an overlap only where the heading is visible. Before → after, 23 programs,
+tinyhttp and ThreadX: entry steps without arrows 25 → 0, links without an arrow 74 → 0, arrows without a hover 377 →
+0, unmarked loops 23,179 → 0, recursion 14 → 0, threads 3,868 → 0, repeats 6,786 → 0, folded calls 30 → 0, values
+1,169 → 0, names that read the same 1,098 → 0, the hover tag over a square 105 → 14, arrows over text on tinyhttp 22 →
+18. Worse, each traced: more arrows and labels are drawn now (every link, the entry step), and in the smallest grids
+a label sometimes finds no free place: a label over a square 0 → 3 (calls-20, names-10, recursion-direct), a label
+over a name 0 → 3 on tinyhttp, the hover tag over a square +1 on names-120, names-300 and ThreadX; arrow ends beyond
+the built squares rise with the number of arrows (not checked). Open, intermittent: on ThreadX the current square was
+left partly under the row names at step 547 in 2 of 3 runs (the scroll into view, not yet traced; the check now
+records the positions). Not changed, pending the user's word: the "most called" order still sorts by calls, while
+times called now counts loop passes; changing it changes the test `gridmodel.test.ts` "sorts by most called". 80 of
+392 fixed; 5 kept by verdict; 307 open.
 
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion

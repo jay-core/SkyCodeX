@@ -19,6 +19,7 @@ import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
 import { hwheel } from '../lib/hwheel';
+import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
 
 type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
 
@@ -26,8 +27,6 @@ const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
 const AROUND_AT = 400;
-const load = <T,>(key: string, d: T): T => { try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : d; } catch { return d; } };
-const keep = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {  } };
 
 const KEYS: [string, string][] = [
   ['→ / ←', 'next step / back along the path walked'], ['⇧ →', 'step over: skip what runs inside'], ['↑', 'step out: finish this function'],
@@ -64,7 +63,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const [whatMenu, setWhatMenu] = createSignal<{ it: number; options: WhatIf[] } | null>(null);
   const [compare, setCompare] = createSignal(false);
   const whatOptions = (it: number) => { try { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); } catch { return [] as WhatIf[]; } };
-  const store = (kind: string) => `flow.${kind}:${root()}:${entryStart()}`;
+  const store = runKey;
   const [read, setRead] = createSignal<Set<string>>(new Set());
   createEffect(on([seq, root], () => setRead(new Set(load<string[]>(store('read'), [])))));
   createEffect(on(() => cur()?.at, (a) => {
@@ -76,15 +75,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }));
   const readCount = createMemo(() => { const s = S(); if (!s) return null; const steps = s.run.rows.filter((r) => r.kind === 'step'); return { n: steps.filter((r) => read().has(r.key)).length, of: steps.length }; });
 
-  const noteKey = (it: number) => { const s = S()!, k = s.run.rows[s.items[it]].key; let occ = 0; for (let i = 0; i < it; i++) if (s.run.rows[s.items[i]].key === k) occ++; return `${k}|${occ}`; };
-  const [noteStore, setNoteStore] = createSignal<Record<string, string>>({});
-  createEffect(on([seq, root], () => setNoteStore(load<Record<string, string>>(store('notes'), {}))));
-  const notesByItem = createMemo(() => { const s = S(), out: Record<number, string> = {}; if (!s) return out; const ns = noteStore(); if (!Object.keys(ns).length) return out; for (let i = 0; i < s.items.length; i++) { const t = ns[noteKey(i)]; if (t) out[i] = t; } return out; });
-  function setNote(it: number, text: string) {
-    const n = { ...noteStore() }, k = noteKey(it);
-    if (text.trim()) n[k] = text.trim(); else delete n[k];
-    setNoteStore(n); keep(store('notes'), n);
-  }
   const [noteOpen, setNoteOpen] = createSignal(false);
 
   const [jump, setJump] = createSignal<{ typed: string } | null>(null);
@@ -95,7 +85,6 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return rows.map((it, i) => ({ it, k: HINT[Math.floor(i / HINT.length) % HINT.length] + HINT[i % HINT.length] }));
   });
 
-  const changedItems = createMemo(() => { const s = S(), c = changed(), out = new Set<number>(); if (!s || !c.size) return out; s.items.forEach((row, it) => { const r = s.run.rows[row]; if (c.has(r.kind === 'ref' ? r.ref! : row)) out.add(it); }); return out; });
   const rippleChain = createMemo(() => { const s = S(), out = new Set<number>(); if (!s) return out; for (const it of changedItems()) for (let i: number | null = s.run.rows[s.items[it]].caller; i != null; i = s.run.rows[i].caller) out.add(s.itemOf[i]); return out; });
 
   function askWhat(w: WhatIf) {

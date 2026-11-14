@@ -21,6 +21,8 @@ import { applyEdit, isCast } from '../shared/repair';
 import { undo, undoDepth } from '@codemirror/commands';
 import { probeCheck } from './probe';
 import { stepLinks } from '../shared/gridlinks';
+import { buildGrid } from '../shared/gridmodel';
+import { stepNumbers } from '../shared/flowseq';
 import { lines as seqLines } from './lib/seqtext';
 import { rounded as roundedPath } from './lib/paths';
 
@@ -1543,6 +1545,7 @@ async function rulesCheck(report: Record<string, unknown>) {
     report.openedAfterMs = Date.now() - T0;
     report.stepNames = s.items.slice(0, 50).map((i) => `${s.run.rows[i].kind} ${s.run.rows[i].name}`);
     report.rows = s.run.rows.slice(0, 50).map((r) => `${r.kind} ${r.name} caller=${r.caller ?? '-'}`);
+    const gm = buildGrid(s, stepNumbers(s)), RR = s.run.rows;
     let walked = 0;
     const shotKinds = new Set<string>();
     for (let it = 0; it < s.items.length; it++) {
@@ -1607,12 +1610,13 @@ async function rulesCheck(report: Record<string, unknown>) {
       const onSq = document.querySelector('.gview .gcell.on:not(.pk)') as HTMLElement | null;
       if (onSq) {
         const r = onSq.getBoundingClientRect(), L = fz('.gview .gstrip.side')?.right ?? -Infinity, T = fz('.gview .gstrip.top')?.bottom ?? -Infinity, R = fz('.gview .gtot')?.left ?? Infinity, B = Math.min(fz('.gview .gmk')?.top ?? Infinity, fz('.gview .ssky')?.top ?? Infinity);
-        if (r.left < L - 0.5 || r.top < T - 0.5 || r.right > R + 0.5 || r.bottom > B + 0.5) note('the current square is under a frozen heading (rule 3)', it, words(onSq));
+        if (r.left < L - 0.5 || r.top < T - 0.5 || r.right > R + 0.5 || r.bottom > B + 0.5) note('the current square is under a frozen heading (rule 3)', it, `${words(onSq)} · square ${Math.round(r.left)}..${Math.round(r.right)} × ${Math.round(r.top)}..${Math.round(r.bottom)} · free ${Math.round(L)}..${Math.round(R)} × ${Math.round(T)}..${Math.round(B)} · scroll ${view.scrollLeft},${view.scrollTop} of ${view.scrollWidth - view.clientWidth},${view.scrollHeight - view.clientHeight}`);
       }
       const seen = (x: { e: HTMLElement; r: DOMRect }) => { const top = document.elementFromPoint(x.r.left + x.r.width / 2, x.r.top + x.r.height / 2); return !!top && (x.e === top || x.e.contains(top) || top.contains(x.e)); };
       const axes = ([...document.querySelectorAll('.gview .gax')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r) && seen(x));
       const heads = ([...document.querySelectorAll('.gview .gfb, .gview .gch b, .gview .gch span, .gview .grb span, .gview .grh b, .gview .grh span, .gview .gtot .t, .gview .gmk .m')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r) && seen(x));
-      for (const a of axes) for (const h of heads) if (hit(a.r, h.r)) note('an axis label overlaps a heading (rule 3)', it, `${words(a.e)} / ${words(h.e)}`);
+      const shown = (h: HTMLElement, a: DOMRect, b: DOMRect) => { const x = (Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2, y = (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2, top = document.elementFromPoint(x, y); return !!top && (h === top || h.contains(top)); };
+      for (const a of axes) for (const h of heads) if (hit(a.r, h.r) && shown(h.e, a.r, h.r)) note('an axis label overlaps a heading (rule 3)', it, `${words(a.e)} / ${words(h.e)}`);
       const cut = (e: HTMLElement) => e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1;
       for (const e of [...document.querySelectorAll('.gview .gfb, .gview .grf, .gview .gch b, .gview .grb span, .gview .grh b, .gview .grh span, .gview .gtot .t, .gview .gmk .m')] as HTMLElement[]) {
         if (visible(e.getBoundingClientRect()) && cut(e) && !e.closest('[data-bound]')) note('a name is cut although it could grow (rule 4)', it, words(e));
@@ -1622,6 +1626,20 @@ async function rulesCheck(report: Record<string, unknown>) {
         if (kids.length && (Math.min(...kids.map((k) => k.left)) < cr.left - 0.5 || Math.max(...kids.map((k) => k.right)) > cr.right + 0.5)) note('a square\'s numbers overflow it (rule 4)', it, words(c));
       }
       for (const l of [...document.querySelectorAll('.gview .glab')] as HTMLElement[]) if ((l.textContent ?? '').includes('…') && !l.title) note('an arrow label is cut with no full text (rule 4)', it, words(l));
+      let want = -1;
+      try { want = stepLinks(s, it, (f) => seqLines(f)).links.length; } catch { want = -1; }
+      if (want > paths.length) note('a link of the step has no arrow (rule 6)', it, `${want - paths.length} of ${want}`);
+      const rowHeads = ([...document.querySelectorAll('.gview .grh')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() }));
+      for (const c of [...document.querySelectorAll('.gview .gcell.has:not(.pk)')] as HTMLElement[]) {
+        const l = gm.cells.get(`${c.dataset.c}>${c.dataset.r}`) ?? [], t = c.textContent ?? '', rows = l.map((k) => RR[s.items[k]]);
+        if (rows.some((r) => r.recursive) && !t.includes('⟲')) note('a call back into a running function is not marked (rule 6)', it, words(c));
+        if (rows.some((r) => r.frames.some((f) => s.run.frames[f].kind === 'loop')) && !t.includes('↻')) note('a call in a loop is not marked (rule 6)', it, words(c));
+        if (rows.some((r) => r.thread && r.caller != null && !RR[r.caller].thread) && !t.includes('⇢')) note('a call on a new thread is not marked (rule 6)', it, words(c));
+        if (l.length > 1 && l.length < 4 && !t.includes('×')) note('repeated calls in a square are not counted (rule 6)', it, words(c));
+        if (l.some((k) => s.uses.get(s.items[k])?.length) && !t.includes('+')) note('a folded call has no mark (rule 6)', it, words(c));
+        if ((c.dataset.r ?? '').startsWith('value:')) { const cr = c.getBoundingClientRect(), h = rowHeads.find((x) => Math.abs(x.r.top - cr.top) < 1.5); if (h && !(h.e.querySelector('span')?.textContent ?? '').trim()) note('a function passed as a value has no mark (rule 6)', it, words(h.e)); }
+      }
+      for (const sel of ['.gview .grh b', '.gview .gch b']) { const seenNames = new Map<string, number>(); for (const e of [...document.querySelectorAll(sel)] as HTMLElement[]) { const w = words(e); seenNames.set(w, (seenNames.get(w) ?? 0) + 1); } for (const [w, k] of seenNames) if (w && k > 1) note('two names read the same (rule 6)', it, `${w} ×${k}`); }
       const toOpen = document.querySelector('.gview .gcell.on.has') as HTMLElement | null;
       if (toOpen && it % 5 === 0) {
         toOpen.click();
