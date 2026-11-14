@@ -13,7 +13,7 @@ import { definitionAt } from './lib/lsp';
 import { langOf } from './lib/langs';
 import { buildFlow, buildRun, findEntries, resolveEntry } from './lib/flow';
 import { rankEntries } from '../shared/entries';
-import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, settlingNow, status, graph, trail, setting, comparing, stepMove } from './lib/flowstore';
+import { setFlowView, changed, seq, entries, lane, entryStart, runStatus, programs, setPrograms, settlingNow, status, graph, trail, setting, comparing, stepMove } from './lib/flowstore';
 import { pal } from './lib/lines';
 import { fileToUri } from './lib/api';
 import { fixesIn } from './lib/repair';
@@ -1536,6 +1536,7 @@ async function rulesCheck(report: Record<string, unknown>) {
     setFlowView('grid');
     setPage('flow');
     await quiet(() => !!seq() && !settlingNow() && !runStatus() && !indexing() && !/…/.test(status()), 1500, 200000);
+    if (programs() && entries().length > 1) { report.program = lane(); setPrograms(false); await nextFrames(4); }
     const s = seq();
     if (!s) throw new Error(`no run: ${status()} ${runStatus()}`);
     report.steps = s.items.length;
@@ -1551,6 +1552,7 @@ async function rulesCheck(report: Record<string, unknown>) {
       walked++;
       const view = document.querySelector('.gview .gscroll') as HTMLElement | null;
       if (!view) { note('the grid is not drawn', it, status()); continue; }
+      for (let k = 0, last = ''; k < 60; k++) { const now = `${view.scrollLeft},${view.scrollTop}`; if (now === last) break; last = now; await nextFrames(3); }
       const pane = view.getBoundingClientRect();
       const visible = (r: DOMRect) => r.width > 0 && r.bottom > pane.top && r.top < pane.bottom && r.right > pane.left && r.left < pane.right;
       if (document.querySelector('.gview .gnote')) note('a different view at this size (rule 5)', it, words(document.querySelector('.gview .gnote')!));
@@ -1562,15 +1564,17 @@ async function rulesCheck(report: Record<string, unknown>) {
       if (it === 0) { const calls = s.run.rows.filter((r) => r.caller === s.items[0]).length; if (calls && !paths.length) note('the entry step has no arrows (rule 6)', it, `${calls} calls`); }
       if (svg && paths.length) {
         const o = svg.getBoundingClientRect();
-        const boxes = [...document.querySelectorAll('.gview .gcell.has i, .gview .gcell.has .dots, .gview .gcell.pk .gstep')].map((e) => e.getBoundingClientRect());
+        const boxEls = [...document.querySelectorAll('.gview .gcell.has i, .gview .gcell.has .dots b, .gview .gcell.has .dots, .gview .gcell.pk .gstep')] as HTMLElement[], boxes = boxEls.map((e) => e.getBoundingClientRect());
         for (const p of paths) {
           if (!p.querySelector('title') && !p.closest('[title]')) note('an arrow without a hover (rule 8)', it, p.classList[1]);
           const len = p.getTotalLength(), e = p.getPointAtLength(len), q = p.getPointAtLength(Math.max(0, len - 3));
           const x = o.left + e.x, y = o.top + e.y, across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
+          if (x < pane.left - pane.width || x > pane.right + pane.width || y < pane.top - pane.height || y > pane.bottom + pane.height) { note('an arrow end beyond the built squares (not checked)', it, p.classList[1]); continue; }
           let best = Infinity, mid = Infinity;
-          for (const b of boxes) { const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom)); if (d < best) { best = d; mid = across ? Math.abs(y - (b.top + b.height / 2)) : Math.abs(x - (b.left + b.width / 2)); } }
+          let near = -1;
+          boxes.forEach((b, n) => { const d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom)), area = b.width * b.height, held = near >= 0 && best <= 1 && d <= 1; if (held ? area < boxes[near].width * boxes[near].height : d < best) { best = d; near = n; mid = across ? Math.abs(y - (b.top + b.height / 2)) : Math.abs(x - (b.left + b.width / 2)); } });
           if (best > 1) note('an arrow ends away from its box (rule 2)', it, `${p.classList[1]} ${Math.round(best)} px`);
-          else if (mid > 1) note('an arrow ends off its box\'s middle (rule 2)', it, `${p.classList[1]} ${Math.round(mid)} px`);
+          else if (mid > 1) note('an arrow ends off its box\'s middle (rule 2)', it, `${p.classList[1]} ${Math.round(mid)} px at "${words(boxEls[near]) || boxEls[near]?.tagName}" ${across ? 'from the side' : 'from above or below'} · end ${Math.round(e.x)},${Math.round(e.y)} · box ${Math.round(boxes[near].left - o.left)},${Math.round(boxes[near].top - o.top)} ${Math.round(boxes[near].width)}×${Math.round(boxes[near].height)} · path ${p.getAttribute('d')}`);
         }
       }
       const labs = ([...document.querySelectorAll('.gview .glab')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r));

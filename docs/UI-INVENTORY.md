@@ -167,6 +167,27 @@ one step away (`GridView.tsx:142` most called, top 3, all in the "most called" o
 all in the opened square; `:320` and `:485` routes 1–9 by key, all by click; `:426` dots for 4 or more calls, with
 the count, all in the opened square); they meet rule 4. 48 of 391 fixed; 5 kept by verdict; 338 open.
 
+**Fixed (2026-11-14, classes F and V, the grid):** F: the switch to a files × files view above 1,800 cells
+(`GridView.tsx:17`, `BIG`) and the view itself (`:496`, `:499`, `:501`–`:504`, `:507`, `:510`), with its drill-down
+state, "← all files" chip and style; V: `Math.max(...)` over every row and column (`:134`, `:135`, and the same
+pattern added in classes D and E), now loops; every square built whether in view or not (`:411`, X9), now only the
+squares within one screen around the view, the window moving with the scroll; the column widths for unbuilt squares
+come from the font's measured widths, so nothing shifts while scrolling. 12 faults. Found and fixed during the class:
+`lib/paths.ts` `rounded()` dropped a real corner when a route held the same point twice, leaving a slanted end (1
+new fault); and an arrow reaching a box from below its square could end with its head the wrong way (a class B
+case): every arrow end now finishes with a straight piece one arrowhead long pointing into its box, checked again
+after both ends are placed. Checks: the `rules` scenario now opens the current program when the flow starts on the
+programs list, waits for the view to settle before judging arrows, counts arrow ends beyond the built squares as
+"not checked", and judges an arrow at the smallest box it touches (a dot rather than the row of dots); a fault
+records its box and path. ThreadX (a real RTOS codebase, 549 steps, 65 × 65 functions) added to the runs. Before →
+after: a different view at this size 549 → 0, squares built beyond one screen 608 → 0, arrows away from or off
+their box 0 → 0 on all 549 ThreadX steps, every check on the 23 programs and tinyhttp unchanged. ThreadX's grid is
+drawn and checked for the first time, which shows faults of other classes: column names that scroll under the
+sticky "times called" heading are drawn over it (656; their layer 8 is above the heading's 1: a new fault, phase 3),
+arrow labels over names (9), the hover tag over squares (9), arrows without a hover (296, rule 8). One run of
+recursion-direct and two of ThreadX hit the 5-minute limit; each ran again within it. 61 of 393 fixed; 5 kept by
+verdict; 327 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

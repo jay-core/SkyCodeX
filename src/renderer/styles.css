@@ -816,7 +816,6 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .gmk .m { position: absolute; top: 2px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; font: 400 11px var(--mono); color: #6f766f; }
 .gmk .m i { display: block; width: 5px; background: #4a504a; } .gmk .m.pk { color: #e3d6ad; } .gmk .m.pk i { background: #e3d6ad; }
 .gview.focus .gcell:not(.x):not(.on) { opacity: .25; }
-.gnote { position: absolute; left: 20px; top: 4px; font: 300 12px var(--ui); color: var(--dim); white-space: nowrap; }
 .gview .ssky { right: 0; }
 
 .cbx { outline: 1.5px solid #7a90c4; outline-offset: 1px; border-radius: 2px; cursor: pointer; }

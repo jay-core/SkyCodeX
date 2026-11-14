@@ -15,7 +15,7 @@ import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
 import { Skyline } from './Sequence';
 
-const SIDE = 236, HEAD = 84, GAP = 4, BIG = 1800;
+const GAP = 4;
 const EDGE = 4, PAD = 4, NAME_GAP = 6, BAND_TOP = 8, BAND_H = 16, BAND_X = 12, BAND_W = 20, TOT_GAP = 8, PX = 12;
 const BAR_W = 28, BAR_H = 14, WIDE = 92, TALL = 28, NAME_LINES = 4, OPEN_ROWS = 6, SIDE_SHARE = 0.4, OPEN_SHARE = 0.6, RIGHT = 12;
 const HEAD_NAMES = BAND_TOP + BAND_H + NAME_GAP, ROW_NAMES = BAND_X + BAND_W + 2 * PAD;
@@ -93,7 +93,7 @@ function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number, area: Rect): {
 type Pt = { x: number; y: number };
 const TIP = 5, STUB = TIP + 1;
 interface End { b: Rect; sq: Rect; others: Rect[]; snap: (v: number, across: boolean, toward: number) => number }
-function endOn(p: Pt[], at: End): Pt[] {
+function reach(p: Pt[], at: End): Pt[] {
   const { b, sq } = at, n = p.length, e = p[n - 1], q = p[n - 2], mx = b.x + b.w / 2, my = b.y + b.h / 2;
   const across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
   if (across) {
@@ -112,11 +112,24 @@ function endOn(p: Pt[], at: End): Pt[] {
   const j = at.snap(across ? (q.x + tip.x) / 2 : (q.y + tip.y) / 2, across, across ? tip.x : tip.y);
   return [...p.slice(0, n - 1), ...(across ? [{ x: j, y: q.y }, { x: j, y: my }] : [{ x: q.x, y: j }, { x: mx, y: j }]), tip];
 }
+function endOn(p: Pt[], at: End): Pt[] {
+  return settle(reach(p, at), at.b);
+}
+function settle(out: Pt[], b: Rect): Pt[] {
+  const t = out[out.length - 1], l = out[out.length - 2];
+  const d = t.y < b.y ? { x: 0, y: 1 } : t.y > b.y + b.h ? { x: 0, y: -1 } : t.x < b.x ? { x: 1, y: 0 } : { x: -1, y: 0 };
+  if (!l || (d.x ? Math.abs(l.y - t.y) < 0.5 && (t.x - l.x) * d.x >= STUB : Math.abs(l.x - t.x) < 0.5 && (t.y - l.y) * d.y >= STUB)) return out;
+  const pre = { x: t.x - d.x * STUB, y: t.y - d.y * STUB }, base = out.slice(0, -1);
+  while (base.length > 1 && (base[base.length - 1].x - pre.x) * d.x + (base[base.length - 1].y - pre.y) * d.y > 0) base.pop();
+  const k = base[base.length - 1], behind = d.x ? (pre.x - k.x) * d.x >= 0 : (pre.y - k.y) * d.y >= 0;
+  const elbow = behind === !!d.x ? { x: k.x, y: pre.y } : { x: pre.x, y: k.y };
+  return [...base, elbow, pre, t];
+}
 function attach(pts: Pt[], from: End | undefined, to: End | undefined): Pt[] {
   if (pts.length < 2) return pts;
   let out = to ? endOn(pts, to) : pts;
   if (from) out = endOn([...out].reverse(), from).reverse();
-  return out;
+  return to && from ? settle(out, to.b) : out;
 }
 
 export default function GridView(props: { switcher: JSX.Element }) {
@@ -129,14 +142,12 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const setOrder = (o: GridOrder) => { setOrderRaw(o); try { localStorage.setItem('grid.order', o); } catch {  } };
   const model = createMemo(() => (S() ? buildGrid(S()!, nums(), order()) : null));
   const col = createMemo(() => { const m = new Map<string, string>(); model()?.files.forEach((f, i) => m.set(f, PAL[i % PAL.length])); return m; });
-  const [drill, setDrill] = createSignal<{ rowFile: string; colFile: string } | null>(null);
   const [pick, setPick] = createSignal<{ c: string; r: string } | null>(null);
   const [hover, setHover] = createSignal<{ c: string; r: string } | null>(null);
-  createEffect(on(S, () => { setDrill(null); setPick(null); setHover(null); }, { defer: true }));
-  const big = () => { const m = model(); return !!m && m.rows.length * m.cols.length > BIG; };
-  const filesMode = () => big() && !drill();
-  const rows = createMemo(() => { const m = model(), d = drill(); return !m ? [] : d ? m.rows.filter((r) => r.file === d.rowFile) : m.rows; });
-  const cols = createMemo(() => { const m = model(), d = drill(); return !m ? [] : d ? m.cols.filter((c) => c.file === d.colFile) : m.cols; });
+  createEffect(on(S, () => { setPick(null); setHover(null); }, { defer: true }));
+  const rows = createMemo(() => model()?.rows ?? []);
+  const cols = createMemo(() => model()?.cols ?? []);
+  const most = <T,>(xs: readonly T[], f: (x: T) => number, from = 0) => xs.reduce((m, x) => Math.max(m, f(x)), from);
   const cellAt = (c: string, r: string) => model()?.cells.get(`${c}>${r}`);
   const pickCell = createMemo(() => { const p = pick(); return p ? cellAt(p.c, p.r) ?? [] : []; });
 
@@ -159,7 +170,24 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const breaks = (list: GridFn[]) => list.reduce((n, g, i) => n + (i && list[i - 1].file !== g.file ? 1 : 0), 0);
   const [fontsOk, setFontsOk] = createSignal(0);
   onMount(() => { document.fonts?.ready.then(() => setFontsOk(1)); });
-  const [need, setNeed] = createSignal<{ col: Map<string, number>; row: Map<string, number> }>({ col: new Map(), row: new Map() });
+  const need = createMemo(() => {
+    fontsOk();
+    const m = model(), col = new Map<string, number>(), row = new Map<string, number>();
+    if (!m) return { col, row };
+    const chip = textBox('gcell', 'i'), sep = textBox('gcell', 'span.sep')('·'), gap = parseFloat(styleOf('gcell').columnGap) || 0;
+    const dot = styleOf('dots', 'b'), dotW = (parseFloat(dot.width) || 0) + (parseFloat(dot.borderLeftWidth) || 0) + (parseFloat(dot.borderRightWidth) || 0);
+    const dotGap = parseFloat(styleOf('dots').columnGap) || 0, em = textBox('dots', 'em'), emGap = parseFloat(styleOf('dots', 'em').marginLeft) || 0;
+    const h = textHeight('gcell', 'i')('0', 100) + EDGE, widths = new Map<string, number>();
+    const chipW = (t: string) => { let w = widths.get(t); if (w == null) widths.set(t, (w = chip(t))); return w; };
+    for (const [k, l] of m.cells) {
+      let w = 0;
+      if (l.length < 4) { for (const it of l) w += chipW(String(it + 1)); w += (l.length - 1) * (sep + 2 * gap); }
+      else { const n = Math.min(8, l.length); w = n * dotW + (n - 1) * dotGap + emGap + em(String(l.length)); }
+      const p = k.indexOf('>'), ck = k.slice(0, p), rk = k.slice(p + 1);
+      col.set(ck, Math.max(col.get(ck) ?? 0, Math.ceil(w) + 2 * EDGE)); row.set(rk, h);
+    }
+    return { col, row };
+  });
   const marks = createMemo(() => {
     const s = S(), m = new Map<string, { fw?: string; dim?: boolean; add?: boolean; chg?: boolean; edit?: boolean }>();
     if (!s) return m;
@@ -183,14 +211,14 @@ export default function GridView(props: { switcher: JSX.Element }) {
     fontsOk();
     const rs = rows(), cs = cols();
     const fW = textBox('grh', 'span'), bW = textBox('grh', 'b'), gW = textBox('grh', 'em.gw'), axW = textBox('gax'), fileW = textBox('grf');
-    const fn = Math.max(0, ...rs.map((r) => fW(fnText(r))));
-    const name = Math.max(0, ...rs.map((r) => { const w = mk(r.key)?.fw; return bW(r.name) + (w ? NAME_GAP + gW(w) : 0); }));
-    const files = Math.max(0, ...[...new Set(rs.map((r) => r.file))].map((f) => fileW(basename(f))));
+    const fn = most(rs, (r) => fW(fnText(r)));
+    const name = most(rs, (r) => { const w = mk(r.key)?.fw; return bW(r.name) + (w ? NAME_GAP + gW(w) : 0); });
+    const files = most([...new Set(rs.map((r) => r.file))], (f) => fileW(basename(f)));
     const corner = ROW_NAMES + axW('called ↓') + 2 * NAME_GAP + axW('caller →') + NAME_GAP;
     const sideNeed = Math.max(corner, ROW_NAMES + fn + NAME_GAP + name + NAME_GAP, BAND_X + files + NAME_GAP);
     const sideMax = Math.max(corner, Math.floor(vw() * SIDE_SHARE));
     const tW = textBox('gtot', 'div.t'), mW = textBox('gmk', 'div.m'), mGap = parseFloat(styleOf('gmk', 'div.m').rowGap) || 0, mTop = parseFloat(styleOf('gmk', 'div.m').top) || 0;
-    const tot = NAME_GAP + BAR_W + NAME_GAP + Math.max(0, ...rs.map((r) => tW(`×${r.count}`))) + NAME_GAP;
+    const tot = NAME_GAP + BAR_W + NAME_GAP + most(rs, (r) => tW(`×${r.count}`)) + NAME_GAP;
     const mH = BAR_H + mGap + textHeight('gmk', 'div.m')('0', 100), footH = mTop + mH + NAME_GAP;
     const stepH = Math.max(textHeight('gstep', 'code')('x', 1000), textHeight('gstep', 'i')('x', 1000), textHeight('gstep', 'small')('x', 1000)) + 2 * PAD;
     const pkGap = parseFloat(styleOf('gcell pk').rowGap) || 0, pkPad = parseFloat(styleOf('gcell pk').paddingTop) || 0;
@@ -207,7 +235,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     if (!v.length) return { w: 0, bound: false };
     fontsOk();
     const iW = textBox('gstep', 'i'), cW = textBox('gstep', 'code'), sW = textBox('gstep', 'small'), pad = textBox('gstep')(''), gap = parseFloat(styleOf('gstep').columnGap) || 0;
-    const w = Math.max(...v.map((it) => { const cl = callLine(it); return pad + iW(`step ${it + 1}`) + gap + cW(cl.code) + gap + sW(`:${cl.line}`); })) + 2 * lay().pkPad + PAD + (v.length > OPEN_ROWS ? scrollbarWidth('gcell pk') : 0);
+    const w = most(v, (it) => { const cl = callLine(it); return pad + iW(`step ${it + 1}`) + gap + cW(cl.code) + gap + sW(`:${cl.line}`); }) + 2 * lay().pkPad + PAD + (v.length > OPEN_ROWS ? scrollbarWidth('gcell pk') : 0);
     const max = Math.floor(vw() * OPEN_SHARE);
     return { w: Math.min(max, w), bound: w > max };
   });
@@ -220,12 +248,12 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const colW = (i: number) => Math.max(N.col.get(cs[i].key) ?? 0, L.count.get(cs[i].key) ?? 0, L.fileShare.get(cs[i].key) ?? 0, Math.min(WIDE, fit));
     const x = place(cs, (i) => (i === pc ? Math.max(openW, colW(i)) : colW(i)), GAP, false);
     const nameLines = textHeight('gch', 'b'), wanted = cs.map((c, i) => Math.round(nameLines(wrapName(c.name), x.w[i] - 2 - PAD) / L.lineCH));
-    const lines = Math.max(1, Math.min(NAME_LINES, Math.max(0, ...wanted)));
+    const lines = Math.max(1, Math.min(NAME_LINES, most(wanted, (n) => n)));
     const head = HEAD_NAMES + L.spanH + lines * L.lineCH + NAME_GAP, boundCols = new Set(cs.filter((c, i) => wanted[i] > lines).map((c) => c.key));
     const fitH = nr ? Math.floor((vh() - head - L.foot - (breaks(rs) + 1) * L.fileH - openH) / nr) : TALL;
     const rowH = (j: number) => Math.max(N.row.get(rs[j].key) ?? 0, L.nameH + EDGE / 2, Math.min(TALL, fitH));
     const y = place(rs, (j) => (j === pr ? Math.max(openH, rowH(j)) : rowH(j)), L.fileH, true);
-    return { cw: x.w.length ? Math.min(...x.w) : WIDE, rh: y.w.length ? Math.min(...y.w) : TALL, pc, pr, x, y, head, lines, boundCols, side: L.side, tot: L.tot, foot: L.foot };
+    return { cw: x.w.reduce((a, b) => Math.min(a, b), WIDE), rh: y.w.reduce((a, b) => Math.min(a, b), TALL), pc, pr, x, y, head, lines, boundCols, side: L.side, tot: L.tot, foot: L.foot };
   });
   const side = () => geo().side, head = () => geo().head, tot = () => geo().tot, foot = () => geo().foot;
   const colIdx = createMemo(() => new Map(cols().map((c, i) => [c.key, i])));
@@ -233,8 +261,19 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const rectOf = (i: number, j: number): Rect => ({ x: side() + geo().x.at[i], y: head() + geo().y.at[j], w: geo().x.w[i] - 2, h: geo().y.w[j] - 2 });
   const totX = () => Math.min(side() + geo().x.size + TOT_GAP, sl() + vw() - tot());
   const footY = () => Math.min(head() + geo().y.size + NAME_GAP, st() + vh() - foot());
-  const maxRow = createMemo(() => Math.max(1, ...rows().map((r) => r.count)));
-  const maxCol = createMemo(() => Math.max(1, ...cols().map((c) => c.count)));
+  const span = (p: Pos, lo: number, hi: number) => {
+    let a = 0, b = p.at.length;
+    while (a < b) { const m = (a + b) >> 1; if (p.at[m] + p.w[m] < lo) a = m + 1; else b = m; }
+    let e = a;
+    while (e < p.at.length && p.at[e] <= hi) e++;
+    return [a, e] as const;
+  };
+  const win = createMemo(() => {
+    const g = geo(), x0 = sl() - g.side, y0 = st() - g.head, [i0, i1] = span(g.x, x0 - vw(), x0 + 2 * vw()), [j0, j1] = span(g.y, y0 - fullH(), y0 + 2 * fullH());
+    return { cs: cols().slice(i0, i1), rs: rows().slice(j0, j1) };
+  }, undefined, { equals: (a, b) => a.cs.length === b.cs.length && a.rs.length === b.rs.length && a.cs.every((c, i) => c === b.cs[i]) && a.rs.every((r, j) => r === b.rs[j]) });
+  const maxRow = createMemo(() => most(rows(), (r) => r.count, 1));
+  const maxCol = createMemo(() => most(cols(), (c) => c.count, 1));
 
   const summary = createMemo(() => {
     const m = model(), s = S();
@@ -264,28 +303,17 @@ export default function GridView(props: { switcher: JSX.Element }) {
       const box = (e: Element): Rect => { const r = e.getBoundingClientRect(); return { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height }; };
       for (const e of z.querySelectorAll('.gcell [data-it]')) m.set(Number((e as HTMLElement).dataset.it), box(e));
       for (const e of z.querySelectorAll('.gcell [data-all]')) { const b = box(e); for (const it of (e as HTMLElement).dataset.all!.split(' ')) if (!m.has(Number(it))) m.set(Number(it), b); }
-      const col = new Map<string, number>(), row = new Map<string, number>();
-      for (const e of z.querySelectorAll('.gcell.has:not(.pk)') as NodeListOf<HTMLElement>) {
-        const kids = [...e.children].map((k) => k.getBoundingClientRect()).filter((k) => k.width > 0);
-        if (!kids.length) continue;
-        const w = Math.ceil(Math.max(...kids.map((k) => k.right)) - Math.min(...kids.map((k) => k.left))) + 2 * EDGE, h = Math.ceil(Math.max(...kids.map((k) => k.bottom)) - Math.min(...kids.map((k) => k.top))) + EDGE;
-        const ck = e.dataset.c ?? '', rk = e.dataset.r ?? '';
-        col.set(ck, Math.max(col.get(ck) ?? 0, w)); row.set(rk, Math.max(row.get(rk) ?? 0, h));
-      }
-      const same = (a: Map<string, number>, b: Map<string, number>) => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
-      const n = need();
-      if (!same(col, n.col) || !same(row, n.row)) setNeed({ col, row });
     }
     setEnds(m);
   };
   let measureFrame = 0;
-  createEffect(on([model, geo, pick, curAt, drill, order], () => { cancelAnimationFrame(measureFrame); measureFrame = requestAnimationFrame(measureEnds); }));
+  createEffect(on([model, geo, pick, curAt, order, win], () => { cancelAnimationFrame(measureFrame); measureFrame = requestAnimationFrame(measureEnds); }));
   onMount(() => { document.fonts?.ready.then(() => measureEnds()); });
   onCleanup(() => cancelAnimationFrame(measureFrame));
   const flowLinks = createMemo((): StepLinks | null => {
     const s = S(), c = cur();
     textTick();
-    if (!s || !c || c.at >= s.items.length || !model() || filesMode() || route()) return null;
+    if (!s || !c || c.at >= s.items.length || !model() || route()) return null;
     try { return stepLinks(s, c.at, (f) => lines(f)); } catch { return null; }
   });
   const drawn = createMemo(() => {
@@ -451,7 +479,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     if (key === ' ') { e.preventDefault(); play(); return; }
     if (key === '+' || key === '=') { setSpeed(Math.min(3, speed() * 1.5)); return; }
     if (key === '-') { setSpeed(Math.max(0.25, speed() / 1.5)); return; }
-    if (key === 'Escape') { stop(); if (pick()) { setPick(null); return; } setFollowed(null); setRoute(null); setFocus(false); routeFrom = -1; if (drill() && !route()) setDrill(null); return; }
+    if (key === 'Escape') { stop(); if (pick()) { setPick(null); return; } setFollowed(null); setRoute(null); setFocus(false); routeFrom = -1; return; }
     if (key === 'f' || key === 'F') { setFocus(!focus()); say('F', focus() ? 'focus: the current call’s row and column' : 'the whole grid'); return; }
     if (key === 'h' || key === 'H') { setHeat(!heat()); return; }
     if (key === 'e' || key === 'E') { const on = !waysOut(), n = S() ? leavingCount(S()!.run) : 0; setWaysOut(on); say('E', on ? `ways out: ${n} function${n === 1 ? '' : 's'} can leave early` : 'the whole run'); return; }
@@ -471,7 +499,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     probe.font = `${PX}px "ArX F1", monospace`;
     const fm = probe.measureText('Mg'), LH = Math.ceil(fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent);
     const wrap = (t: string, w: number) => { const out: string[] = []; let cur = ''; for (const ch of t) { if (cur && probe.measureText(cur + ch).width > w) { out.push(cur); cur = ch; } else cur += ch; } if (cur) out.push(cur); return out; };
-    const names = cols().map((cc, i) => wrap(cc.name, G.x.w[i] - 2 - PAD)), top = Math.max(head(), NAME_GAP + Math.max(1, ...names.map((l) => l.length)) * LH + 2 * NAME_GAP);
+    const names = cols().map((cc, i) => wrap(cc.name, G.x.w[i] - 2 - PAD)), top = Math.max(head(), NAME_GAP + most(names, (l) => l.length, 1) * LH + 2 * NAME_GAP);
     const W = side() + G.x.size + tot() + RIGHT + TOT_GAP, H = top + G.y.size + foot() + RIGHT, sc = Math.min(2, 16000 / W, 16000 / H);
     const c = document.createElement('canvas'); c.width = Math.round(W * sc); c.height = Math.round(H * sc);
     const g = c.getContext('2d')!; g.scale(sc, sc); g.fillStyle = '#171817'; g.fillRect(0, 0, W, H);
@@ -509,7 +537,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
               <span><b>{sm().fns}</b>functions called</span><span><b>{sm().callers}</b>callers</span><span><b>{sm().calls}</b>calls</span>
               <span class="xf"><b>{sm().cross}%</b>cross a file</span>
               <Show when={sm().most.length}><span class="mc">most called: <For each={sm().most}>{(r, i) => <><Show when={i() > 0}>, </Show><b>{r.name} ×{r.count}</b></>}</For></span></Show>
-              <Show when={drill()}><button class="chip" onClick={() => setDrill(null)}>← all files</button></Show>
               <span class="grow" />
               <Show when={S() && leavingCount(S()!.run)}><button class="chip" classList={{ on: waysOut() }} onClick={() => { setWaysOut(!waysOut()); canvas.focus(); }}>ways out</button></Show>
               <span class="seg"><For each={[['file', 'by file'], ['run', 'run order'], ['count', 'most called']] as [GridOrder, string][]}>{([o, t]) => <button classList={{ on: order() === o }} title={o === 'file' ? 'grouped by file; within a file, by ƒ number (the order each function first ran)' : o === 'run' ? 'by ƒ number: the order each function first ran' : 'most called first'} onClick={() => { setOrder(o); canvas.focus(); }}>{t}</button>}</For></span>
@@ -532,7 +559,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
           </div>
           <div class="gscroll" style={{ 'padding-bottom': `${skyH()}px` }} ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
             <Show when={model()} fallback={<div class="empty">{runStatus() || status() || 'building…'}</div>}>
-              <Show when={!filesMode()} fallback={<FilesGrid model={model()!} col={col()} sl={sl()} st={st()} onOpen={(rowFile, colFile) => setDrill({ rowFile, colFile })} />}>
                 <div class="gsz" style={{ width: `${side() + geo().x.size + tot() + 12}px`, height: `${head() + geo().y.size + foot() + 8}px` }}>
                   <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${side() + geo().x.size + 8}px`, height: `${head() - EDGE}px` }} />
                   <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${side() - EDGE}px`, height: `${head() + geo().y.size + EDGE}px` }} />
@@ -557,8 +583,9 @@ export default function GridView(props: { switcher: JSX.Element }) {
                     </>
                   )}</For>
                   <For each={boxes()}>{(b) => <div class="gbox" style={{ left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, '--c': b.c }} />}</For>
-                  <For each={cols()}>{(c, i) => (
-                    <For each={rows()}>{(r, j) => {
+                  <For each={win().cs}>{(c) => (
+                    <For each={win().rs}>{(r) => {
+                      const i = () => colIdx().get(c.key) ?? 0, j = () => rowIdx().get(r.key) ?? 0;
                       const key = `${c.key}>${r.key}`, v = () => model()!.cells.get(key);
                       const isPick = () => pick()?.c === c.key && pick()?.r === r.key;
                       const on = () => curCell() === key, x = () => curCell().startsWith(`${c.key}>`) || curCell().endsWith(`>${r.key}`);
@@ -612,7 +639,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
                     <For each={cols()}>{(c, i) => <div class="m" classList={{ pk: pick()?.c === c.key }} style={{ left: `${side() + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px`, height: `${lay().mH}px` }}><i style={{ height: `${Math.max(3, Math.round((c.count / maxCol()) * BAR_H))}px` }} />{c.count}</div>}</For>
                   </div>
                 </div>
-              </Show>
             </Show>
           </div>
           <Magnifier host={() => scroller} source={() => { const z = scroller?.querySelector('.gsz') as HTMLElement | null; if (!z) return null; const r = scroller.getBoundingClientRect(); return { el: z, x: r.left - scroller.scrollLeft, y: r.top - scroller.scrollTop, w: z.offsetWidth, h: z.offsetHeight }; }} />
@@ -634,32 +660,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
           <div class="ways pv"><span><b>1–{Math.min(9, r().list.length)}</b> one route</span><span><b>Esc</b> clear</span></div>
         </div>
       )}</Show>
-    </div>
-  );
-}
-
-function FilesGrid(props: { model: ReturnType<typeof buildGrid>; col: Map<string, string>; sl: number; st: number; onOpen: (rowFile: string, colFile: string) => void }) {
-  const files = () => props.model.files;
-  const counts = createMemo(() => {
-    const m = new Map<string, number>(), cf = new Map(props.model.cols.map((c) => [c.key, c.file])), rf = new Map(props.model.rows.map((r) => [r.key, r.file]));
-    for (const [k, v] of props.model.cells) { const i = k.indexOf('>'); const key = `${rf.get(k.slice(i + 1))}|${cf.get(k.slice(0, i))}`; m.set(key, (m.get(key) ?? 0) + v.length); }
-    return m;
-  });
-  const W = 96, H = 28;
-  return (
-    <div class="gsz" style={{ width: `${SIDE + files().length * W + 40}px`, height: `${HEAD + files().length * H + 40}px` }}>
-      <div class="gstrip top" style={{ left: '0px', top: `${props.st}px`, width: `${SIDE + files().length * W + 40}px`, height: `${HEAD - 4}px` }} />
-      <div class="gstrip side" style={{ left: `${props.sl}px`, top: '0px', width: `${SIDE - 4}px`, height: `${HEAD + files().length * H + 40}px` }} />
-      <div class="gcorner" style={{ left: `${props.sl}px`, top: `${props.st}px`, width: `${SIDE - 4}px`, height: `${HEAD - 4}px` }}>
-        <div class="gnote">a large run: files × files first · click a block for its functions</div>
-      </div>
-      <For each={files()}>{(f, i) => <div class="gch" title={f} style={{ top: `${props.st + 30}px`, left: `${SIDE + i() * W}px`, width: `${W - 2}px` }}><b style={{ color: props.col.get(f) }}>{basename(f)}</b></div>}</For>
-      <For each={files()}>{(rf, j) => (
-        <>
-          <div class="grh" title={rf} style={{ left: `${props.sl + 40}px`, top: `${HEAD + j() * H}px`, height: `${H - 2}px` }}><b style={{ color: props.col.get(rf) }}>{basename(rf)}</b></div>
-          <For each={files()}>{(cf, i) => { const n = counts().get(`${rf}|${cf}`) ?? 0; return <div class="gcell" classList={{ has: n > 0, same: rf === cf }} style={{ left: `${SIDE + i() * W}px`, top: `${HEAD + j() * H}px`, width: `${W - 2}px`, height: `${H - 2}px`, '--c': props.col.get(cf) }} onClick={() => n && props.onOpen(rf, cf)}>{n ? <i>{n}</i> : <s />}</div>; }}</For>
-        </>
-      )}</For>
     </div>
   );
 }
