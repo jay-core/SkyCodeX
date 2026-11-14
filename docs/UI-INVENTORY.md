@@ -140,6 +140,33 @@ sizes, which P5.R.4's conditions cover and which are not run yet). One run of re
 one tinyhttp run found the metro "still moving" twice; run again (3 and 2 times), neither repeated. 28 of 390 fixed;
 362 open.
 
+**Fixed (2026-11-14, classes D and E, the grid):** D: the fixed `SIDE`, `HEAD`, `TOT`, `FOOT`, `OPEN_W`, `LINE_H`
+(`GridView.tsx:17`), the column width held to 44–92 px (`:124`) and the row height to 19–28 px (`:125`), `.gch`,
+`.grh` and `.grh span` sizes, `.grh b { max-width: 150px }` and `.gtot { width: 74px }`; E+: the file bands
+(`styles.css:797`, `:804`), column names (`:800`) and row names (`:806`, `:807`); E-: the arrow label cut at 64
+characters (`GridView.tsx:176`), the exported PNG's names cut by an estimate (`:335`), the square's numbers that
+could overflow it (`styles.css:820`), the opened square's code lines (`:845`), "(…)" for a call's arguments
+(`gridlinks.ts:44`), a condition cut at its line's end with no mark (`gridlinks.ts:60`, §3b) and the followed value's
+words missing from the row's title (`styles.css:807`, §3b): 20 faults. Every size now comes from measured content
+within a bound: the row-name column from the widest ƒ number and name (at most 40% of the view), the column names'
+lines from their widths (at most 4), each column from its numbers and its file name, each row from its numbers, the
+totals and call counts from their text, the opened square from its longest line (at most 60% of the view, plus the
+scrollbar when it scrolls); past a bound the text is cut with the full text on hover and the element marked
+`data-bound`. The rows' file names are now a heading above each file's rows, never cut while there is room. Checks
+added to the `rules` scenario: a name cut although it could grow, a square's numbers overflowing it, an opened
+square's line cut although it could grow, an arrow label cut with no full text; the rule-3 border checks now count
+only runs along a border narrower than 8 px (a gap between two files' rows holds a heading and is open space).
+Before → after, 23 programs and tinyhttp: names cut 1,967 → 0 and 120 → 0, arrow labels cut 3 → 0 and 5 → 0, opened
+lines cut 5 → 0, the dotted link over text 59 → 45, a label over a name or total 6 → 5. Worse, each traced: the file
+headings make the grids taller, so tinyhttp no longer fits the 900 px test window; its last rows scroll under the
+pinned call-count row, and 5 more arrow crossings and 3 arrow labels lie under that row's numbers (hidden by it,
+§1 "frozen structure covers content scrolled under it"); files-60 has more squares off screen (27 → 59, class F/V).
+New fault, phase 3: in a grid taller than the view, an arrow label can be placed under the pinned call-count row and
+cannot be read until the grid is scrolled. Kept as they are, by verdict: the five E+ summaries whose full list is
+one step away (`GridView.tsx:142` most called, top 3, all in the "most called" order; `:238` the hover tag's steps,
+all in the opened square; `:320` and `:485` routes 1–9 by key, all by click; `:426` dots for 4 or more calls, with
+the count, all in the opened square); they meet rule 4. 48 of 391 fixed; 5 kept by verdict; 338 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

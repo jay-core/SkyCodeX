@@ -36,12 +36,20 @@ export function resultName(s: Seq, row: number, lines: Lines): { text: string; n
   return { text: res?.text ?? '', name: res?.name ?? '' };
 }
 
+function argsAt(s: Seq, row: number, lines: Lines): string {
+  const r = s.run.rows[row], file = r.caller != null ? s.run.rows[r.caller].file : '', t = r.at ? lines(file)?.[r.at.line] ?? '' : '';
+  const open = r.at ? t.indexOf('(', r.at.character) : -1;
+  if (open < 0) return '…';
+  for (let k = open, d = 0; k < t.length; k++) { if (t[k] === '(') d++; else if (t[k] === ')' && --d === 0) return t.slice(open + 1, k).trim(); }
+  return `${t.slice(open + 1).trim()} …`;
+}
+
 export function sourceOf(s: Seq, caller: number, before: number, v: string, lines: Lines): Source | null {
   const R = s.run.rows;
   for (let j = before - 1; j > caller; j--) {
     const r = R[j];
     if (r.caller !== caller) continue;
-    if (resultName(s, j, lines).name === v) return { kind: 'result', row: j, text: `${v} = ${nameOf(s, j)}(…)` };
+    if (resultName(s, j, lines).name === v) return { kind: 'result', row: j, text: `${v} = ${nameOf(s, j)}(${r.args ? r.args.join(', ') : argsAt(s, j, lines)})` };
     const fx = fxOf(s, j);
     if (fx?.params && r.args) for (let i = 0; i < r.args.length; i++) {
       const p = fx.params[i];
@@ -58,7 +66,7 @@ const condText = (t: string) => {
   if (i < 0) return s0;
   let d = 0;
   for (let k = i; k < s0.length; k++) { if (s0[k] === '(') d++; else if (s0[k] === ')' && --d === 0) return s0.slice(0, k + 1); }
-  return s0;
+  return `${s0} …`;
 };
 
 export function stepLinks(s: Seq, it: number, lines: Lines): StepLinks {
