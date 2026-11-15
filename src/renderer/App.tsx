@@ -1,4 +1,4 @@
-import { Show, createSignal, onMount, onCleanup, createEffect, on } from 'solid-js';
+import { For, Show, createSignal, onMount, onCleanup, createEffect, on } from 'solid-js';
 import Header from './components/Header';
 import Editor from './components/Editor';
 import Preview from './components/Preview';
@@ -8,7 +8,7 @@ import { searchOpen, openSearch } from './lib/search';
 import Settings from './components/Settings';
 import Flow from './components/Flow';
 import { api } from './lib/api';
-import { settings, files, page, setPage, settingsOpen, setSettingsOpen, toast, info, setInfo, applySettings, restoreSession, openFolder, onDiskChange, saveAll, root, flash } from './lib/store';
+import { settings, files, page, setPage, settingsOpen, setSettingsOpen, toasts, dropToast, settleToasts, info, setInfo, applySettings, restoreSession, openFolder, onDiskChange, saveAll, root, flash } from './lib/store';
 import { invalidateText } from './lib/preview';
 import { invalidateFlowText } from './lib/flow';
 import { invalidateSeqText } from './lib/seqtext';
@@ -71,6 +71,8 @@ export default function App() {
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); api.settings.set('preview.enabled', !previewOn()); }
   };
   onMount(() => window.addEventListener('keydown', onKey));
+  onMount(() => { for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, settleToasts, true); });
+  onCleanup(() => { for (const ev of ['keydown', 'pointerdown'] as const) window.removeEventListener(ev, settleToasts, true); });
   onCleanup(() => window.removeEventListener('keydown', onKey));
   window.addEventListener('beforeunload', () => {  });
 
@@ -99,8 +101,10 @@ export default function App() {
       <Show when={palette()}><Palette /></Show>
       <AppMenu />
       <Show when={compilerOpen()}><CompilerWindow /></Show>
-      <Show when={startOpen() && !root()}><StartWindow /></Show>
-      <Show when={toast()}><div class="toast" role="status" aria-live="polite" style={{ position: 'fixed', right: '18px', bottom: '52px', background: 'var(--pop)', padding: '10px 14px', font: '300 13.5px/1.5 var(--ui)', color: 'var(--bright)', 'max-width': '460px', 'z-index': 'var(--z-toast)', 'box-shadow': '0 18px 40px rgba(0,0,0,.5)' }}>{toast()}</div></Show>
+      <Show when={startOpen() && !root() && !settingsOpen() && !palette()}><StartWindow /></Show>
+      <Show when={toasts().length}><div class="toasts">
+        <For each={toasts()}>{(m) => <div class="toastrow"><div class="toast" role="status" aria-live="polite">{m.msg}</div><button class="tx" title="close this message" aria-label="close this message" onClick={() => dropToast(m.id)}>×</button></div>}</For>
+      </div></Show>
       <Show when={info()?.smoke}>{null}</Show>
     </div>
   );

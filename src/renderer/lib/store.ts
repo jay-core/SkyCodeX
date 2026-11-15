@@ -22,7 +22,8 @@ export const [page, setPage] = createSignal<'editor' | 'flow'>('editor');
 export const [settingsOpen, setSettingsOpen] = createSignal(false);
 export const [crumb, setCrumb] = createSignal('');
 export const [cursorPos, setCursorPos] = createSignal({ line: 1, col: 1 });
-export const [toast, setToast] = createSignal<string | null>(null);
+export const [toasts, setToasts] = createSignal<{ id: number; msg: string; after: number }[]>([]);
+let toastId = 0;
 
 export interface OpenFile { path: string; dirty: boolean; diskChanged: boolean }
 export const [files, setFiles] = createStore<{ list: OpenFile[]; active: string }>({ list: [], active: '' });
@@ -57,9 +58,10 @@ export function applySettings(s: Settings, p: Problem[]) {
 }
 
 export function flash(msg: string, ms = 3200) {
-  setToast(msg);
-  window.setTimeout(() => { if (toast() === msg) setToast(null); }, ms);
+  setToasts((l) => [{ id: ++toastId, msg, after: Date.now() + ms }, ...l.filter((t) => t.msg !== msg)]);
 }
+export const dropToast = (id: number) => setToasts((l) => l.filter((t) => t.id !== id));
+export function settleToasts() { const now = Date.now(); if (toasts().some((t) => t.after <= now)) setToasts((l) => l.filter((t) => t.after > now)); }
 
 export async function openFolder(folder: string) {
   const path = normPath(folder);

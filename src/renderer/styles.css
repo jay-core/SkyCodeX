@@ -78,6 +78,10 @@ input, select { font: inherit; color: var(--bright); }
 .ph { height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; font: 300 15px var(--ui); color: #4f564f; white-space: nowrap; }
 .ph .grow { flex: 1; }
 .ph.wrap, .ph.fwrap { height: auto; min-height: 36px; flex-wrap: wrap; row-gap: 2px; }
+.toasts { position: fixed; right: 18px; bottom: 52px; z-index: var(--z-toast); display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
+.toastrow { display: flex; align-items: flex-start; gap: 10px; max-width: 460px; background: var(--pop); padding: 10px 10px 10px 14px; box-shadow: 0 18px 40px rgba(0,0,0,.5); }
+.toastrow .toast { font: 300 13.5px/1.5 var(--ui); color: var(--bright); min-width: 0; overflow-wrap: anywhere; }
+.toastrow .tx { flex: none; color: var(--dim); font-size: 15px; line-height: 1; } .toastrow .tx:hover { color: var(--bright); }
 .chip { font: 300 12.5px var(--ui); color: var(--faint); }
 .chip.on { color: var(--bright); }
 .chip:hover { color: var(--dim); }

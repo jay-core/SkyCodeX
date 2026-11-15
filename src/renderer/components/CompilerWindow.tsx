@@ -40,7 +40,9 @@ export default function CompilerWindow() {
 
   const off = api.packs.onProgress((p) => setProg(p as Progress));
   onCleanup(off);
+  const reach = (x: number, y: number) => ({ x: Math.min(window.innerWidth - 120, Math.max(-el.offsetWidth + 120, x)), y: Math.min(window.innerHeight - 40, Math.max(0, y)) });
   onMount(() => {
+    setPos(reach(pos().x, pos().y));
     const a = el.animate([{ transform: 'translate3d(0,10px,0) scale(.985)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' });
     a.pause(); afterPaint().then(() => a.play());
   });
@@ -49,7 +51,7 @@ export default function CompilerWindow() {
     if ((e.target as HTMLElement).closest('button')) return;
     e.preventDefault();
     const sx = e.clientX - pos().x, sy = e.clientY - pos().y;
-    const move = (m: PointerEvent) => setPos({ x: Math.min(window.innerWidth - 120, Math.max(-el.offsetWidth + 120, m.clientX - sx)), y: Math.min(window.innerHeight - 40, Math.max(0, m.clientY - sy)) });
+    const move = (m: PointerEvent) => setPos(reach(m.clientX - sx, m.clientY - sy));
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); try { localStorage.setItem('litho.compiler.pos', JSON.stringify(pos())); } catch {  } };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
@@ -97,7 +99,8 @@ export default function CompilerWindow() {
   const busy = () => !!prog() && !['done', 'failed', 'cancelled'].includes(prog()!.phase);
 
   return (
-    <div class="cwin" ref={el} role="dialog" aria-label="compiler" style={{ left: `${pos().x}px`, top: `${pos().y}px` }}>
+    <div class="cwin" ref={el} role="dialog" aria-label="compiler" style={{ left: `${pos().x}px`, top: `${pos().y}px` }}
+      onKeyDown={(e) => { if (e.key !== 'Escape') return; e.stopPropagation(); if (confirm()) setConfirm(null); else setCompilerOpen(false); }}>
       <div class="cwin-h" onPointerDown={drag}>
         <span class="t">compiler</span>
         <span class="grow" />

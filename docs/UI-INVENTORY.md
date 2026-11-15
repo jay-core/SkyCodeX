@@ -407,6 +407,17 @@ hover 3,067 → 3,067), no errors. Correction: the first record of this run read
 5-minute limit and was not checked, and the comparison did not say so; run again alone it passed in 28 s with its 15
 marks, as before. 226 of 392 fixed; 52 kept by verdict or not a fault; 114 open.
 
+**Club 2, timers and overlays (2026-11-15):** fixed, 17. H, 13: messages (`store.ts:59`–`:61`, the one function
+behind `App.tsx:47`, `:48`, `CompilerWindow.tsx:80`, `:82`, `FilesPane.tsx:117`, `Flow.tsx:18`, `actions.ts:33`,
+`goto.ts:137`, `store.ts:147`, `:189`) no longer leave on a timer: each stays until a key or click after its stated
+time, has its own ×, and a new one stacks above the others instead of replacing an unread one (`store.ts:60`). O, 4:
+the start window steps aside while Settings or the palette is open, so they are seen and get the keys (`App.tsx:57`,
+`actions.ts:196`); Esc in the palette closes only the palette (`Palette.tsx:27`); the compiler window closes with Esc,
+or cancels its confirmation first (`CompilerWindow.tsx:104`); its restored place is kept within reach of the window as
+it is now (`:33`). Checks: default, compiler and programs smoke against club 1: the same, but for the preview's first
+level having `basic_string` in 7 runs and not in 2 (clangd's reply varies; the same build showed it again on a rerun);
+rules: 24 of 24 programs, every count the same, no errors. 243 of 392 fixed; 52 kept by verdict or not a fault; 97 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

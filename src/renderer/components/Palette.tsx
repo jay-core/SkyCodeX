@@ -24,7 +24,7 @@ export default function Palette() {
     if (it) { close(); it.run(); }
   };
   const key = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
     else if (e.key === 'Enter') { e.preventDefault(); accept(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(items().length - 1, sel() + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, sel() - 1)); }
