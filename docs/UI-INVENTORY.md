@@ -301,6 +301,29 @@ cuts a crumb: the row now has the whole chain as its title (run with the next ba
 `flowcore.ts:9`, `:23` the loop label's 34 and 26 characters, for the user's decision. 122 of 392 fixed; 28 kept by
 verdict; 242 open.
 
+**Fixed (2026-11-15, the metro, class V):** 7 of the metro's 9. `Sequence.tsx:1106` and `flowseq.ts:195` the deepest
+level is found by one loop (`most`, shared with the grid), not by `Math.max(...)` over every step;
+`flowseq.ts:217` the layout is stacked once per run, size, fold and code detail (`stackSeq`) and placed for the current
+step in constant time (`placeAt`: the open card's height added after it), `layoutSeq` built from the two; the file lanes
+by a map, not a list search per step; `Sequence.tsx:610` the depth spine's ticks are drawn once per run, size,
+chapters, edits and notes, and each move copies them and draws the current step's dot; `flowseq.ts:403` a step's calls
+and findings come from per-run indexes (`kidsOf`, `findingsAt`), not a scan of every row; `metrofacts.ts:111` "pure" is
+worked out once per row and reused while the rows' cache lives; `metrofacts.ts:158` (+167, 175) the step card's three
+scans are per-run indexes (calls of a function, calls made by a function, findings by function). Checked: old and new
+code compared on every function of 8 recorded fixtures (ThreadX's included) and 2 grown runs, 254 runs, 90,344
+results (the layout at every step in every mode, with folds, a what-if skip and code heights; facts, rows, cards, code
+rows): 0 different. The spine's old and new drawing compared pixel by pixel on 648 states (1 to 200,000 steps, device
+ratios 1, 1.5, 2): 0 different. Measured on a run of 90,001 steps: the layout per move 17.05 → 0.00 ms (11.8 ms once per
+run, size, fold or detail), the code rows at "calls" 142.9 → 2.3 ms (the children list was rebuilt with a copy per
+child), the step card 28.2 → 4.7 ms, the metro facts of every 50th row 12.8 → 3.2 ms. Rules on 23 programs and
+tinyhttp before → after: a cut text out of reach 4 → 0 (the path crumbs' row has the whole chain as its title, from
+classes E- and W), marks without a hover 3,110 → 3,108, every other count unchanged. Still open in V:
+`Sequence.tsx:1107` the run bars still draw every step on each redraw: a cached layer with only the hovered and current
+bars redrawn differed from the old drawing in 851 of 2,592 states, so it was taken out; `flowseq.ts:445` partly: folding
+no longer rebuilds the code rows and their children list is no longer quadratic, but changing the detail level still
+walks every step ("all code" on 90,001 steps 258 → 116 ms), because every step's code height enters the layout.
+129 of 392 fixed; 28 kept by verdict; 235 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

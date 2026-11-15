@@ -3,8 +3,8 @@ import { setWalkSpeed, seq, trail, setTrail, runStatus, status, entries, entrySt
 import { watch, journey, watchable, argName } from '../../shared/flowwatch';
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
-  move, Move, layoutSeq, stepNumbers, ordinal, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
-  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings } from '../../shared/flowseq';
+  move, Move, stackSeq, placeAt, stepNumbers, ordinal, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
+  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings, most } from '../../shared/flowseq';
 import { routesBetween, RouteInfo } from '../../shared/flowboxes';
 import type { RunFrame, Exit } from '../../shared/flowrun';
 import { settings, root, flash } from '../lib/store';
@@ -83,7 +83,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const hints = createMemo(() => {
     if (!jump()) return [] as { it: number; k: string }[];
     const g = geom()!, lo = scroll(), hi = scroll() + viewH() - ROW;
-    const rows = visible().filter((it) => g.y[it] >= lo && g.y[it] <= hi && it !== cur()?.at);
+    const rows = visible().filter((it) => g.Y(it) >= lo && g.Y(it) <= hi && it !== cur()?.at);
     return rows.map((it, i) => ({ it, k: HINT[Math.floor(i / HINT.length) % HINT.length] + HINT[i % HINT.length] }));
   });
 
@@ -179,7 +179,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const foldedAll = createMemo(() => (aroundOn() ? new Set([...aroundSet(), ...folded()]) : folded()));
   const hidden = createMemo(() => { const h = S() ? hiddenBy(S()!, foldedAll()) : new Set<number>(); const w = what(); if (w) for (let i = w.skip[0]; i <= w.skip[1]; i++) h.add(i); return h; });
-  const code = createMemo(() => {
+  const blocks = createMemo(() => {
     const s = S();
     if (!s) return new Map<number, CodeBlockJ[]>();
     const m = codeBlocks(s, detailOf, (f) => lines(f)) as Map<number, CodeBlockJ[]>;
@@ -189,7 +189,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       const b = { owner, lines: [{ n: -1, depth: 0, text: `<span class="gh${g.kind === 'removed' ? ' gone' : ''}">${esc(g.names.map((n) => n.replace(/^.*::(?=[^:]+$)/, '')).join(' · '))}</span><span class="ghw">${esc(g.why)}</span>` }] };
       m.set(it, [...(m.get(it) ?? []), b]);
     }
-    const hid = hidden();
+    return m;
+  });
+  const code = createMemo(() => {
+    if (!S()) return new Map<number, CodeBlockJ[]>();
+    const m = new Map(blocks()), hid = hidden();
     for (const j of junctions()) {
       if (detailOf(j.ownerRow) !== 'calls') continue;
       let a = j.after;
@@ -201,10 +205,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return m;
   });
   const codeExtra = createMemo(() => new Map([...code()].map(([it, bs]) => [it, bs.reduce((n, b) => n + b.lines.reduce((k, l) => k + (l.jn ? ROW : CODE_H), 0), 0) + 4])));
+  const stack = createMemo(() => {
+    const s = S();
+    return s ? stackSeq(s, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, folded: foldedAll(), skip: what()?.skip, extra: codeExtra(), mode: 'metro' }) : null;
+  });
   const geom = createMemo(() => {
-    const s = S(), c = cur();
-    if (!s || !c) return null;
-    return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: foldedAll(), skip: what()?.skip, extra: codeExtra(), mode: 'metro' });
+    const s = S(), c = cur(), g = stack();
+    if (!s || !c || !g) return null;
+    return placeAt(g, c.at, c.at < s.items.length ? boxH() : 0);
   });
   const [skyOn, setSkyOn] = createSignal(load('flow.skyline', true));
   const [skyH, setSkyH] = createSignal(0);
@@ -212,7 +220,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const scroll = createMemo(() => {
     const g = geom(), c = cur();
     if (!g || !c) return 0;
-    const target = g.y[c.at] - viewH() * 0.36;
+    const target = g.Y(c.at) - viewH() * 0.36;
     return Math.max(0, Math.min(target + manual(), g.height + 120 - viewH()));
   });
   const visible = createMemo(() => {
@@ -220,8 +228,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!g) return [] as number[];
     const lo = scroll() - 400, hi = scroll() + height() + 400, out: number[] = [];
     let a = 0, b = N() - 1;
-    while (a < b) { const m = (a + b) >> 1; if (g.y[m] + g.h[m] < lo) a = m + 1; else b = m; }
-    for (let i = a; i < N() && g.y[i] <= hi; i++) if (!hidden().has(i)) out.push(i);
+    while (a < b) { const m = (a + b) >> 1; if (g.Y(m) + g.H(m) < lo) a = m + 1; else b = m; }
+    for (let i = a; i < N() && g.Y(i) <= hi; i++) if (!hidden().has(i)) out.push(i);
     return out;
   });
 
@@ -245,8 +253,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const [fnoW, setFnoW] = createSignal(0);
   createEffect(on([nums, geom], ([ns]) => requestAnimationFrame(() => { const el = canvas?.querySelector('.srow .fno'); if (!el) return; const w = textWidthIn(el); let most = 0; for (const n of ns) if (n?.fn) most = Math.max(most, w(`${n.again ? '↻' : ''}ƒ${n.fn}`)); setFnoW(most); })));
-  const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
-  const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f)); c.set(it, m); } return m; };
+  const metroCache = createMemo(() => { S(); nums(); textTick(); return { rows: new Map<number, MetroRow>(), pure: new Map<number, boolean>() }; });
+  const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.rows.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f), c.pure); c.rows.set(it, m); } return m; };
   const fileCol = createMemo(() => {
     const m = new Map<string, string>(), s = S();
     if (s) for (const row of s.items) { const r = s.run.rows[row], f = r.kind === 'ref' ? s.run.rows[r.ref!].file : r.kind === 'step' ? r.file : r.caller != null ? s.run.rows[r.caller].file : r.file; if (!m.has(f)) m.set(f, METRO[m.size % METRO.length]); }
@@ -259,7 +267,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const vis = new Set(visible()), hid = hidden();
     for (const [it, blocks] of code()) {
       if (hid.has(it) || !vis.has(it)) continue;
-      let y = g.y[it] + g.h[it] - (codeExtra().get(it) ?? 0) + 2;
+      let y = g.Y(it) + g.H(it) - (codeExtra().get(it) ?? 0) + 2;
       for (const b of blocks) for (const l of b.lines) {
         out.push({ x: l.jn ? g.x[it] : g.x[b.owner] + 22 + l.depth * 12, top: y, it, n: l.n, text: l.text, jn: l.jn });
         y += l.jn ? ROW : CODE_H;
@@ -279,9 +287,9 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!g || !s) return [];
     return codeRows().filter((l) => l.jn).map((l) => {
       const j = l.jn!, y = l.top + ROW / 2, k = vs.indexOf(l.it), nx = k >= 0 && k + 1 < vs.length ? vs[k + 1] : -1;
-      const x = nx >= 0 ? onTrack(g.barX[l.it], g.y[l.it] + ROW / 2, g.barX[nx], g.y[nx] + ROW / 2, y) : g.barX[l.it];
+      const x = nx >= 0 ? onTrack(g.barX[l.it], g.Y(l.it) + ROW / 2, g.barX[nx], g.Y(nx) + ROW / 2, y) : g.barX[l.it];
       const end = j.kind === 'arm' && j.span ? j.span[1] + 1 : -1;
-      const bypass = end >= 0 && end < s.items.length && vs.includes(end) ? `M${x} ${y} C${x - 20} ${y + 14} ${g.barX[end] - 20} ${g.y[end] + ROW / 2 - 14} ${g.barX[end]} ${g.y[end] + ROW / 2}` : '';
+      const bypass = end >= 0 && end < s.items.length && vs.includes(end) ? `M${x} ${y} C${x - 20} ${y + 14} ${g.barX[end] - 20} ${g.Y(end) + ROW / 2 - 14} ${g.barX[end]} ${g.Y(end) + ROW / 2}` : '';
       return { j, x, y, col: colOf(j.owner), bypass };
     });
   });
@@ -369,8 +377,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       const ci = s.itemOf[child], bi = s.itemOf[back];
       if (ci < 0 || bi < 0) return;
       const half = parseFloat(styleOf('sbar on').width) / 2 || 0;
-      const y1 = g.y[from] + ROW / 2, y2 = g.y[to] + ROW / 2, xa = g.barX[ci] + half, xb = g.barX[bi] + half;
-      const ybot = Math.min(y2 - 6, g.y[s.lastItem[ci]] + g.h[s.lastItem[ci]] - 4);
+      const y1 = g.Y(from) + ROW / 2, y2 = g.Y(to) + ROW / 2, xa = g.barX[ci] + half, xb = g.barX[bi] + half;
+      const ybot = Math.min(y2 - 6, g.Y(s.lastItem[ci]) + g.H(s.lastItem[ci]) - 4);
       const x0 = g.x[from] - 8, x2 = g.x[to] - 8;
       const d = `M${x0} ${y1} L${xa} ${y1} L${xa} ${ybot} L${xb} ${ybot} L${xb} ${y2} L${x2} ${y2}`;
       setRet({ d, head: `M${x2 - 6} ${y2 - 3.5} L${x2} ${y2} L${x2 - 6} ${y2 + 3.5}`, key });
@@ -591,25 +599,34 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const chaps = createMemo(() => (S() ? chapters(S()!) : []));
   const [chapPop, setChapPop] = createSignal<number | null>(null), [chapH, setChapH] = createSignal(0);
   createEffect(on([geom, () => cur()?.at, height, chaps, changedItems, notesByItem], () => drawSpine()));
+  let spineBase: { s: NonNullable<ReturnType<typeof S>>; H: number; dpr: number; ch: ReturnType<typeof chaps>; chg: Set<number>; nb: Record<number, string>; c: HTMLCanvasElement } | null = null;
   function drawSpine() {
     const s = S(), c = cur(), el = spineEl;
     if (!el || !s) return;
-    const H = Math.max(1, height() - 16), dpr = window.devicePixelRatio || 1;
+    const H = Math.max(1, height() - 16), dpr = window.devicePixelRatio || 1, ch = chaps(), chg = changedItems(), nb = notesByItem();
+    const n = s.items.length, yOf = (i: number) => Math.round((i / Math.max(1, n)) * (H - 6)) + 3;
+    if (!spineBase || spineBase.s !== s || spineBase.H !== H || spineBase.dpr !== dpr || spineBase.ch !== ch || spineBase.chg !== chg || spineBase.nb !== nb) {
+      const b = document.createElement('canvas');
+      b.width = 9 * dpr; b.height = H * dpr;
+      const x = b.getContext('2d')!;
+      x.scale(dpr, dpr);
+      x.clearRect(0, 0, 9, H);
+      ch.filter((q) => q.depth === 0).forEach((q, k) => {
+        x.fillStyle = k % 2 ? '#4f6a6a' : '#5a5442';
+        x.fillRect(0, yOf(q.from) + 1, 1, Math.max(1, yOf(q.to + 1) - yOf(q.from) - 3));
+      });
+      for (let i = 0; i < n; i++) {
+        x.fillStyle = chg.has(i) ? '#79c9ae' : loopsAt(s, i).length ? '#355a5a' : '#3a3f3a';
+        x.fillRect(4, yOf(i), 3, chg.has(i) ? 2 : 1);
+      }
+      x.fillStyle = '#ad9b6f';
+      for (const it of Object.keys(nb)) x.fillRect(1, yOf(Number(it)) - 1, 3, 3);
+      spineBase = { s, H, dpr, ch, chg, nb, c: b };
+    }
     el.width = 9 * dpr; el.height = H * dpr;
     const x = el.getContext('2d')!;
+    x.drawImage(spineBase.c, 0, 0);
     x.scale(dpr, dpr);
-    x.clearRect(0, 0, 9, H);
-    const n = s.items.length, yOf = (i: number) => Math.round((i / Math.max(1, n)) * (H - 6)) + 3;
-    chaps().filter((ch) => ch.depth === 0).forEach((ch, k) => {
-      x.fillStyle = k % 2 ? '#4f6a6a' : '#5a5442';
-      x.fillRect(0, yOf(ch.from) + 1, 1, Math.max(1, yOf(ch.to + 1) - yOf(ch.from) - 3));
-    });
-    for (let i = 0; i < n; i++) {
-      x.fillStyle = changedItems().has(i) ? '#79c9ae' : loopsAt(s, i).length ? '#355a5a' : '#3a3f3a';
-      x.fillRect(4, yOf(i), 3, changedItems().has(i) ? 2 : 1);
-    }
-    x.fillStyle = '#ad9b6f';
-    for (const it of Object.keys(notesByItem())) x.fillRect(1, yOf(Number(it)) - 1, 3, 3);
     if (c) {
       x.fillStyle = '#ad9b6f';
       x.beginPath(); x.arc(5.5, yOf(Math.min(c.at, n)), 3.5, 0, Math.PI * 2); x.fill();
@@ -705,7 +722,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const s = S(), g = geom();
     if (!s || !g) return [] as number[];
     const lo = scroll() - 400, hi = scroll() + height() + 400;
-    return [...s.span.entries()].filter(([f, [a, b]]) => s.run.frames[f].kind === 'loop' && !hidden().has(a) && g.y[a] <= hi && g.y[b] + g.h[b] >= lo).map(([f]) => f);
+    return [...s.span.entries()].filter(([f, [a, b]]) => s.run.frames[f].kind === 'loop' && !hidden().has(a) && g.Y(a) <= hi && g.Y(b) + g.H(b) >= lo).map(([f]) => f);
   });
   const visBars = createMemo(() => visible().filter((it) => S()!.lastItem[it] > it));
   const hotFrame = (f: number) => { const c = cur(), sp = S()!.span.get(f)!; return !!c && c.at >= sp[0] && c.at <= sp[1]; };
@@ -724,7 +741,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={header()} fallback={<span>{runStatus() || status()}</span>}>
             <span class="seqk"><i class="selmk" />{junctionPick() ? `junction · ${basename(junctionPick()!.file)}:${junctionPick()!.line + 1}` : header()!.k}</span>
             <Show when={header()!.loop}><span class="seqloop" title={header()!.loopFull}>{header()!.loop}</span></Show>
-            <span class="seqpath">
+            <span class="seqpath" title={header()!.chain.map((c) => c.name).join(' › ')}>
               <For each={crumbs()}>{(c, i) => (
                 <><Show when={i() > 0}><span class="csep">›</span></Show>
                   <button class="crumb" classList={{ last: i() === crumbs().length - 1 }} title={c.it < 0 ? 'show the whole chain' : `go to ${c.name}`}
@@ -787,8 +804,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const fr = () => S()!.run.frames[f] as RunFrame;
                 const sp = () => S()!.span.get(f)!;
                 return (
-                  <div class="sframe" classList={{ hot: hotFrame(f) }} style={{ left: `${frameX(f)}px`, top: `${geom()!.y[sp()[0]] + 1}px`, height: `${geom()!.y[sp()[1]] + geom()!.h[sp()[1]] - geom()!.y[sp()[0]] - 2}px` }}>
-                    <span title={`↻ ${fr().count != null ? `×${fr().count} · ` : ''}${fr().text}`} style={{ top: `${(geom()!.slotY.get(f) ?? 0) - geom()!.y[sp()[0]] - 1}px`, 'max-width': `${width() - SPINE - frameX(f) - 30}px` }}>
+                  <div class="sframe" classList={{ hot: hotFrame(f) }} style={{ left: `${frameX(f)}px`, top: `${geom()!.Y(sp()[0]) + 1}px`, height: `${geom()!.Y(sp()[1]) + geom()!.H(sp()[1]) - geom()!.Y(sp()[0]) - 2}px` }}>
+                    <span title={`↻ ${fr().count != null ? `×${fr().count} · ` : ''}${fr().text}`} style={{ top: `${(geom()!.slot(f) ?? 0) - geom()!.Y(sp()[0]) - 1}px`, 'max-width': `${width() - SPINE - frameX(f) - 30}px` }}>
                       ↻ {fr().count != null ? `×${fr().count} · ` : ''}{fr().text}{hotFrame(f) ? ` · pass ${cur()!.passes[f] ?? 1}${fr().count != null ? ` of ${fr().count}` : ''}` : ''}
                       <Show when={fr().parent == null}><i class="msum">{chapterSum(f)}</i></Show>
                     </span>
@@ -797,7 +814,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               }}</For>
               <svg class="mtrack" width={geom()!.x[0]} height={geom()!.height} aria-hidden="true">
                 <For each={visible()}>{(it, k) => {
-                  const cy = (i: number) => geom()!.y[i] + ROW / 2;
+                  const cy = (i: number) => geom()!.Y(i) + ROW / 2;
                   const prev = () => (k() > 0 ? visible()[k() - 1] : -1);
                   const fut = () => !!cur() && it > cur()!.at;
                   return (
@@ -812,12 +829,12 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 }}</For>
                 <defs><marker id="mloop" markerUnits="userSpaceOnUse" viewBox="0 0 6 5" refX="6" refY="2.5" markerWidth="6" markerHeight="5" orient="auto"><path d="M0 0 L6 2.5 L0 5 z" fill="#6f9e9e" /></marker></defs>
                 <For each={visFrames().filter((f) => { const sp = S()!.span.get(f)!; return sp[1] > sp[0] && sp[1] - sp[0] < 8 && !hidden().has(sp[1]); })}>{(f) => {
-                  const d = () => { const g = geom()!, [a, b] = S()!.span.get(f)!, ya = g.y[a] + ROW / 2, yb = g.y[b] + ROW / 2, x0 = Math.max(3, Math.min(g.barX[a], g.barX[b]) - 24); return `M${g.barX[b] - 6} ${yb} C${x0} ${yb} ${x0} ${ya} ${g.barX[a] - 8} ${ya}`; };
+                  const d = () => { const g = geom()!, [a, b] = S()!.span.get(f)!, ya = g.Y(a) + ROW / 2, yb = g.Y(b) + ROW / 2, x0 = Math.max(3, Math.min(g.barX[a], g.barX[b]) - 24); return `M${g.barX[b] - 6} ${yb} C${x0} ${yb} ${x0} ${ya} ${g.barX[a] - 8} ${ya}`; };
                   return <path class="jloop" d={d()} marker-end="url(#mloop)" />;
                 }}</For>
                 <For each={visible().filter((it) => rowOf(it).kind === 'indirect' && (rowOf(it).could?.length ?? 0) > 0)}>{(it) => {
                   const n = Math.min(3, rowOf(it).could!.length);
-                  return <For each={Array.from({ length: n }, (_, k) => k)}>{(k) => <path class="jfork" stroke={colOf(it)} d={`M${geom()!.barX[it] + 7} ${geom()!.y[it] + ROW / 2} L${geom()!.barX[it] + 20} ${geom()!.y[it] + ROW / 2 + (k - (n - 1) / 2) * 7}`} />}</For>;
+                  return <For each={Array.from({ length: n }, (_, k) => k)}>{(k) => <path class="jfork" stroke={colOf(it)} d={`M${geom()!.barX[it] + 7} ${geom()!.Y(it) + ROW / 2} L${geom()!.barX[it] + 20} ${geom()!.Y(it) + ROW / 2 + (k - (n - 1) / 2) * 7}`} />}</For>;
                 }}</For>
                 <For each={jmarks()}>{(m) => (
                   <>
@@ -831,12 +848,12 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 )}</For>
               </svg>
               <For each={visBars()}>{(it) => (
-                <div class="sbar" classList={{ on: chain().has(S()!.items[it]) }} style={{ left: `${geom()!.barX[it]}px`, top: `${geom()!.y[it] + 4}px`, height: `${geom()!.y[S()!.lastItem[it]] + geom()!.h[S()!.lastItem[it]] - geom()!.y[it] - 8}px` }} />
+                <div class="sbar" classList={{ on: chain().has(S()!.items[it]) }} style={{ left: `${geom()!.barX[it]}px`, top: `${geom()!.Y(it) + 4}px`, height: `${geom()!.Y(S()!.lastItem[it]) + geom()!.H(S()!.lastItem[it]) - geom()!.Y(it) - 8}px` }} />
               )}</For>
               <For each={arrows()}>{(it) => {
                 const c = () => S()!.itemOf[rowOf(it).caller!];
                 return <div class="sarw" classList={{ hot: it === cur()?.at, thread: rowOf(it).thread && !R()[rowOf(it).caller!].thread, dim: it !== cur()?.at && !chain().has(S()!.items[it]) }}
-                  style={{ left: `${geom()!.barX[c()] + 3}px`, top: `${geom()!.y[it] + 11}px`, width: `${Math.max(0, geom()!.x[it] - 6 - geom()!.barX[c()] - 3)}px` }} />;
+                  style={{ left: `${geom()!.barX[c()] + 3}px`, top: `${geom()!.Y(it) + 11}px`, width: `${Math.max(0, geom()!.x[it] - 6 - geom()!.barX[c()] - 3)}px` }} />;
               }}</For>
               <Show when={ret()} keyed>{(r) => (
                 <svg class="sret" width="10" height="10" ref={(el) => requestAnimationFrame(() => {
@@ -862,7 +879,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const tag = () => (sel() ? '' : it === prevAt() ? '← back' : it === nextAt() ? (nextIsReturn() ? `next → · back in ${short(nextIsReturn())}` : 'next →') : '');
                 return (
                   <div class={`srow k-${r().kind}`} data-name={r().kind === 'indirect' ? r().text : short(r().kind === 'ref' && r().ref != null ? R()[r().ref!].name : r().name)} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel(), cadd: r().change === 'added', cchg: r().change === 'changed' }}
-                    style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.y[it]}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
+                    style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.Y(it)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
                     onClick={() => { setPeek(null); go({ jump: it }); canvas.focus(); }}
                     onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; peekTimer = setTimeout(() => setPeek({ it, up }), 450); }}
                     onMouseLeave={() => { clearTimeout(peekTimer); setPeek(null); }}>
@@ -895,10 +912,10 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   </div>
                 );
               }}</For>
-              <For each={visible()}>{(it) => <Show when={read().has(R()[S()!.items[it]].key) && cur()?.at !== it}><span class="stick" style={{ top: `${geom()!.y[it]}px` }} title="you have been here">✓</span></Show>}</For>
-              <For each={hints()}>{(h) => <span class="shint" classList={{ dim: !!jump()?.typed && !h.k.startsWith(jump()!.typed) }} style={{ left: `${geom()!.x[h.it] - 4}px`, top: `${geom()!.y[h.it] + 3}px` }}>{h.k}</span>}</For>
+              <For each={visible()}>{(it) => <Show when={read().has(R()[S()!.items[it]].key) && cur()?.at !== it}><span class="stick" style={{ top: `${geom()!.Y(it)}px` }} title="you have been here">✓</span></Show>}</For>
+              <For each={hints()}>{(h) => <span class="shint" classList={{ dim: !!jump()?.typed && !h.k.startsWith(jump()!.typed) }} style={{ left: `${geom()!.x[h.it] - 4}px`, top: `${geom()!.Y(h.it) + 3}px` }}>{h.k}</span>}</For>
               <For each={foldRows()}>{(it) => (
-                <div class="srow sfold" style={{ left: `${geom()!.x[it] + 14}px`, top: `${geom()!.y[it] + geom()!.h[it] - ROW - (codeExtra().get(it) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 24)}px` }}
+                <div class="srow sfold" style={{ left: `${geom()!.x[it] + 14}px`, top: `${geom()!.Y(it) + geom()!.H(it) - ROW - (codeExtra().get(it) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 24)}px` }}
                   onClick={() => toggleFold(it)} title="unfold (⇧F)">
                   <span class="pl">+</span><span class="nm">{foldSteps(it)} steps</span><span class="nt">{foldNames(it).join(' · ')}</span>
                   <span class="mini">{Array.from({ length: Math.min(40, S()!.lastItem[it] - it) }, (_, k) => <i style={{ height: `${Math.min(14, 2 + (rowOf(it + 1 + k).depth - rowOf(it).depth) * 3)}px` }} />)}</span>
@@ -907,7 +924,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               <Show when={what()}>{(w) => {
                 const a = () => w().skip[0] - 1;
                 return (
-                  <div class="srow swhat" style={{ left: `${geom()!.x[w().skip[0]]}px`, top: `${geom()!.y[a()] + geom()!.h[a()] - ROW - (codeExtra().get(a()) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[w().skip[0]] - 10)}px` }}>
+                  <div class="srow swhat" style={{ left: `${geom()!.x[w().skip[0]]}px`, top: `${geom()!.Y(a()) + geom()!.H(a()) - ROW - (codeExtra().get(a()) ?? 0)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[w().skip[0]] - 10)}px` }}>
                     <span class="pl">?</span><span class="nm">{w().ask.replace(/^what if /, 'if ').replace(/\?$/, '')}: {w().says}</span>
                     <span class="nt">{w().rows} row{w().rows > 1 ? 's' : ''} would not run</span>
                     <button class="chip" onClick={(e) => { e.stopPropagation(); setCompare(!compare()); }}>{compare() ? 'hide compare' : 'compare ⇄'}</button>
@@ -915,7 +932,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 );
               }}</Show>
               <Show when={whatMenu()}>{(m) => (
-                <div class="swmenu" style={{ left: `${geom()!.x[m().it] + 30}px`, top: `${geom()!.y[m().it] + ROW}px` }}>
+                <div class="swmenu" style={{ left: `${geom()!.x[m().it] + 30}px`, top: `${geom()!.Y(m().it) + ROW}px` }}>
                   <For each={m().options}>{(o) => <button title={o.ask} onClick={(e) => { e.stopPropagation(); askWhat(o); }}>{o.ask}</button>}</For>
                 </div>
               )}</Show>
@@ -924,20 +941,20 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const ran = () => { const out: { n: string; name: string }[] = []; for (let i = w.skip[0]; i <= w.skip[1] && out.length < 8; i++) out.push({ n: num(i), name: rowOf(i).kind === 'indirect' ? rowOf(i).text ?? '' : short(rowOf(i).name) }); return out; };
 
                 return (
-                  <div class="scmp" style={{ top: `${geom()!.y[w.skip[0] - 1] + geom()!.h[w.skip[0] - 1] - ROW - 4 - (codeExtra().get(w.skip[0] - 1) ?? 0)}px`, right: `${SPINE + 14}px` }}>
+                  <div class="scmp" style={{ top: `${geom()!.Y(w.skip[0] - 1) + geom()!.H(w.skip[0] - 1) - ROW - 4 - (codeExtra().get(w.skip[0] - 1) ?? 0)}px`, right: `${SPINE + 14}px` }}>
                     <div class="col"><div class="h">as it runs</div><For each={ran()}>{(r) => <div><span class="n">{r.n}</span>{r.name}</div>}</For><Show when={w.rows > 8}><div class="no">+{w.rows - 8} more</div></Show></div>
                     <div class="col"><div class="h">{w.ask.replace(/\?$/, '')}</div><div class="rt">{w.says}</div><div class="no">{w.rows} row{w.rows > 1 ? 's' : ''} skipped</div><div class="no">then: {w.then}</div></div>
                   </div>
                 );
               }}</Show>
-              <Show when={geom()!.y[N()] < scroll() + height() + 400}>
-                <div class="srow send" classList={{ sel: atEnd(), near: nextAt() === N() }} style={{ left: `${geom()!.x[0] ?? 20}px`, top: `${geom()!.y[N()]}px` }} onClick={() => go('end')}>
+              <Show when={geom()!.Y(N()) < scroll() + height() + 400}>
+                <div class="srow send" classList={{ sel: atEnd(), near: nextAt() === N() }} style={{ left: `${geom()!.x[0] ?? 20}px`, top: `${geom()!.Y(N())}px` }} onClick={() => go('end')}>
                   <span class="n">■</span><span class="nm">end of the run</span><span class="nt">{S()!.run.rows[0] ? `${short(S()!.run.rows[0].name)} returns` : ''}</span>
                   <Show when={nextAt() === N() && !atEnd()}><span class="tag">next →</span></Show>
                 </div>
               </Show>
               <Show when={cur() && !atEnd()}>
-                <div class="sband" ref={band} style={{ top: `${geom()!.y[cur()!.at] + ROW}px`, height: `${boxH() - 6}px`, right: `${SPINE + 4}px` }}>
+                <div class="sband" ref={band} style={{ top: `${geom()!.Y(cur()!.at) + ROW}px`, height: `${boxH() - 6}px`, right: `${SPINE + 4}px` }}>
                   <div class="in">
                     <Show when={summary().text}><div class="sum" classList={{ code: summary().code }}>{summary().text}</div></Show>
                     <Show when={callCode()}>{(cc) => (
@@ -963,7 +980,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 </div>
               </Show>
               <Show when={peek() && peekCode()}>
-                <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
+                <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.Y(peek()!.it) - 4 : geom()!.Y(peek()!.it) + ROW + 2}px` }}>
                   <div class="h">{peekCode()!.head}<i>{peekCode()!.loc}</i><span class="lk">peek</span></div>
                   <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} title={plain(l.html)} /></div>}</For>
                   <Show when={peekCode()!.more}><div class="more">…</div></Show>
@@ -1102,7 +1119,7 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
     el.width = W * dpr; el.height = H * dpr; el.style.width = `${W}px`; el.style.height = `${H}px`;
     const x = el.getContext('2d')!;
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
-    const n = s.items.length, bw = W / Math.max(1, n), maxD = Math.max(1, ...s.items.map((r) => s.run.rows[r].depth)), gap = bw > 3 ? 1 : 0;
+    const n = s.items.length, bw = W / Math.max(1, n), maxD = most(s.items, (r) => s.run.rows[r].depth, 1), gap = bw > 3 ? 1 : 0;
     for (let i = 0; i < n; i++) {
       const r = s.run.rows[s.items[i]], loops = r.frames.filter((f) => s.run.frames[f].kind === 'loop').length;
       if (loops) { x.fillStyle = `rgba(111,158,158,${Math.min(0.28, 0.06 + loops * 0.06)})`; x.fillRect(i * bw, 0, Math.ceil(bw), H); }

@@ -1,5 +1,5 @@
-import type { Seq, StepNumber } from './flowseq';
-import { leadingComment, findings } from './flowseq';
+import type { Seq, StepNumber, Finding } from './flowseq';
+import { leadingComment, findings, kidsOf } from './flowseq';
 import type { RunFrame } from './flowrun';
 
 export type Tone = '' | 'ok' | 'warn' | 'thread' | 'link' | 'comment';
@@ -70,7 +70,7 @@ export function callResult(s: Seq, row: number, lines: (file: string) => string[
   return { line, call, name, result: resultTarget(line.slice(0, at), line.slice(at + call.length)) };
 }
 
-export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: string) => string[] | null): MetroRow {
+export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: string) => string[] | null, pure: Map<number, boolean> = new Map()): MetroRow {
   const R = s.run.rows, row = s.items[it], r = R[row], n = nums[it];
   const fnRow = r.kind === 'ref' && r.ref != null ? R[r.ref] : r;
   const caller = r.caller != null ? R[r.caller] : null;
@@ -98,7 +98,7 @@ export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: s
     if (fx.globalWrites.length > 2) notes.push({ text: `+${fx.globalWrites.length - 2} more writes`, tone: 'warn', title: `writes ${fx.globalWrites.join(', ')}` });
     if (fx.locks.length) notes.push({ text: `locks ${fx.locks[0]}`, tone: '' });
     if (fx.throws.length) notes.push({ text: `may throw ${fx.throws[0]}`, tone: 'warn' });
-    if (pureFrom(s, fnRow === r ? row : r.ref!, lines)) notes.push({ text: 'pure', tone: 'ok' });
+    if (pureFrom(s, fnRow === r ? row : r.ref!, lines, pure)) notes.push({ text: 'pure', tone: 'ok' });
   }
   if ((r.kind === 'step') && n.call === 1) { const L = lines(fnRow.file); const c = L ? leadingComment(L, fnRow.start) : ''; if (c) notes.push({ text: `“${c}”`, tone: 'comment' }); }
   return {
@@ -108,23 +108,27 @@ export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: s
 }
 
 const NOT_CALLS = new Set(['if', 'while', 'for', 'switch', 'return', 'sizeof', 'alignof', 'decltype', 'static_cast', 'const_cast', 'reinterpret_cast', 'dynamic_cast', 'catch', 'noexcept', 'static_assert', 'throw']);
-function pureFrom(s: Seq, row: number, lines: (file: string) => string[] | null): boolean {
-  const R = s.run.rows, fx = s.run.effects;
-  if (!fx) return false;
-  for (let i = row; i <= R[row].last; i++) {
-    const r = R[i];
-    if (r.kind === 'indirect') return false;
-    if (r.kind === 'value') continue;
-    const fn = r.kind === 'ref' && r.ref != null ? R[r.ref] : r, e = fx[fn.key];
-    if (!e || e.writes.length || e.globalWrites.length || e.globalReads.length || e.locks.length || e.allocates.length || e.throws.length) return false;
-    const L = lines(fn.file);
-    if (!L || !fn.lines) return false;
-    const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
-    const at = r.kind === 'ref' && r.ref != null ? r.ref : i, known = new Set<string>();
-    for (let j = at + 1; j <= R[at].last; j++) known.add(short(R[j].kind === 'ref' && R[j].ref != null ? R[R[j].ref!].name : R[j].name));
-    for (const m of body.matchAll(/([A-Za-z_]\w*)\s*\(/g)) if (!NOT_CALLS.has(m[1]) && !known.has(m[1])) return false;
-  }
+function pureRow(s: Seq, i: number, lines: (file: string) => string[] | null): boolean {
+  const R = s.run.rows, fx = s.run.effects!, r = R[i];
+  if (r.kind === 'indirect') return false;
+  if (r.kind === 'value') return true;
+  const fn = r.kind === 'ref' && r.ref != null ? R[r.ref] : r, e = fx[fn.key];
+  if (!e || e.writes.length || e.globalWrites.length || e.globalReads.length || e.locks.length || e.allocates.length || e.throws.length) return false;
+  const L = lines(fn.file);
+  if (!L || !fn.lines) return false;
+  const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
+  const at = r.kind === 'ref' && r.ref != null ? r.ref : i, known = new Set<string>();
+  for (let j = at + 1; j <= R[at].last; j++) known.add(short(R[j].kind === 'ref' && R[j].ref != null ? R[R[j].ref!].name : R[j].name));
+  for (const m of body.matchAll(/([A-Za-z_]\w*)\s*\(/g)) if (!NOT_CALLS.has(m[1]) && !known.has(m[1])) return false;
   return true;
+}
+function pureFrom(s: Seq, row: number, lines: (file: string) => string[] | null, memo: Map<number, boolean>): boolean {
+  if (!s.run.effects) return false;
+  const hit = memo.get(row);
+  if (hit != null) return hit;
+  const v = pureRow(s, row, lines) && (kidsOf(s.run).get(row) ?? []).every((k) => pureFrom(s, k, lines, memo));
+  memo.set(row, v);
+  return v;
 }
 
 export interface CardCall { item: number; step: number; nth: number; file: string; line: number; code: string; state: 'done' | 'now' | 'later' }
@@ -152,22 +156,39 @@ const libraryCalls = (s: Seq, row: number, lines: (file: string) => string[] | n
   return out;
 };
 
+interface CardIndex { calls: Map<string, number[]>; made: Map<string, number[]>; found: Map<string, Finding[]> }
+const cardIndexOf = new WeakMap<Seq, CardIndex>();
+function cardIndex(s: Seq): CardIndex {
+  const hit = cardIndexOf.get(s);
+  if (hit) return hit;
+  const R = s.run.rows, keyOf = (row: number) => (R[row].kind === 'ref' && R[row].ref != null ? R[R[row].ref!].key : R[row].key);
+  const ix: CardIndex = { calls: new Map(), made: new Map(), found: new Map() };
+  const add = <T,>(m: Map<string, T[]>, k: string, v: T) => { const l = m.get(k); if (l) l.push(v); else m.set(k, [v]); };
+  s.items.forEach((row, i) => {
+    if (R[row].kind === 'step' || R[row].kind === 'ref') add(ix.calls, keyOf(row), i);
+    if (R[row].caller != null) add(ix.made, keyOf(R[row].caller!), i);
+  });
+  for (const f of findings(s.run)) for (const k of new Set(f.rows.map(keyOf))) add(ix.found, k, f);
+  cardIndexOf.set(s, ix);
+  return ix;
+}
+
 export function detailCard(s: Seq, at: number, cell: number[] | null, cur: number, nums: StepNumber[], lines: (file: string) => string[] | null): DetailCard {
   const R = s.run.rows, r = R[s.items[at]];
   const keyOf = (row: number) => (R[row].kind === 'ref' && R[row].ref != null ? R[R[row].ref!].key : R[row].key);
   const fnRowIdx = r.kind === 'ref' && r.ref != null ? r.ref : s.items[at], fnRow = R[fnRowIdx], key = keyOf(s.items[at]);
   const callerRow = r.caller != null ? R[r.caller] : null;
-  const all: number[] = [], byCaller = new Map<string, number>();
-  s.items.forEach((row, i) => { if (keyOf(row) === key && (R[row].kind === 'step' || R[row].kind === 'ref')) { all.push(i); const c = R[row].caller != null ? short(R[R[row].caller!].name) : '(entry)'; byCaller.set(c, (byCaller.get(c) ?? 0) + 1); } });
+  const ix = cardIndex(s), all = ix.calls.get(key) ?? [], byCaller = new Map<string, number>(), nthOf = new Map(all.map((i, k) => [i, k + 1]));
+  for (const i of all) { const row = s.items[i], c = R[row].caller != null ? short(R[R[row].caller!].name) : '(entry)'; byCaller.set(c, (byCaller.get(c) ?? 0) + 1); }
   const callOf = (i: number): CardCall => {
     const x = R[s.items[i]], c = x.caller != null ? R[x.caller] : null, L = c ? lines(c.file) : null;
-    return { item: i, step: i + 1, nth: all.indexOf(i) + 1 || 1, file: c?.file ?? x.file, line: x.at ? x.at.line + 1 : x.line + 1, code: x.at && L ? (L[x.at.line] ?? '').trim() : '', state: i === cur ? 'now' : i < cur ? 'done' : 'later' };
+    return { item: i, step: i + 1, nth: nthOf.get(i) ?? 1, file: c?.file ?? x.file, line: x.at ? x.at.line + 1 : x.line + 1, code: x.at && L ? (L[x.at.line] ?? '').trim() : '', state: i === cur ? 'now' : i < cur ? 'done' : 'later' };
   };
   const shown = (cell ?? (r.kind === 'step' || r.kind === 'ref' ? all : [at])).map(callOf);
   let caller: DetailCard['caller'] = null;
   if (callerRow && r.caller != null) {
     const makes = new Map<string, number[]>();
-    s.items.forEach((row, i) => { const x = R[row]; if (x.caller != null && keyOf(x.caller) === callerRow.key) { const n = short(x.kind === 'ref' && x.ref != null ? R[x.ref].name : x.name); makes.set(n, [...(makes.get(n) ?? []), i + 1]); } });
+    for (const i of ix.made.get(callerRow.key) ?? []) { const x = R[s.items[i]], n = short(x.kind === 'ref' && x.ref != null ? R[x.ref].name : x.name), l = makes.get(n); if (l) l.push(i + 1); else makes.set(n, [i + 1]); }
     const m = metroRow(s, at, nums, lines);
     caller = { name: short(callerRow.name), fn: nums[s.itemOf[r.caller]]?.fn ?? callerRow.n, file: callerRow.file, line: callerRow.line + 1, makes: [...makes].map(([name, steps]) => ({ name, steps })), inside: m.inside };
   }
@@ -175,14 +196,14 @@ export function detailCard(s: Seq, at: number, cell: number[] | null, cur: numbe
   const sigEnd = text.findIndex((l) => l.includes('{')), signature = (sigEnd >= 0 ? text.slice(0, sigEnd + 1).join(' ') : text[0] ?? '').replace(/\s*\{.*$/, '').replace(/\s+/g, ' ').trim();
   const body = text.join('\n');
   const itsCalls = new Map<string, number[]>();
-  s.items.forEach((row, i) => { const x = R[row]; if (x.caller != null && keyOf(x.caller) === key && x.caller !== null) { const n = short(x.kind === 'ref' && x.ref != null ? R[x.ref].name : x.name); itsCalls.set(n, [...(itsCalls.get(n) ?? []), i + 1]); } });
+  for (const i of ix.made.get(key) ?? []) { const x = R[s.items[i]], n = short(x.kind === 'ref' && x.ref != null ? R[x.ref].name : x.name), l = itsCalls.get(n); if (l) l.push(i + 1); else itsCalls.set(n, [i + 1]); }
   const fx = s.run.effects?.[key];
   const m = metroRow(s, at, nums, lines);
   const pure = m.notes.some((n) => n.text === 'pure') ? 'yes: no outside state, and every call it makes is pure'
     : !fx ? 'not known' : fx.writes.length || fx.globalWrites.length || fx.globalReads.length || fx.locks.length || fx.allocates.length || fx.throws.length ? 'no: it touches outside state (above)'
     : libraryCalls(s, fnRowIdx, lines).length ? 'not marked: its library calls aren’t checked' : 'not marked: a function it calls isn’t pure';
   const threadStart = (() => { let x: number | null = s.items[at]; while (x != null && R[x].thread) { const c: number | null = R[x].caller; if (c == null || !R[c].thread) return x; x = c; } return null; })();
-  const fnd = findings(s.run).filter((f) => f.rows.some((row) => keyOf(row) === key)).map((f) => `${f.text} (${f.grade})`);
+  const fnd = (ix.found.get(key) ?? []).map((f) => `${f.text} (${f.grade})`);
   const fileOfCaller = callerRow?.file ?? '';
   return {
     head: cell ? `${caller?.name ?? ''} → ${short(fnRow.name)}` : short(fnRow.name),

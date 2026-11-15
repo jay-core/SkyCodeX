@@ -174,11 +174,28 @@ export interface SeqGeom {
 }
 export interface GeomOpts { width: number; rowH: number; slotH: number; top: number; boxH: number; mode?: 'files' | 'depth' | 'metro'; laneMin?: number; maxLanes?: number; folded?: Set<number>; skip?: [number, number]; extra?: Map<number, number> }
 
+export interface SeqStack { mode: SeqGeom['mode']; lanes: string[]; x: number[]; barX: number[]; y: number[]; h: number[]; slotY: Map<number, number>; slotAt: Map<number, number>; hidden: Set<number>; height: number }
+export interface SeqPlace { mode: SeqGeom['mode']; lanes: string[]; x: number[]; barX: number[]; Y: (it: number) => number; H: (it: number) => number; slot: (f: number) => number | undefined; height: number }
+
 export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
+  const g = stackSeq(s, o), p = placeAt(g, at, o.boxH);
+  return { mode: g.mode, lanes: g.lanes, x: g.x, barX: g.barX, y: g.y.map((_, it) => p.Y(it)), h: g.h.map((_, it) => p.H(it)), slotY: new Map([...g.slotY.keys()].map((f) => [f, p.slot(f)!])), height: p.height };
+}
+export function placeAt(g: SeqStack, at: number, boxH: number): SeqPlace {
+  const box = at >= 0 && at < g.h.length && !g.hidden.has(at) ? boxH : 0;
+  return {
+    mode: g.mode, lanes: g.lanes, x: g.x, barX: g.barX, height: g.height + box,
+    Y: (it) => g.y[it] + (it > at ? box : 0),
+    H: (it) => g.h[it] + (it === at ? box : 0),
+    slot: (f) => { const v = g.slotY.get(f); return v == null ? undefined : v + (g.slotAt.get(f)! > at ? box : 0); },
+  };
+}
+export function stackSeq(s: Seq, o: Omit<GeomOpts, 'boxH'>): SeqStack {
   const R = s.run.rows, N = s.items.length;
   const fileOf = (row: number): string => { const r = R[row]; return r.kind === 'step' || r.kind === 'ref' ? r.file : r.caller != null ? R[r.caller].file : r.file; };
-  const lanes: string[] = [];
-  for (const row of s.items) { const f = fileOf(row); if (!lanes.includes(f)) lanes.push(f); }
+  const laneOf = new Map<string, number>();
+  for (const row of s.items) { const f = fileOf(row); if (!laneOf.has(f)) laneOf.set(f, laneOf.size); }
+  const lanes = [...laneOf.keys()];
   const fits = lanes.length <= (o.maxLanes ?? 8) && (o.width - 40) / lanes.length >= (o.laneMin ?? 150);
   const mode = o.mode ?? (fits ? 'files' : 'depth');
   const laneW = mode === 'files' ? Math.floor((o.width - 40) / Math.max(1, lanes.length)) : 0;
@@ -192,14 +209,14 @@ export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
     });
   }
   const depthX = (d: number) => 20 + Math.min(d, 24) * 16 + Math.max(0, d - 24) * 3;
-  const maxD = mode === 'metro' ? Math.max(0, ...s.items.map((row) => R[row].depth)) : 0;
+  const maxD = mode === 'metro' ? most(s.items, (row) => R[row].depth) : 0;
   const metroX = (d: number) => 14 + Math.min(d, 10) * 16 + Math.max(0, d - 10) * 4;
   const textX = metroX(maxD) + 26;
   const x: number[] = [], barX: number[] = [];
   s.items.forEach((row, it) => {
     if (mode === 'metro') { x.push(textX); barX.push(metroX(R[row].depth)); }
     else if (mode === 'files') {
-      const lx = 34 + lanes.indexOf(fileOf(row)) * laneW;
+      const lx = 34 + laneOf.get(fileOf(row))! * laneW;
       x.push(lx + 12 + nestOf[it] * 6 + (R[row].kind === 'indirect' || R[row].kind === 'value' ? 6 : 0));
       barX.push(lx + 3 + nestOf[it] * 6);
     } else {
@@ -212,16 +229,16 @@ export function layoutSeq(s: Seq, at: number, o: GeomOpts): SeqGeom {
   const startsAt = new Map<number, number[]>();
   for (const [f, [a]] of s.span) if (s.run.frames[f].kind === 'loop' && !hidden.has(a)) startsAt.set(a, [...(startsAt.get(a) ?? []), f]);
   for (const l of startsAt.values()) l.sort((p, q) => depthOf(s.run.frames, p) - depthOf(s.run.frames, q));
-  const y: number[] = [], h: number[] = [], slotY = new Map<number, number>();
+  const y: number[] = [], h: number[] = [], slotY = new Map<number, number>(), slotAt = new Map<number, number>();
   let yy = o.top;
   for (let it = 0; it <= N; it++) {
-    for (const f of startsAt.get(it) ?? []) { slotY.set(f, yy); yy += o.slotH; }
+    for (const f of startsAt.get(it) ?? []) { slotY.set(f, yy); slotAt.set(f, it); yy += o.slotH; }
     y.push(yy);
-    const hh = hidden.has(it) ? 0 : (it === at ? o.rowH + o.boxH : o.rowH) + (o.folded?.has(it) && !hidden.has(it) ? o.rowH : 0) + (o.skip && it === o.skip[0] - 1 ? o.rowH : 0) + (o.extra?.get(it) ?? 0);
+    const hh = hidden.has(it) ? 0 : o.rowH + (o.folded?.has(it) && !hidden.has(it) ? o.rowH : 0) + (o.skip && it === o.skip[0] - 1 ? o.rowH : 0) + (o.extra?.get(it) ?? 0);
     h.push(hh);
     yy += hh;
   }
-  return { mode, lanes, y, h, slotY, x, barX, height: yy };
+  return { mode, lanes, y, h, slotY, slotAt, hidden, x, barX, height: yy };
 }
 export function hiddenBy(s: Seq, folded?: Set<number>): Set<number> {
   const out = new Set<number>();
@@ -398,9 +415,9 @@ export function stepFacts(s: Seq, at: number, passes: Record<number, number>): F
     if (e.allocates.length) out.push({ head: 'allocates', text: e.allocates.join(' · '), grade: 'proved' });
     if (e.throws.length) out.push({ head: 'throws', text: e.throws.join(' · '), grade: 'proved' });
   }
-  for (const f of findings(s.run)) if (f.rows.includes(row)) out.push({ head: f.kind === 'race' ? 'two threads' : 'result unused', text: f.text, grade: f.grade, steps: f.rows });
+  for (const f of findingsAt(s.run).get(row) ?? []) out.push({ head: f.kind === 'race' ? 'two threads' : 'result unused', text: f.text, grade: f.grade, steps: f.rows });
   if (r.kind === 'step') {
-    const kids = R.map((x, i) => ({ x, i })).filter(({ x }) => x.caller === row);
+    const kids = (kidsOf(s.run).get(row) ?? []).map((i) => ({ x: R[i], i }));
     if (kids.length) out.push({ head: 'calls', text: kids.map(({ x, i }) => (x.kind === 'step' ? `${x.n} ${x.name}` : x.kind === 'ref' ? `→ ${num(i)} ${x.name}` : x.kind === 'indirect' ? `⇢ ${x.text}` : `${x.name} (named)`)).join(' · '), grade: 'proved', steps: kids.map(({ i }) => i) });
     else out.push({ head: 'calls', text: 'nothing in the project', grade: 'proved' });
   }
@@ -439,9 +456,7 @@ const DECISION = /^(?:\}\s*)?(?:if|else|switch|case|default|return|break|continu
 const MAX_BLOCK = 40;
 
 export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file: string) => string[] | null): Map<number, CodeBlock[]> {
-  const R = s.run.rows, out = new Map<number, CodeBlock[]>();
-  const kids = new Map<number, number[]>();
-  R.forEach((r, i) => { if (r.caller != null && r.at) kids.set(r.caller, [...(kids.get(r.caller) ?? []), i]); });
+  const R = s.run.rows, out = new Map<number, CodeBlock[]>(), kids = kidsOf(s.run);
   s.items.forEach((row, it) => {
     const r = R[row];
     if (r.kind !== 'step' || !r.lines || detail(row) === 'calls') return;
@@ -451,7 +466,7 @@ export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file:
     let from = first;
     while (from < last && !(L[from] ?? '').includes('{')) from++;
     from++;
-    const calls = (kids.get(row) ?? []).filter((c) => s.itemOf[c] >= 0).sort((a, b) => R[a].at!.line - R[b].at!.line);
+    const calls = (kids.get(row) ?? []).filter((c) => R[c].at && s.itemOf[c] >= 0).sort((a, b) => R[a].at!.line - R[b].at!.line);
     const callLines = new Set(calls.map((c) => R[c].at!.line));
     const base = (L[from] ?? '').search(/\S/);
     const take = (a: number, b: number, after: number) => {
@@ -488,7 +503,23 @@ export function threadOf(run: Run, row: number): number {
   return -1;
 }
 
-const findingsOf = new WeakMap<Run, Finding[]>();
+const findingsOf = new WeakMap<Run, Finding[]>(), findingsAtOf = new WeakMap<Run, Map<number, Finding[]>>(), kidsOfRun = new WeakMap<Run, Map<number, number[]>>();
+export function kidsOf(run: Run): Map<number, number[]> {
+  let m = kidsOfRun.get(run);
+  if (m) return m;
+  m = new Map();
+  run.rows.forEach((r, i) => { if (r.caller != null) { const l = m!.get(r.caller); if (l) l.push(i); else m!.set(r.caller, [i]); } });
+  kidsOfRun.set(run, m);
+  return m;
+}
+export function findingsAt(run: Run): Map<number, Finding[]> {
+  let m = findingsAtOf.get(run);
+  if (m) return m;
+  m = new Map();
+  for (const f of findings(run)) for (const row of new Set(f.rows)) { const l = m.get(row); if (l) l.push(f); else m.set(row, [f]); }
+  findingsAtOf.set(run, m);
+  return m;
+}
 export function findings(run: Run): Finding[] {
   const hit = findingsOf.get(run);
   if (hit) return hit;
@@ -558,4 +589,5 @@ export function stepNumbers(s: Seq): StepNumber[] {
     return { step: i + 1, fn, call, again: call > 1 };
   });
 }
+export const most = <T,>(xs: readonly T[], f: (x: T) => number, from = 0) => xs.reduce((m, x) => Math.max(m, f(x)), from);
 export const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;

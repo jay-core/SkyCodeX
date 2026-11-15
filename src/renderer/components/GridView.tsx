@@ -5,7 +5,7 @@ import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
 import { lspState } from '../lib/lsp';
 import { changedItems, notesByItem } from '../lib/runmarks';
-import { move, loopsAt, Move, stepNumbers } from '../../shared/flowseq';
+import { move, loopsAt, Move, stepNumbers, most } from '../../shared/flowseq';
 import { buildGrid, GridOrder, GridFn, passesOf } from '../../shared/gridmodel';
 import { stepLinks, StepLinks, StepLink } from '../../shared/gridlinks';
 import { hwheel } from '../lib/hwheel';
@@ -152,7 +152,6 @@ export default function GridView(props: { switcher: JSX.Element }) {
   createEffect(on(S, () => { setPick(null); setHover(null); }, { defer: true }));
   const rows = createMemo(() => model()?.rows ?? []);
   const cols = createMemo(() => model()?.cols ?? []);
-  const most = <T,>(xs: readonly T[], f: (x: T) => number, from = 0) => xs.reduce((m, x) => Math.max(m, f(x)), from);
   const recRows = createMemo(() => { const s = S(), out = new Set<string>(); if (!s) return out; s.items.forEach((row) => { const r = s.run.rows[row]; if (r.recursive) out.add(r.kind === 'ref' && r.ref != null ? s.run.rows[r.ref].key : r.key); }); return out; });
   const cellMarks = createMemo(() => {
     const s = S(), m = model(), out = new Map<string, { text: string; title: string }>();
