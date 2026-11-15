@@ -416,7 +416,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .srow .n { color: #6f6650; min-width: 22px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
 .seqv.metro .sbar, .seqv.metro .sarw { display: none; }
 .mtrack { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.mlegend { position: absolute; left: 0; top: 0; right: 30px; z-index: var(--z-metro-legend); height: 44px; padding: 5px 16px 0; background: var(--bg); border-bottom: 1px solid #202220; font: 300 11px var(--ui); color: var(--dim); pointer-events: none; white-space: nowrap; overflow: hidden; }
+.mlegend { position: absolute; left: 0; top: 0; right: calc(var(--spine) + 14px); z-index: var(--z-metro-legend); height: 44px; padding: 5px 16px 0; background: var(--bg); border-bottom: 1px solid #202220; font: 300 11px var(--ui); color: var(--dim); pointer-events: none; white-space: nowrap; overflow: hidden; }
 .mlegend .mrow { display: flex; gap: 16px; height: 17px; }
 .mlegend .mfiles { flex: 1 1 auto; min-width: 0; display: flex; gap: 12px; height: 17px; overflow-x: auto; overflow-y: hidden; pointer-events: auto; scrollbar-width: thin; }
 .mlegend .mfiles > span { flex: none; }
@@ -429,8 +429,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .seqv.metro .srow .n { min-width: 26px; padding-right: 6px; }
 .seqv.metro .srow .fno { flex: none; width: 50px; height: 23px; line-height: 23px; overflow: hidden; white-space: nowrap; font: 400 11px/23px var(--mono); color: #6f766f; }
 .seqv.metro .srow .fno .rp { display: inline-block; line-height: 1; margin-right: 2px; font: 400 10px var(--ui); vertical-align: 0; }
-.seqv .scap { bottom: 74px; }
-.gview .scap { bottom: calc(var(--sky-h) + 12px); }
+.seqv .scap, .gview .scap { bottom: calc(var(--sky-h) + 12px); }
 .seqv.metro .srow .mmain { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: baseline; gap: 6px; }
 .seqv.metro .srow .mmain .nm, .seqv.metro .srow .mmain .who { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .seqv.metro .srow .who { font: 500 12px var(--mono); color: #9ea39b; flex: 0 1 auto; max-width: 34%; }
@@ -458,8 +457,8 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .seqv.following .srow.fq { opacity: .18 !important; }
 .seqv.following .srow.fw { opacity: 1 !important; }
 .srow.sdead { opacity: .32; }
-.setc { position: relative; }
-.setm { position: absolute; top: 26px; left: 0; z-index: var(--z-chip-menu); width: 380px; max-height: 60vh; overflow: auto; background: var(--pop); border: 1px solid var(--gut); border-radius: 8px; padding: 8px 12px 10px; font: 300 12.5px var(--ui); color: var(--fg); }
+.setc { position: relative; display: inline-flex; }
+.setm { position: absolute; top: calc(100% + 11px); left: 0; z-index: var(--z-chip-menu); width: 380px; max-height: 60vh; overflow: auto; background: var(--pop); border: 1px solid var(--gut); border-radius: 8px; padding: 8px 12px 10px; font: 300 12.5px var(--ui); color: var(--fg); }
 .setm .mh { color: var(--dim); font-size: 11.5px; margin: 8px 0 4px; }
 .setm .mi { display: block; width: 100%; text-align: left; padding: 3px 6px; border-radius: 4px; }
 .setm .mi:hover, .setm .mi.on { background: rgba(173,155,111,.12); color: var(--bright); } .setm .mi .w { color: var(--dim); font-size: 11.5px; margin-left: 6px; }
@@ -590,7 +589,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scmp .col { padding: 10px 18px 12px; min-width: 180px; font: 12px/1.7 var(--mono); color: #9ea39b; } .scmp .col + .col { border-left: 1px solid #2a2d2a; max-width: 280px; }
 .scmp .h { font: 300 12.5px var(--ui); color: var(--accent); margin-bottom: 4px; } .scmp .n { display: inline-block; min-width: 32px; color: #6f6650; }
 .scmp .rt { font: 300 13px var(--ui); color: #c9cdc5; } .scmp .no { font: 300 12px/1.8 var(--ui); color: #6f766e; }
-.ssky { position: absolute; left: 0; right: 16px; bottom: 0; height: 62px; padding: 3px 22px 4px; background: var(--bg); border-top: 1px solid #222522; z-index: var(--z-run-bars); display: flex; flex-direction: column; }
+.ssky { position: absolute; left: 0; right: var(--spine, 0px); bottom: 0; height: 62px; padding: 3px 22px 4px; background: var(--bg); border-top: 1px solid #222522; z-index: var(--z-run-bars); display: flex; flex-direction: column; }
 .ssky canvas { display: block; cursor: pointer; }
 .skyk { display: flex; align-items: center; gap: 12px; height: 18px; flex: none; font: 300 10.5px var(--ui); color: var(--dim); white-space: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
 .skyk > :not(.grow) { flex: none; }

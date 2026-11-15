@@ -246,6 +246,22 @@ waits were cut to what the app needs (one frame per check of the scroll, one for
 tinyhttp and ThreadX unchanged, ThreadX's 549 steps in 164 s instead of 241 s. 86 of 392 fixed; 5 kept by verdict;
 301 open.
 
+**Fixed (2026-11-15, the metro, classes A and C):** the metro's 106 rows were listed (65 in `Sequence.tsx`,
+`flowseq.ts`, `metrofacts.ts`, `flowcore.ts`, `junctions.ts`; 41 metro rules in `styles.css`), and the `rules` scenario
+now walks the metro too (TEST-SUITE P5.R.4). A `Sequence.tsx:979` the chapters popover is placed by its measured height
+(inside the view at 3 window sizes × 3 pointer heights). C `Sequence.tsx:219` the view height subtracts the run bars'
+measured height; `styles.css:479` the metro's caption sits above the measured run bars (`--sky-h`), 12 px from the
+bottom when they are hidden; `styles.css:640` the run bars and `styles.css:466` the legend end at the spine's width
+(`--spine`); `styles.css:508` the setting menu hangs from its chip (`100% + 11px`, the same 26 px as before);
+`Sequence.tsx:377` the return route's half row and half bar come from `ROW` and the bar's own width;
+`Sequence.tsx:1150` the run-bars tip is kept inside by its measured width; `Sequence.tsx:968` the peek's 560 px comes
+from its stylesheet (its 220 px offset is still open). Measured in the app on tinyhttp: every offset the same as before
+where the space is the same. Rules on 23 programs and tinyhttp before → after: every count unchanged. Still open in C,
+for the user's decision with a mock-up (they set the metro's own spacing): `Sequence.tsx:270` code rows indented
+22 + 12 per level, `styles.css:471` the column heads 24 px down, `flowseq.ts:196` the track lanes 14 + 16 per level,
+`flowseq.ts:197` the text 26 px after the deepest lane, and the peek's 220 px (so `Sequence.tsx:968` stays open).
+94 of 392 fixed; 5 kept by verdict; 293 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

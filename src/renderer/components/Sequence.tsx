@@ -20,10 +20,11 @@ import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
 import { hwheel } from '../lib/hwheel';
 import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
+import { styleOf } from '../lib/measure';
 
 type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
 
-const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16, SKY = 62;
+const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16;
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
 const AROUND_AT = 400;
@@ -205,7 +206,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return layoutSeq(s, c.at, { width: width() - SPINE, rowH: ROW, slotH: SLOT, top: TOP, boxH: c.at < s.items.length ? boxH() : 0, folded: foldedAll(), skip: what()?.skip, extra: codeExtra(), mode: 'metro' });
   });
   const [skyOn, setSkyOn] = createSignal(load('flow.skyline', true));
-  const viewH = () => height() - (skyOn() ? SKY : 0);
+  const [skyH, setSkyH] = createSignal(0);
+  const viewH = () => height() - (skyOn() ? skyH() : 0);
   const scroll = createMemo(() => {
     const g = geom(), c = cur();
     if (!g || !c) return 0;
@@ -363,7 +365,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       if (child == null || back == null) return;
       const ci = s.itemOf[child], bi = s.itemOf[back];
       if (ci < 0 || bi < 0) return;
-      const y1 = g.y[from] + 11.5, y2 = g.y[to] + 11.5, xa = g.barX[ci] + 1.5, xb = g.barX[bi] + 1.5;
+      const half = parseFloat(styleOf('sbar on').width) / 2 || 0;
+      const y1 = g.y[from] + ROW / 2, y2 = g.y[to] + ROW / 2, xa = g.barX[ci] + half, xb = g.barX[bi] + half;
       const ybot = Math.min(y2 - 6, g.y[s.lastItem[ci]] + g.h[s.lastItem[ci]] - 4);
       const x0 = g.x[from] - 8, x2 = g.x[to] - 8;
       const d = `M${x0} ${y1} L${xa} ${y1} L${xa} ${ybot} L${xb} ${ybot} L${xb} ${y2} L${x2} ${y2}`;
@@ -569,10 +572,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     };
     onCleanup(() => { delete junctionNav.next; delete junctionNav.whatIf; });
     let f = 0;
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); }); });
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); setSkyH(canvas.querySelector('.ssky')?.getBoundingClientRect().height ?? 0); }); });
     ro.observe(canvas);
     onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); });
     canvas.focus();
+    createEffect(on([skyOn, S], () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
   });
   createEffect(on([() => cur()?.at, textTick, width], () => requestAnimationFrame(() => {
     if (!band) return;
@@ -761,7 +765,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </Show>
           </span>
         </div>
-        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
+        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} style={{ '--sky-h': `${skyOn() ? skyH() : 0}px`, '--spine': `${SPINE}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
             <div class="mlegend">
@@ -954,7 +958,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 </div>
               </Show>
               <Show when={peek() && peekCode()}>
-                <div class="speek" classList={{ up: peek()!.up }} style={{ left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - 560)}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
+                <div class="speek" classList={{ up: peek()!.up }} style={{ left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
                   <div class="h">{peekCode()!.head}<i>{peekCode()!.loc}</i><span class="lk">peek</span></div>
                   <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} /></div>}</For>
                   <Show when={peekCode()!.more}><div class="more">…</div></Show>
@@ -1080,7 +1084,8 @@ const SKY_H = 30;
 export function Skyline(props: { at: number; changedItems: Set<number>; notes: Record<number, string>; onScrub: (it: number) => void; read: string }) {
   let el!: HTMLCanvasElement, box!: HTMLDivElement, wrap!: HTMLDivElement;
   const [w, setW] = createSignal(800);
-  const [hov, setHov] = createSignal(-1);
+  const [hov, setHov] = createSignal(-1), [tipW, setTipW] = createSignal(0);
+  let tipEl: HTMLDivElement | undefined;
   const [z, setZ] = createSignal(1);
   const nums = createMemo(() => (seq() ? stepNumbers(seq()!) : []));
   const zMax = () => { const n = seq()?.items.length ?? 1, dpr = window.devicePixelRatio || 1; return Math.max(1, Math.min((n * 24) / Math.max(1, w()), 30000 / dpr / Math.max(1, w()))); };
@@ -1136,11 +1141,12 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
     return {
       what, kind, where: fn.file ? `${basename(fn.file)}:${fn.line + 1}` : '', depth: r.depth, loop: loops.length ? loops[loops.length - 1].text : '',
       changed: props.changedItems.has(i), note: props.notes[i] ?? '', pos: `step ${i + 1} of ${n}`,
-      left: Math.max(110, Math.min(box.clientWidth - 110, wrap.offsetLeft + (i + 0.5) * bw - wrap.scrollLeft)),
+      left: Math.max(tipW() / 2, Math.min(box.clientWidth - tipW() / 2, wrap.offsetLeft + (i + 0.5) * bw - wrap.scrollLeft)),
     };
   });
   return <div class="ssky" ref={box} aria-label="the run bars: the run as a profile of call depth · click or drag to go · K hides it">
     <div class="skyk" onWheel={hwheel}>
+  createEffect(on(() => { const t = tip(); return t ? `${t.what}|${t.kind}|${t.where}|${t.loop}|${t.note}|${t.pos}|${t.changed}` : ''; }, () => requestAnimationFrame(() => { if (tipEl?.isConnected) setTipW(tipEl.offsetWidth); })));
       <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span>
       <span><i class="now" />now</span><span><i class="loop" />in a loop</span><span><i class="ed" />edited</span><span><i class="nt" />note</span><span>taller = deeper</span>
       <span class="grow" />
@@ -1151,7 +1157,7 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
       <canvas ref={el} onPointerDown={down} onPointerMove={(e) => setHov(itAt(e.clientX))} onPointerLeave={() => setHov(-1)} />
     </div>
     <Show when={tip()}>{(tp) => (
-      <div class="sskytip" style={{ left: `${tp().left}px` }}>
+      <div class="sskytip" ref={(el) => { tipEl = el; requestAnimationFrame(() => setTipW(el.offsetWidth)); }} style={{ left: `${tp().left}px` }}>
         <div class="w">{tp().what}</div>
         <div class="d">{tp().kind}{tp().kind ? ' · ' : ''}{tp().where}{tp().where ? ' · ' : ''}depth {tp().depth}{tp().changed ? ' · edited' : ''}</div>
         <Show when={tp().loop}><div class="d">↻ {tp().loop}</div></Show>
