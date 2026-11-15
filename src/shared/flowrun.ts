@@ -155,7 +155,9 @@ class Analyser {
     const rest = this.loose.filter((l) => !l.done);
     for (const l of rest) body.push({ t: 'call', to: l.to, at: l.range.start, approx: true });
     const jumps = this.all.some((n) => /^(?:Goto|IndirectGoto|Label|AddrLabel)$/.test(n.kind));
-    return { body, dropped: this.dropped, unlisted: [...this.unlisted], ...(jumps ? { jumps: true as const } : {}) };
+    const bare = (name: string) => name.replace(/^.*::/, '');
+    const reported = new Set([...this.sites.values(), ...this.values.values()].flat().map((s) => bare(s.to.name)).concat(this.loose.map((l) => bare(l.to.name))));
+    return { body, dropped: this.dropped, unlisted: [...this.unlisted].filter((n) => !reported.has(n)), ...(jumps ? { jumps: true as const } : {}) };
   }
 
   private stmts(list: AstNode[]): FlowNode[] {

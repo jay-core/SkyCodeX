@@ -469,8 +469,9 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
     onProgress?.(done, reach.size);
   });
   const run = walkRun(start, (k) => flows.get(k));
-  const defined = await nameIndex(lastCrawl.root), unlisted = new Set<string>();
-  for (const f of flows.values()) for (const n of f.flow.unlisted ?? []) if (defined.has(n)) unlisted.add(n);
+  const defined = await nameIndex(lastCrawl.root), built = await builtSet(), unlisted = new Set<string>();
+  const inProject = (n: string) => (defined.get(n) ?? []).some((f) => !built || built.has(normPath(f)));
+  for (const f of flows.values()) for (const n of f.flow.unlisted ?? []) if (inProject(n)) unlisted.add(n);
   run.unlisted = [...unlisted];
   const ind = run.rows.filter((r) => r.kind === 'indirect');
   if (ind.length) {

@@ -188,6 +188,17 @@ describe('calls clangd does not list yet', () => {
   it('every call listed: nothing unlisted', () => {
     expect(analyseFunction(ph.ast, text, calls(() => true)).unlisted ?? []).not.toContain('split');
   });
+  it('P2.S2.T46 a call written by a macro is reported, approximate, and not unlisted', () => {
+    const ast = JSON.parse(JSON.stringify(ph.ast));
+    let cut = 0;
+    const bare = (n: any) => { delete n.range; for (const c of n.children ?? []) bare(c); };
+    const strip = (n: any) => { if (n.kind === 'Call' && JSON.stringify(n.children?.[0] ?? {}).includes('"split"')) { bare(n); cut++; return; } for (const c of n.children ?? []) strip(c); };
+    strip(ast);
+    expect(cut).toBeGreaterThan(0);
+    const f = analyseFunction(ast, text, calls(() => true));
+    expect(f.body.some((n: any) => n.t === 'call' && /split$/.test(n.to.name) && n.approx)).toBe(true);
+    expect(f.unlisted ?? []).not.toContain('split');
+  });
   it('split left out of the list: the body still names it', () => {
     const f = analyseFunction(ph.ast, text, calls((c) => !/split$/.test(c.to.name)));
     expect(f.unlisted).toContain('split');
