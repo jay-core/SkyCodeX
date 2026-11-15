@@ -95,14 +95,16 @@ function laneD(cells: Cell[], rect: (c: Cell) => Rect, k: number, area: Rect): {
 
 type Pt = { x: number; y: number };
 const TIP = 5, STUB = TIP + 1;
-interface End { b: Rect; sq: Rect; others: Rect[]; snap: (v: number, across: boolean, toward: number) => number }
+interface End { b: Rect; sq: Rect; others: Rect[]; boxes: Rect[]; snap: (v: number, across: boolean, toward: number) => number }
 function reach(p: Pt[], at: End): Pt[] {
   const { b, sq } = at, n = p.length, e = p[n - 1], q = p[n - 2], mx = b.x + b.w / 2, my = b.y + b.h / 2;
   const across = Math.abs(e.x - q.x) >= Math.abs(e.y - q.y);
   if (across) {
     const lo = q.x < e.x ? sq.x : b.x + b.w, hi = q.x < e.x ? b.x : sq.x + sq.w;
     if (at.others.some((o) => o.x < hi && o.x + o.w > lo && o.y < b.y + b.h && o.y + o.h > b.y)) {
-      const up = q.y <= my, ly = up ? Math.min((sq.y + b.y) / 2, b.y - 1 - STUB) : Math.max((b.y + b.h + sq.y + sq.h) / 2, b.y + b.h + 1 + STUB);
+      const lyOf = (u: boolean) => (u ? Math.min((sq.y + b.y) / 2, b.y - 1 - STUB) : Math.max((b.y + b.h + sq.y + sq.h) / 2, b.y + b.h + 1 + STUB));
+      const runClear = (y: number) => !at.boxes.some((o) => o !== b && o.y - 1 <= y && y <= o.y + o.h + 1 && o.x < Math.max(q.x, mx) && o.x + o.w > Math.min(q.x, mx));
+      const want = q.y <= my, up = runClear(lyOf(want)) || !runClear(lyOf(!want)) ? want : !want, ly = lyOf(up);
       const r = p[n - 3], bend = !!r && Math.abs(r.x - q.x) < 0.5;
       const tip = { x: mx, y: up ? b.y - 1 : b.y + b.h + 1 };
       return bend ? [...p.slice(0, n - 2), { x: q.x, y: ly }, { x: mx, y: ly }, tip] : [...p.slice(0, n - 1), { x: q.x, y: ly }, { x: mx, y: ly }, tip];
@@ -181,8 +183,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
     onCleanup(() => cancelAnimationFrame(f));
     ro.observe(scroller); onCleanup(() => ro.disconnect());
     createEffect(on(S, () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
+    createEffect(on([vw, keySteps, model, () => flowLinks().error], () => requestAnimationFrame(() => canvas?.querySelectorAll<HTMLElement>('.gkey').forEach(keyEdges))));
     requestAnimationFrame(() => canvas?.focus());
   });
+  const keyEdges = (el: HTMLElement) => { el.classList.toggle('fl', el.scrollLeft > 0); el.classList.toggle('fr', el.scrollLeft < el.scrollWidth - el.clientWidth - 1); };
   const place = (list: GridFn[], size: (i: number) => number, gap: number, lead: boolean): Pos => {
     const at: number[] = [], w: number[] = []; let x = lead && list.length ? gap : 0;
     list.forEach((g, i) => { if (i && list[i - 1].file !== g.file) x += gap; at.push(x); w.push(size(i)); x += size(i); });
@@ -362,7 +366,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
       const b = E.get(it);
       if (!b) return undefined;
       const sq = rect(q), inside = (r: Rect) => r.x >= sq.x - 0.5 && r.y >= sq.y - 0.5 && r.x + r.w <= sq.x + sq.w + 0.5 && r.y + r.h <= sq.y + sq.h + 0.5;
-      return { b, sq, snap, others: [...E.values()].filter((r) => r !== b && inside(r) && !(r.x <= b.x && r.x + r.w >= b.x + b.w)) };
+      return { b, sq, snap, boxes: [...E.values()], others: [...E.values()].filter((r) => r !== b && inside(r) && !(r.x <= b.x && r.x + r.w >= b.x + b.w)) };
     };
     const paths: { d: string; kind: string; title: string }[] = [], labels: (Rect & { text: string; kind: string; full?: string })[] = [], placed: Rect[] = [];
     const labW = textBox('glab'), area: Rect = { x: side(), y: head(), w: geo().x.size, h: geo().y.size };
@@ -376,7 +380,10 @@ export default function GridView(props: { switcher: JSX.Element }) {
       for (const near of nears) for (let k = 0; k < 3; k++) {
         const r = rect(near), my = r.y + (r.h - h) / 2; const dy = k * (h + 3); tries.push({ x: r.x + r.w + 6, y: my - dy, w, h }, { x: r.x - w - 6, y: my - dy, w, h }, { x: r.x, y: r.y - h - 3 - dy, w, h }, { x: r.x, y: r.y + r.h + 3 + dy, w, h }, { x: r.x + r.w - w, y: r.y - h - 3 - dy, w, h }, { x: r.x + r.w - w, y: r.y + r.h + 3 + dy, w, h }, { x: r.x + r.w + 6, y: my + dy, w, h }, { x: r.x - w - 6, y: my + dy, w, h });
       }
-      const ok = tries.find((t) => within(t) && !filled.some((f) => overlaps(t, f)) && !placed.some((p) => overlaps(t, p)) && !lines.some((l) => overlaps(t, l))) ?? tries.reduce((a, b) => (covered(b) < covered(a) ? b : a));
+      const clear = (t: Rect) => !filled.some((f) => overlaps(t, f)) && !placed.some((p) => overlaps(t, p)) && !lines.some((l) => overlaps(t, l));
+      const beyond = side() + geo().x.size + TOT_GAP + tot() + NAME_GAP, room: Rect = { x: beyond, y: area.y, w: vw() - beyond, h: area.h };
+      const aside = nears.map((near) => { const r = rect(near); return { x: beyond, y: r.y + (r.h - h) / 2, w, h }; }).filter((t) => t.x + t.w <= room.x + room.w && t.y >= room.y && t.y + t.h <= room.y + room.h);
+      const ok = tries.find((t) => within(t) && clear(t)) ?? aside.find(clear) ?? tries.reduce((a, b) => (covered(b) < covered(a) ? b : a));
       placed.push(ok); labels.push({ ...ok, text, kind, full: text === full ? undefined : full });
     };
     const titleOf = (l: StepLink) => (l.kind === 'in' ? `where an input came from: ${l.label}` : l.kind === 'out' ? `who reads its result: ${l.label}` : `the call to ${nameAt(l.to)} · step ${l.to + 1}`);
@@ -589,16 +596,27 @@ export default function GridView(props: { switcher: JSX.Element }) {
               <span class="seg"><For each={[['file', 'by file'], ['run', 'run order'], ['count', 'most called']] as [GridOrder, string][]}>{([o, t]) => <button classList={{ on: order() === o }} title={o === 'file' ? 'grouped by file; within a file, by ƒ number (the order each function first ran)' : o === 'run' ? 'by ƒ number: the order each function first ran' : 'most called first'} onClick={() => { setOrder(o); canvas.focus(); }}>{t}</button>}</For></span>
             </div>
           )}</Show>
-          <div class="gkey" onWheel={hwheel}>
-            <span class="sws"><For each={model()?.files ?? []}>{(f) => <i style={{ background: col().get(f) }} />}</For></span><span>colours separate neighbouring files; each file is named</span>
-            <span class="kt">numbers in squares = steps (1–{S()?.items.length ?? 0}) · ƒ = function</span>
+          <div class="gkey" onWheel={hwheel} onScroll={(e) => keyEdges(e.currentTarget)}>
+            <span>numbers in squares = steps (1–{S()?.items.length ?? 0}) · ƒ = function</span>
             <i class="kc dn">{keySteps().done}</i><span>run</span>
             <i class="kc now">{keySteps().now}</i><span>now</span>
             <i class="kc">{keySteps().next}</i><span>to come</span>
             <span class="kt">· calls in a square in order: <b>4 · 9</b></span>
             <span class="dots"><b class="dn" /><b class="dn" /><b class="now" /><b /><b /><em>5</em></span><span>4 or more calls: a dot each</span>
+            <span class="sws"><For each={model()?.files ?? []}>{(f) => <i style={{ background: col().get(f) }} />}</For></span><span>colours separate neighbouring files; each file is named</span>
           </div>
-          <div class="gkey ar" onWheel={hwheel}>
+          <div class="gkey" onWheel={hwheel} onScroll={(e) => keyEdges(e.currentTarget)}>
+            <span>marks in squares and names:</span>
+            <i class="km">×3</i><span>3 calls here</span>
+            <i class="km">↻6</i><span>in a loop, 6 runs (↻ alone: count not known)</span>
+            <i class="km">⟲</i><span>calls back into a function that is still running</span>
+            <i class="km">⇢</i><span>starts on a new thread</span>
+            <i class="km">+2</i><span>2 short calls folded in, names on hover</span>
+            <i class="km">→</i><span>called through a pointer</span>
+            <i class="km">&amp;</i><span>passed as a value, not called here</span>
+            <i class="km">×5+</i><span>times called, at least 5</span>
+          </div>
+          <div class="gkey ar" onWheel={hwheel} onScroll={(e) => keyEdges(e.currentTarget)}>
             <span>arrows from the current step:</span>
             <Show when={flowLinks().error}><span class="gerr">could not be worked out: {flowLinks().error}</span></Show>
             <i class="ka in">⟵</i><span>where an input came from</span>

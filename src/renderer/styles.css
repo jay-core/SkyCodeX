@@ -737,8 +737,11 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .gtop b { font: 500 13px var(--mono); color: #e3e6df; margin-right: 5px; } .gtop .xf b { color: #e0a060; } .gtop .mc b { font-weight: 400; color: var(--bright); margin: 0; }
 .gkey { display: flex; align-items: center; gap: 6px; padding: 3px 22px 8px; font: 300 11.5px var(--ui); color: var(--dim); flex: none; white-space: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; border-bottom: 1px solid #262926; }
 .gkey > :not(.grow) { flex: none; }
-.gkey:has(+ .gkey) { border-bottom: none; padding-bottom: 2px; } .gkey.ar { padding-top: 0; }
-.gkey .sws { display: inline-flex; gap: 2px; } .gkey .sws i { width: 9px; height: 3px; border-radius: 2px; }
+.gkey:has(+ .gkey) { border-bottom: none; } .gkey + .gkey { padding-top: 0; }
+.gkey { --gkey-l: 0px; --gkey-r: 0px; mask-image: linear-gradient(to right, transparent 0, #000 var(--gkey-l), #000 calc(100% - var(--gkey-r)), transparent 100%); }
+.gkey.fl { --gkey-l: 28px; } .gkey.fr { --gkey-r: 28px; }
+.gkey .km { margin-left: 10px; font: 400 10.5px var(--ui); font-style: normal; color: #9ea39b; }
+.gkey .sws { display: inline-flex; gap: 2px; margin-left: 10px; } .gkey .sws i { width: 9px; height: 3px; border-radius: 2px; }
 .gkey .kt { margin-left: 10px; } .gkey .kt b { font: 500 11px var(--mono); color: #c9cec6; }
 .gkey .kc { margin-left: 8px; font: 500 11px var(--mono); font-style: normal; color: #c9cec6; border: 1px solid #4a504a; padding: 0 4px; line-height: 16px; }
 .gkey .kc.dn { color: #6f766f; border-color: #2e322e; } .gkey .kc.now { background: #e3d6ad; color: #171817; border-color: #e3d6ad; }

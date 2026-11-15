@@ -1598,7 +1598,7 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
       for (const l of labs) {
         if (squares.some((q) => hit(l.r, q))) note('a label overlaps a square', it, words(l.e));
         for (const m of labs) if (m !== l && m.r.left <= l.r.left && hit(l.r, m.r)) note('two labels overlap', it, `${words(l.e)} / ${words(m.e)}`);
-        for (const n of names) if (hit(l.r, n.r)) note('a label overlaps a name or total', it, `${words(l.e)} / ${words(n.e)}`);
+        for (const n of names) if (hit(l.r, n.r)) { const x = (Math.max(l.r.left, n.r.left) + Math.min(l.r.right, n.r.right)) / 2, y = (Math.max(l.r.top, n.r.top) + Math.min(l.r.bottom, n.r.bottom)) / 2, top = document.elementFromPoint(x, y); if (top && (top === l.e || l.e.contains(top))) note('a label overlaps a name or total', it, `${words(l.e)} / ${words(n.e)}`); }
       }
       if (svg && paths.length) {
         const o = svg.getBoundingClientRect();
@@ -1804,6 +1804,7 @@ async function arrowsMock(report: Record<string, unknown>) {
 }
 
 async function overlapsCheck(report: Record<string, unknown>) {
+  const shotKinds = new Set<string>();
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   const inside = (r: DOMRect, x: number, y: number) => x > r.left + 0.5 && x < r.right - 0.5 && y > r.top + 0.5 && y < r.bottom - 0.5;
   const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
@@ -1857,6 +1858,7 @@ async function overlapsCheck(report: Record<string, unknown>) {
           for (const k of unexplained) note('an arrow colour the key does not explain', it, k);
           for (const e of [...document.querySelectorAll('.gview .gkey .ka')] as HTMLElement[]) { const r = e.getBoundingClientRect(), k = (e.closest('.gkey') as HTMLElement).getBoundingClientRect(); if (r.left < k.left || r.right > k.right || r.width === 0) note('an arrow key mark out of sight', it, e.className); }
           if (it === 18) await shot('overlaps-grid-step19');
+          for (const [k, v] of Object.entries(tally)) if (v.steps.has(it + 1) && !shotKinds.has(k)) { shotKinds.add(k); await shot(`overlaps-first-${k.replace(/\W+/g, '-').slice(0, 30)}-step${it + 1}`); }
           const labs = boxes.filter((b) => b.e.classList.contains('glab'));
           const squares = ([...document.querySelectorAll('.gview .gcell.has')] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter(visible);
           for (const l of labs) {

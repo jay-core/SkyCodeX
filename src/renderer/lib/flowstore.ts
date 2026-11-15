@@ -59,16 +59,16 @@ export async function rebuild(): Promise<void> {
     }
     builtFor = root();
     builtEpoch = indexEpoch();
-    const fp = api.flow.fingerprint(root()), from = chosen;
-    say(t('finding entry points…'));
+    const fp = api.flow.fingerprint(root()), from = chosen, refining = !!graph();
+    say(refining ? 'refining as clangd indexes…' : t('finding entry points…'));
     const found = rankEntries(await findEntries(root()));
     const i = Math.max(0, found.findIndex((e) => entryKey(e) === chosen));
     if (!held) { if (!sameJson(found, entries())) setEntries(found); setLaneRaw(i); }
     const e = found[i];
     const start = e ? await resolveEntry(e) : null;
     const what = e ? `${e.name === 'main' ? '' : `${e.name} in `}${e.label}` : 'the public API';
-    say(`tracing calls from ${what}…`);
-    const g = await buildFlow(root(), (n) => say(`tracing calls from ${what}… ${n} functions`), start ? [start] : []);
+    say(refining ? 'refining as clangd indexes…' : `tracing calls from ${what}…`);
+    const g = await buildFlow(root(), (n) => say(refining ? `refining as clangd indexes… · ${n} functions` : `tracing calls from ${what}… ${n} functions`), start ? [start] : []);
     live = { g, run: null, entries: found, lane: i, fp: await fp, chosen: from };
     if (!held) { if (!sameGraph(g, graph())) setGraph(g); setStatus(statusOf(g)); }
     await buildLaneRun(g);
