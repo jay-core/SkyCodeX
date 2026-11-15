@@ -131,7 +131,7 @@ function pureFrom(s: Seq, row: number, lines: (file: string) => string[] | null,
   return v;
 }
 
-export interface CardCall { item: number; step: number; nth: number; file: string; line: number; code: string; state: 'done' | 'now' | 'later' }
+export interface CardCall { item: number; step: number; nth: number; file: string; line: number; code: string; col: number; state: 'done' | 'now' | 'later' }
 export interface DetailCard {
   head: string;
   callee: { name: string; fn: number; file: string; from: number; to: number; signature: string };
@@ -182,7 +182,7 @@ export function detailCard(s: Seq, at: number, cell: number[] | null, cur: numbe
   for (const i of all) { const row = s.items[i], c = R[row].caller != null ? short(R[R[row].caller!].name) : '(entry)'; byCaller.set(c, (byCaller.get(c) ?? 0) + 1); }
   const callOf = (i: number): CardCall => {
     const x = R[s.items[i]], c = x.caller != null ? R[x.caller] : null, L = c ? lines(c.file) : null;
-    return { item: i, step: i + 1, nth: nthOf.get(i) ?? 1, file: c?.file ?? x.file, line: x.at ? x.at.line + 1 : x.line + 1, code: x.at && L ? (L[x.at.line] ?? '').trim() : '', state: i === cur ? 'now' : i < cur ? 'done' : 'later' };
+    return { item: i, step: i + 1, nth: nthOf.get(i) ?? 1, file: c?.file ?? x.file, line: x.at ? x.at.line + 1 : x.line + 1, code: x.at && L ? (L[x.at.line] ?? '').trim() : '', col: x.at && L ? x.at.character - ((L[x.at.line] ?? '').length - (L[x.at.line] ?? '').trimStart().length) : -1, state: i === cur ? 'now' : i < cur ? 'done' : 'later' };
   };
   const shown = (cell ?? (r.kind === 'step' || r.kind === 'ref' ? all : [at])).map(callOf);
   let caller: DetailCard['caller'] = null;

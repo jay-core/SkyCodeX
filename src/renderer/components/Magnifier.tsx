@@ -18,8 +18,9 @@ export default function Magnifier(props: { host: () => HTMLElement | undefined; 
   };
   const box = () => {
     const p = at(), h = props.host()?.getBoundingClientRect();
-    if (!p || !h) return { left: 0, top: 0 };
-    return { left: Math.max(h.left, Math.min(h.right - LW, p.x - LW / 2)), top: Math.max(h.top, Math.min(h.bottom - LH, p.y - LH / 2)) };
+    if (!p || !h) return { left: 0, top: 0, w: LW, h: LH };
+    const w = Math.max(1, Math.min(LW, h.width - 16)), hh = Math.max(1, Math.min(LH, h.height - 16));
+    return { left: Math.max(h.left, Math.min(h.right - w, p.x - w / 2)), top: Math.max(h.top, Math.min(h.bottom - hh, p.y - hh / 2)), w, h: hh };
   };
   const place = () => {
     const p = at(), src = props.source(), z = magnify();
@@ -52,7 +53,7 @@ export default function Magnifier(props: { host: () => HTMLElement | undefined; 
   return (
     <Show when={magnify() && at()}>
       <div class="magnifier" ref={() => { requestAnimationFrame(() => { copyOf = null; mo = null; watch(); }); }}
-        style={{ left: `${box().left}px`, top: `${box().top}px`, width: `${LW}px`, height: `${LH}px` }}>
+        style={{ left: `${box().left}px`, top: `${box().top}px`, width: `${box().w}px`, height: `${box().h}px` }}>
         <div class="mg-in" ref={inner} />
         <span class="mg-z">{magnify()}×</span>
       </div>

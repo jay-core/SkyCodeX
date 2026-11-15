@@ -147,9 +147,9 @@ input, select { font: inherit; color: var(--bright); }
 .call-mark { text-underline-offset: 4px; }
 
 .prev { background: var(--prev); overflow: hidden; }
-.pcol { position: absolute; top: 36px; bottom: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.pcol { position: absolute; top: var(--prev-head, 36px); bottom: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .pcol::-webkit-scrollbar { display: none; }
-.pcol-in { padding: 2px 10px 40px 22px; display: flex; flex-direction: column; gap: 10px; }
+.pcol-in { padding: 2px 10px var(--prev-bar, 40px) 22px; display: flex; flex-direction: column; gap: 10px; }
 .card { background: var(--card); flex: none; position: relative; }
 .card.focus { background: var(--card-hi); box-shadow: inset 2px 0 #4e6a6a; }
 .card.flash { background: #202220; }
@@ -167,7 +167,7 @@ input, select { font: inherit; color: var(--bright); }
 .more { font: 300 13px var(--ui); color: var(--dim); padding: 4px 2px; }
 .pnote { font: 300 12.5px/1.6 var(--ui); color: var(--faint); padding: 4px 2px; }
 .links { position: absolute; left: 0; top: 0; pointer-events: none; z-index: var(--z-preview-links); overflow: visible; transition: opacity .18s ease-out; }
-.shiftbar { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; display: flex; align-items: center; gap: 24px; padding: 0 22px; background: var(--prev); font: 300 13.5px var(--ui); color: #4f564f; z-index: var(--z-shiftbar); }
+.shiftbar { position: absolute; left: 0; right: 0; bottom: 0; min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; padding: 7px 22px; background: var(--prev); font: 300 13.5px var(--ui); color: #4f564f; z-index: var(--z-shiftbar); }
 .shiftbar button:disabled { opacity: .35; cursor: default; }
 .shiftbar button:not(:disabled):hover { color: var(--accent); }
 .startv { position: fixed; inset: 0; z-index: var(--z-start-window); background: rgba(10, 11, 10, .55); display: grid; place-items: center; }

@@ -3,7 +3,7 @@ const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 export function hlLine(t: string): string {
   let out = '';
-  const re = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\/\/.*$)|([A-Za-z_]\w*)(?=\s*\()|([A-Za-z_]\w*)|([^"'/A-Za-z_]+|.)/g;
+  const re = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\/\/.*$|\/\*.*?(?:\*\/|$))|([A-Za-z_]\w*)(?=\s*\()|([A-Za-z_]\w*)|([^"'/A-Za-z_]+|.)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(t))) {
     if (m[1]) out += `<span class="st">${esc(m[1])}</span>`;

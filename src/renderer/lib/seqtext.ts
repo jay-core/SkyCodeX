@@ -3,11 +3,12 @@ import { api } from './api';
 import { states } from './store';
 import { builtText } from './flow';
 
-const texts = new Map<string, string[] | null>();
+const texts = new Map<string, string[] | null>(), unread = new Set<string>();
 const [textTick, setTextTick] = createSignal(0);
 export { textTick };
-export const clearSeqTexts = () => { texts.clear(); setTextTick(textTick() + 1); };
-export function invalidateSeqText(file: string) { if (texts.delete(file)) setTextTick(textTick() + 1); }
+export const cannotRead = (file: string) => { textTick(); return unread.has(file); };
+export const clearSeqTexts = () => { texts.clear(); unread.clear(); setTextTick(textTick() + 1); };
+export function invalidateSeqText(file: string) { const had = texts.delete(file); if (unread.delete(file) || had) setTextTick(textTick() + 1); }
 export function syncSeqTexts(files: Iterable<string>) {
   let changed = false;
   for (const f of files) {
@@ -26,7 +27,7 @@ export function lines(file: string): string[] | null {
   if (known != null) { const l = known.split('\n'); texts.set(file, l); return l; }
   if (file && !texts.has(file)) {
     texts.set(file, null);
-    (api.fs.read(file) as Promise<string>).then((s) => { texts.set(file, s.split('\n')); setTextTick(textTick() + 1); }).catch(() => texts.delete(file));
+    (api.fs.read(file) as Promise<string>).then((s) => { texts.set(file, s.split('\n')); setTextTick(textTick() + 1); }).catch(() => { unread.add(file); setTextTick(textTick() + 1); });
   }
   return null;
 }

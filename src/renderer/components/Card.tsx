@@ -58,7 +58,7 @@ export default function Card(props: { card: CardData; id: string; color: string;
         <Show when={props.card.kind !== 'call'} fallback={<Show when={props.card.std}><span class="chip">{t('std')}</span></Show>}><span class="chip kind">{t(KIND_CHIP[props.card.kind])}</span></Show>
         <Show when={depths()[props.card.key]} keyed>{(v) => {
           if (v === 'busy') return <span class="depth" title={t('measuring how deep its calls go')}>…</span>;
-          const tip = v.depth ? `the deepest chain of project calls below ${props.card.name}: ${v.depth} level${v.depth > 1 ? 's' : ''}, ${v.fns} function${v.fns > 1 ? 's' : ''} in all (each counted once, in call order)${v.capped ? ` · stopped at 4000 functions, so at least this deep` : ''}` : `${props.card.name} calls nothing in the project`;
+          const tip = v.depth ? `project calls below ${props.card.name}: ${v.depth} level${v.depth > 1 ? 's' : ''} deep along the first path that reaches each function, ${v.fns} function${v.fns > 1 ? 's' : ''} in all (each counted once, in call order)${v.capped ? ` · stopped at 4000 functions, so at least this deep` : ''}` : `${props.card.name} calls nothing in the project`;
           return (
             <span class="depth" title={tip} aria-label={tip}>
               <span class="gauge">{Array.from({ length: Math.min(v.depth, 8) }, (_, i) => <i style={{ opacity: String(1 - i * 0.09) }} />)}</span>
@@ -66,7 +66,7 @@ export default function Card(props: { card: CardData; id: string; color: string;
             </span>
           );
         }}</Show>
-        <span class="loc">{props.card.std ? props.card.file.split('/').slice(-2).join('/') : cardLoc(props.card)}</span>
+        <span class="loc" title={props.card.std ? props.card.file : cardLoc(props.card)}>{props.card.std ? props.card.file.split('/').slice(-2).join('/') : cardLoc(props.card)}</span>
       </div>
       <div ref={host} />
       <Show when={props.card.std || props.card.kind !== 'call'}>

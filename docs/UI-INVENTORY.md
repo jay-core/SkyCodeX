@@ -360,6 +360,26 @@ between Chrome's GPU and software drawing; the spine draws as before class V. St
 step. Rules on 23 programs and tinyhttp before → after: marks without a hover 3,138 → 3,067; every other count
 unchanged; no errors. 158 of 392 fixed; 33 kept by verdict or not a fault; 201 open.
 
+**The grid's last 2, and the card and preview (2026-11-15):** grid, 2: `GridView.tsx:339` the PNG's "saved" message is
+a caption that stays; `:331` the PNG keeps its 2× scale and is saved in tiles of at most 16,000 px instead of shrunk to
+fit (one file, drawn as before, when it fits). Card and preview, 28 fixed: A `lines.ts:43` and E- `:46` an edge label is
+as wide as its measured text and ends in "…" at the preview's edge; C `Preview.tsx:122`, `:124`, `:141`, `:249`, `:289`,
+`:292` (and `styles.css:129`) take the heading's and the bar's measured heights; C `StepPreview.tsx:136` the dotted link
+ends at the card heading's measured middle; D `Magnifier.tsx:4` the lens fits a smaller host; E- `Card.tsx:69`,
+`Preview.tsx:266` full text on hover; E- `preview.ts:129` non-function cards past the limit join "+N more"; E±
+`Preview.tsx:282` "+N more" lists them all on hover; E- `Preview.tsx:300` the bar wraps; G `Preview.tsx:293` "clangd is
+starting" with a folder open; `preview.ts:204`, `:243` "no calls found yet" while clangd indexes; `:72` an unreadable
+file is said on its card; `:345` the depth tip says what it measures; `Preview.tsx:279` cards past the eighth get their
+own colours; `StepPreview.tsx:16` the call is underlined at its own column; `:60`, `:68`, `:92` a card that cannot be
+worked out says so; `hlcode.ts:6` `/* … */` on one line is a comment; V `StepPreview.tsx:129` the dotted link stops
+redrawing when nothing moves (found while fixing: a link cleared once was never drawn again, fixed); `seqtext.ts:29` an
+unreadable file is not read again on every look-up and its row says so. Kept, 7: E+ `Card.tsx:64`, `preview.ts:69`,
+`:115`, `:136`, `:152`, `:156` (reachable, as the metro's E+ verdict); LIMIT `Card.tsx:61` with `preview.ts:290` (the
+tip states the 4,000-function stop and the count shows "+"). Still open, 3: V `StepPreview.tsx:219`, `Preview.tsx:272`,
+`Magnifier.tsx:14`. Checks: the default smoke on tinyhttp, HEAD and this batch with the same clangd 23.1.0: 135 of 143
+fields the same, the rest frame timings within 0.1 ms or one frame and which grid square was hovered; rules on 23
+programs and tinyhttp: every count unchanged, no errors. 188 of 392 fixed; 40 kept by verdict or not a fault; 164 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

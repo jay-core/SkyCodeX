@@ -55,11 +55,14 @@ export function textHeight(cls: string, tag = ''): (text: string, width: number)
   };
 }
 
-export function textWidthIn(el: Element): (text: string) => number {
-  const font = getComputedStyle(el).font;
+export function fontWidth(font: string): (text: string) => number {
   ctx ??= document.createElement('canvas').getContext('2d');
   const g = ctx;
   return (text) => { if (!g) return 0; g.font = font; return Math.ceil(g.measureText(text).width); };
+}
+
+export function textWidthIn(el: Element): (text: string) => number {
+  return fontWidth(getComputedStyle(el).font);
 }
 
 export function fitInWindow(el: HTMLElement, gap = 8): void {

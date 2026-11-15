@@ -16,6 +16,7 @@ export interface Card {
   fromRanges: Range[];
   std: boolean;
   declOnly?: boolean;
+  unread?: boolean;
   kind: CardKind;
 }
 export interface Level {
@@ -70,10 +71,14 @@ async function buildLevel(caller: CallItem, callerStartLine: number): Promise<Le
     cards.push({
       key: `${def.uri}#${a}:${c.to.name}`, item: def, file: dfile, name: c.to.name,
       startLine: a, text: lines.slice(a, b + 1).join('\n') || c.to.detail || c.to.name,
-      fromRanges: c.fromRanges, std, declOnly: bodiless, kind: 'call',
+      fromRanges: c.fromRanges, std, declOnly: bodiless, kind: 'call', unread: !lines.length,
     });
   }
-  if (s['preview.include_other'] !== false) cards.push(...(await otherCards(caller, cards, !!s['preview.include_std'], s['preview.max_cards'])));
+  if (s['preview.include_other'] !== false) {
+    const others = await otherCards(caller, cards, !!s['preview.include_std']), max = s['preview.max_cards'];
+    cards.push(...others.slice(0, max));
+    more.push(...others.slice(max).map((o) => o.name));
+  }
   return { caller, callerFile: uriToFile(caller.uri), callerStartLine, cards, hidden, more, focus: -1 };
 }
 
@@ -89,7 +94,7 @@ function parsed(file: string, text: string) {
 const posAt = (text: string, off: number): Pos => { const line = lineOf(text, off); return { line, character: off - offsetOf(text, line, 0) }; };
 const NOT_CALLS = new Set(['sizeof', 'alignof', 'decltype', 'typeid', 'noexcept', 'static_cast', 'dynamic_cast', 'const_cast', 'reinterpret_cast', 'return', 'if', 'while', 'for', 'switch']);
 
-async function otherCards(caller: CallItem, calls: Card[], includeStd: boolean, max: number): Promise<Card[]> {
+async function otherCards(caller: CallItem, calls: Card[], includeStd: boolean): Promise<Card[]> {
   const file = uriToFile(caller.uri);
   const body = await withBody(caller);
   const text = (await fileLines(file)).join('\n');
@@ -126,7 +131,7 @@ async function otherCards(caller: CallItem, calls: Card[], includeStd: boolean, 
     if (card) { byDef.set(key, card); out.push(card); }
   }
   const first = (c: Card) => c.fromRanges[0].start.line * 1e5 + c.fromRanges[0].start.character;
-  return out.sort((a, b) => first(a) - first(b)).slice(0, max);
+  return out.sort((a, b) => first(a) - first(b));
 }
 
 async function classify(name: string, def: { file: string; line: number; character: number }, range: Range): Promise<Card | null> {

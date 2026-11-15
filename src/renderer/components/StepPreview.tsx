@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onMount, onCleanup, JSX } from 'solid-js';
+import { For, Show, createMemo, createSignal, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import Split from './Split';
 import { seq, trail, runStatus, stepMove } from '../lib/flowstore';
 import { stepWays, stepNumbers, ordinal } from '../../shared/flowseq';
@@ -13,7 +13,10 @@ import { junctionWords, Junction } from '../../shared/junctions';
 
 const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
 const escH = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const underlineCall = (text: string, name: string) => { const e = escH(text), n = escH(name), i = e.indexOf(n); return i < 0 ? e : `${e.slice(0, i)}<span class="cbx on">${n}</span>${e.slice(i + n.length)}`; };
+const underlineCall = (text: string, name: string, at = -1) => {
+  const i = at >= 0 && text.startsWith(name, at) ? at : text.indexOf(name);
+  return i < 0 ? escH(text) : `${escH(text.slice(0, i))}<span class="cbx on">${escH(name)}</span>${escH(text.slice(i + name.length))}`;
+};
 
 export const [gridPick, setGridPick] = createSignal<{ at: number; cell: number[] } | null>(null);
 export const [junctionPick, setJunctionPick] = createSignal<Junction | null>(null);
@@ -51,13 +54,16 @@ export default function StepPreview() {
     const r = s.run.rows[s.items[c.at]], n = nums()[c.at], fnRow = r.kind === 'ref' && r.ref != null ? s.run.rows[r.ref] : r;
     return { step: c.at + 1, of: s.items.length, fn: n?.fn ?? 0, call: n?.call ?? 1, name: short(r.kind === 'indirect' ? (r.text ?? r.name) : fnRow.name) };
   });
+  const [fail, setFail] = createSignal('');
+  const failed = (what: string, e: unknown) => { queueMicrotask(() => setFail(`${what} could not be worked out: ${String(e)}`)); return null; };
+  createEffect(on([S, cur, gridPick, junctionPick], () => setFail(''), { defer: true }));
   const card = createMemo((): (DetailCard & { tag: string }) | null => {
     const s = S(), c = cur(), g = gridPick();
     if (!s || !c || c.at >= s.items.length) return null;
     try {
       if (g && g.at < s.items.length) return { ...detailCard(s, g.at, g.cell, c.at, nums(), (f) => lines(f)), tag: 'SELECTED' };
       return { ...detailCard(s, c.at, null, c.at, nums(), (f) => lines(f)), tag: `STEP ${c.at + 1}` };
-    } catch { return null; }
+    } catch (e) { return failed('the step card', e); }
   });
   const go = (it: number) => { stepMove({ jump: it }); };
   const jp = () => { const j = junctionPick(), s = S(); return j && s && s.items[j.owner] === j.ownerRow ? j : null; };
@@ -65,7 +71,7 @@ export default function StepPreview() {
     const s = S(), c = cur();
     textTick();
     if (!s || !c || c.at >= s.items.length) return null;
-    try { return stepLinks(s, c.at, (f) => lines(f)); } catch { return null; }
+    try { return stepLinks(s, c.at, (f) => lines(f)); } catch (e) { return failed('what this step takes and gives', e); }
   });
   const jcard = createMemo(() => {
     const j = jp(), s = S();
@@ -89,7 +95,7 @@ export default function StepPreview() {
         decided, junctions: j.inFn, whatIf: junctionNav.whatIf?.(j) ?? null,
         waysOut: (s.run.exits?.[owner.key] ?? []).filter((x) => x.kind === 'return' || x.kind === 'throw' || x.kind === 'co_return' || x.kind === 'noreturn').map((x) => `${x.text.replace(/;\s*$/, '')} · line ${x.line + 1}`),
       };
-    } catch { return null; }
+    } catch (e) { return failed('the junction card', e); }
   });
   const code = createMemo(() => {
     const c = cur(), s = S(), j = jp();
@@ -121,24 +127,37 @@ export default function StepPreview() {
     const r = s.run.rows[s.items[c.at]];
     if (r.caller == null || !r.at) return null;
     const cf = s.run.rows[r.caller], L = lines(cf.file);
-    return { name: short(cf.name), n: cf.n, file: basename(cf.file), line: r.at.line + 1, text: L?.[r.at.line]?.trim() ?? '', call: short(r.kind === 'ref' && r.ref != null ? s.run.rows[r.ref].name : r.name) };
+    const raw = L?.[r.at.line] ?? '';
+    return { name: short(cf.name), n: cf.n, file: basename(cf.file), line: r.at.line + 1, text: raw.trim(), col: r.at.character - (raw.length - raw.trimStart().length), call: short(r.kind === 'ref' && r.ref != null ? s.run.rows[r.ref].name : r.name) };
   });
   const ways = createMemo(() => (S() ? stepWays(S()!, trail()) : []));
   let box: HTMLDivElement | undefined, link!: SVGSVGElement, raf = 0;
-  const drawLink = () => {
-    raf = requestAnimationFrame(drawLink);
+  const clearLink = () => { if (link.innerHTML) link.innerHTML = ''; delete link.dataset.d; return ''; };
+  const paintLink = (): string => {
     const picked = gridPick() ? (document.querySelector('.gview .gcell.pk') as HTMLElement | null) : null;
     const sel = picked ?? (document.querySelector(jp() ? '.seqv .sjn.on' : '.seqv .srow.sel, .gview .gcell.on') as HTMLElement | null);
-    if (!link) return;
-    if (!sel || !box || !box.isConnected) { if (link.innerHTML) link.innerHTML = ''; return; }
+    if (!link) return '';
+    if (!sel || !box || !box.isConnected) return clearLink();
     const a = sel.getBoundingClientRect(), b = box.getBoundingClientRect(), view = (sel.closest('.seqv, .gview') as HTMLElement).getBoundingClientRect();
-    if (a.bottom < view.top || a.top > view.bottom) { if (link.innerHTML) link.innerHTML = ''; return; }
+    if (a.bottom < view.top || a.top > view.bottom) return clearLink();
     const rowEnd = sel.closest('.gview') ? (document.querySelector('.gview .gtot') as HTMLElement | null)?.getBoundingClientRect().right : undefined;
-    const x1 = rowEnd != null ? rowEnd + 2 : a.right, y1 = a.top + a.height / 2, x2 = b.left, y2 = b.top + 22, m = x1 + (x2 - x1) * 0.55;
+    const hd = box.querySelector('.h')?.getBoundingClientRect();
+    const x1 = rowEnd != null ? rowEnd + 2 : a.right, y1 = a.top + a.height / 2, x2 = b.left, y2 = hd ? (hd.top + hd.bottom) / 2 : b.top, m = x1 + (x2 - x1) * 0.55;
     const d = `M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}`;
     if (link.dataset.d !== d) { link.dataset.d = d; link.innerHTML = `<path d="${d}" fill="none" stroke="#e3d6ad" stroke-width="0.9" stroke-dasharray="1.5 4" stroke-linecap="round"/><circle cx="${x1}" cy="${y1}" r="2.2" fill="#e3d6ad"/><circle cx="${x2}" cy="${y2}" r="2" fill="#e3d6ad"/>`; }
+    return d;
   };
-  onMount(() => { raf = requestAnimationFrame(drawLink); });
+  let idle = 0, lastLink = '';
+  const drawLink = () => {
+    const d = paintLink();
+    if (d === lastLink) idle++; else { idle = 0; lastLink = d; }
+    raf = idle < 30 ? requestAnimationFrame(drawLink) : 0;
+  };
+  const wake = () => { idle = 0; if (!raf) raf = requestAnimationFrame(drawLink); };
+  const WAKE = ['scroll', 'resize', 'wheel', 'keydown', 'pointermove', 'pointerdown', 'transitionrun', 'animationstart'];
+  onMount(() => { raf = requestAnimationFrame(drawLink); for (const ev of WAKE) window.addEventListener(ev, wake, true); });
+  onCleanup(() => { for (const ev of WAKE) window.removeEventListener(ev, wake, true); });
+  createEffect(on([S, cur, gridPick, junctionPick, card, jcard], wake));
   let inner: HTMLDivElement | undefined, pane!: HTMLDivElement;
   const maxCard = () => {
     const wrap = pane?.querySelector('.scodewrap') as HTMLElement | null, br = box?.getBoundingClientRect();
@@ -177,8 +196,9 @@ export default function StepPreview() {
           )}</Show>
           <span class="grow" /><Show when={jp() || !atEnd()}><button class="chip" onClick={() => { const j = jp(); if (j) openFile(j.file, { line: j.line, character: 0 }); else openStep(); }}>open file ›</button></Show>
         </div>
+        <Show when={fail()}><div class="sfrom"><span class="h">{fail()}</span></div></Show>
         <Show when={!jp() && calledFrom()}>
-          <div class="sfrom"><span class="h">from <b>ƒ{calledFrom()!.n} {calledFrom()!.name}</b> · {calledFrom()!.file} line {calledFrom()!.line}</span><code onWheel={hwheel} innerHTML={underlineCall(calledFrom()!.text, calledFrom()!.call)} /></div>
+          <div class="sfrom"><span class="h">from <b>ƒ{calledFrom()!.n} {calledFrom()!.name}</b> · {calledFrom()!.file} line {calledFrom()!.line}</span><code onWheel={hwheel} innerHTML={underlineCall(calledFrom()!.text, calledFrom()!.call, calledFrom()!.col)} /></div>
           <div class="sconn" />
         </Show>
         <Show when={!jp() && code()?.calls.length}><div class="clk">{here() ? `step ${here()!.step} · ƒ${here()!.fn} ${here()!.name}, ${ordinal(here()!.call)} call · ` : ''}click an outlined call to go to its step</div></Show>
@@ -220,7 +240,7 @@ export default function StepPreview() {
                   <For each={cd().calls}>{(c) => (
                     <div class="cl" classList={{ now: c.state === 'now', dn: c.state === 'done' }} onClick={() => go(c.item)} title="go to this step">
                       <span class="sp">step {c.step}</span><span class="o">{ordinal(c.nth)}{c.state === 'now' ? ' · now' : ''}</span><span class="lc">{basename(c.file)}:{c.line}</span>
-                      <code innerHTML={underlineCall(c.code, cd().callee.name)} />
+                      <code innerHTML={underlineCall(c.code, cd().callee.name, c.col)} />
                     </div>
                   )}</For>
                 </Sec>

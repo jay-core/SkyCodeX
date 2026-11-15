@@ -40,8 +40,10 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const w2 = () => cardsW() - w1();
   const slotX = (s: number) => (s <= 0 ? s * w1() : w1() + (s - 1) * w2());
   const slotW = (s: number) => (s <= 0 ? w1() : w2());
-  const ro = new ResizeObserver(() => { setAreaW(area.clientWidth); redraw(); });
-  onMount(() => { ro.observe(area); props.registerRedraw(redraw); });
+  const [headH, setHeadH] = createSignal(0), [barH, setBarH] = createSignal(0);
+  let headEl!: HTMLDivElement, barEl!: HTMLDivElement;
+  const ro = new ResizeObserver(() => { setAreaW(area.clientWidth); setHeadH(headEl.offsetHeight); setBarH(barEl.offsetHeight); redraw(); });
+  onMount(() => { ro.observe(area); ro.observe(headEl); ro.observe(barEl); props.registerRedraw(redraw); });
   onCleanup(() => { ro.disconnect(); cancelAnimationFrame(raf); });
 
   let raf = 0;
@@ -119,13 +121,13 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     if (!cr || !view || !pane || !seen || cr.right <= ar.left + 2 || cr.left >= ar.right - 2) return '';
     const pos = view.posAtDOM(h.el), end = view.coordsAtPos(view.state.doc.lineAt(pos).to);
     const head = col.querySelector(`[data-card="${h.li}:${h.k}"] .card-h`) as HTMLElement | null, hr = head?.getBoundingClientRect();
-    const edge: 0 | -1 | 1 = !hr ? 1 : hr.bottom < cr.top + 4 ? -1 : hr.top > cr.bottom - 44 ? 1 : 0;
-    const sw = head?.querySelector('.sw')?.getBoundingClientRect();
-    const to = edge || !sw ? { x: cr.left - br.left + 22, y: edge < 0 ? cr.top - br.top + 10 : cr.bottom - br.top - 50 } : { x: sw.left - br.left - 1, y: (sw.top + sw.bottom) / 2 - br.top };
+    const edge: 0 | -1 | 1 = !hr ? 1 : hr.bottom < cr.top + 4 ? -1 : hr.top > cr.bottom - barH() - 4 ? 1 : 0;
+    const sw = head?.querySelector('.sw')?.getBoundingClientRect(), padL = parseFloat(getComputedStyle(col.firstElementChild as Element).paddingLeft) || 0;
+    const to = edge || !sw ? { x: cr.left - br.left + padL, y: edge < 0 ? cr.top - br.top + 10 : cr.bottom - br.top - barH() - 10 } : { x: sw.left - br.left - 1, y: (sw.top + sw.bottom) / 2 - br.top };
     const vis = Math.min(pane.right, ar.right) - br.left;
     const link: Link = {
       from: { x: Math.min(r.right - br.left, vis), y: (r.top + r.bottom) / 2 - br.top }, textEnd: Math.min((end?.right ?? r.right) - br.left, vis),
-      lead: Math.max(Math.min(pane.right, cr.left) - br.left - 6, r.right - br.left + 4), to, color: pal(h.k), edge, name: levels()[h.li].cards[h.k]?.name ?? '', hot: true, onDot: !edge,
+      lead: Math.max(Math.min(pane.right, cr.left) - br.left - 6, r.right - br.left + 4), to, color: pal(h.k), edge, name: levels()[h.li].cards[h.k]?.name ?? '', hot: true, onDot: !edge, maxX: ar.right - br.left,
     };
     return linkSvg([link]);
   }
@@ -138,7 +140,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     const st = stuck(), h = hover();
     let out = st ? connector(st, br, ar) : '';
     if (h && h.el !== st?.el) out += connector(h, br, ar);
-    const clipW = ar.right - br.left, clipH = ar.bottom - br.top - 40;
+    const clipW = ar.right - br.left, clipH = ar.bottom - br.top - barH();
     svg.innerHTML = `<defs><clipPath id="pclip"><rect x="0" y="0" width="${clipW}" height="${clipH}"/></clipPath></defs><g clip-path="url(#pclip)">${out}</g>`;
   }
 
@@ -246,7 +248,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
     const col = cols[win() + c], el = col?.querySelector(`[data-card="${win() + c}:${k}"]`) as HTMLElement | null;
     if (!el) return;
     const top = el.offsetTop - 8;
-    if (top < col.scrollTop || top + Math.min(el.offsetHeight, 120) > col.scrollTop + col.clientHeight - 40) col.scrollTo({ top, behavior: reduce() ? 'auto' : 'smooth' });
+    if (top < col.scrollTop || top + Math.min(el.offsetHeight, 120) > col.scrollTop + col.clientHeight - barH()) col.scrollTo({ top, behavior: reduce() ? 'auto' : 'smooth' });
   })));
 
   function reveal(c: number, k: number) {
@@ -259,11 +261,11 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
   const levelCount = () => levels().length;
 
   return (
-    <div class="pane prev" style={{ flex: 1 }} ref={area}>
-      <div class="ph" style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 'var(--z-preview-heading)', padding: 0 }}>
+    <div class="pane prev" style={{ flex: 1, '--prev-head': `${headH()}px`, '--prev-bar': `${barH()}px` }} ref={area}>
+      <div class="ph" ref={headEl} style={{ position: 'absolute', left: 0, right: 0, top: 0, 'z-index': 'var(--z-preview-heading)', padding: 0 }}>
         <For each={[0, 1]}>{(c) => (
           <>
-            <span style={{ width: `${c === 0 ? w1() : w2()}px`, flex: 'none', 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>
+            <span title={title(levels()[win() + c], win() + c) || undefined} style={{ width: `${c === 0 ? w1() : w2()}px`, flex: 'none', 'padding-left': '22px', overflow: 'hidden', 'text-overflow': 'ellipsis', color: levels()[win() + c] ? 'var(--bright)' : '#3a3f3a', 'font-size': '18px' }}>
               {title(levels()[win() + c], win() + c) || (c === 0 ? 'preview' : '')}
             </span>
           </>
@@ -279,25 +281,25 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
                 <Card card={card} id={`${li}:${k()}`} color={pal(k())} focus={lv().focus === k()} lit={isLit(li, k())} onFocus={() => focusCard(li, k())} onScroll={redraw} />
               </>
             )}</For>
-            <Show when={lv().more.length}><div class="more">+{lv().more.length} more · {lv().more.slice(0, 4).join(', ')}{lv().more.length > 4 ? '…' : ''}</div></Show>
+            <Show when={lv().more.length}><div class="more" title={`not shown (preview.max_cards): ${lv().more.join(', ')}`}>+{lv().more.length} more · {lv().more.slice(0, 4).join(', ')}{lv().more.length > 4 ? '…' : ''}</div></Show>
             <Show when={lv().hidden}><div class="pnote">{lv().hidden} standard-library call{lv().hidden > 1 ? 's' : ''} hidden · <button class="lnk" onClick={() => api.settings.set('preview.include_std', true)}>{t('show')}</button></div></Show>
-            <Show when={!lv().cards.length && !lv().hidden}><div class="pnote">{t('no calls')}</div></Show>
+            <Show when={!lv().cards.length && !lv().hidden}><div class="pnote">{indexing() ? `${t('no calls found yet')} · ${indexing()}` : t('no calls')}</div></Show>
           </div>
         </div>
       )}</Index>
       <Show when={levelCount() === 1 || (levelCount() > 0 && !levels()[win() + 1])}>
-        <div class="empty" style={{ position: 'absolute', left: `${w1()}px`, right: 0, top: '36px', bottom: '40px' }}>{t('click into a card')}<br />{t('to go one level deeper')}</div>
+        <div class="empty" style={{ position: 'absolute', left: `${w1()}px`, right: 0, top: 'var(--prev-head)', bottom: 'var(--prev-bar)' }}>{t('click into a card')}<br />{t('to go one level deeper')}</div>
       </Show>
       <Show when={!levelCount()}>
-        <div class="empty" style={{ position: 'absolute', inset: '36px 0 40px 0' }}>
-          {lspState() === 'failed' ? lspMessage() : lspState() !== 'ready' ? t('open a folder to start') : busy() ? '…' : mainFn() ? t('no calls in this function') : 'cursor is outside any function\n— nothing to preview'}
+        <div class="empty" style={{ position: 'absolute', inset: 'var(--prev-head) 0 var(--prev-bar) 0' }}>
+          {lspState() === 'failed' ? lspMessage() : lspState() !== 'ready' ? (root() ? t('the language engine (clangd) is starting…') : t('open a folder to start')) : busy() ? '…' : mainFn() ? (indexing() ? `${t('no calls found yet')} · ${indexing()}` : t('no calls in this function')) : 'cursor is outside any function\n— nothing to preview'}
           <Show when={indexing()}><div class="sub" style={{ 'margin-top': '10px' }}>{indexing()}</div></Show>
         </div>
       </Show>
       <Show when={levelCount()}>
         <Handle left={w1()} onDrag={(dx) => setFrac(Math.max(0.15, Math.min(0.85, (w1() + dx) / cardsW())))} onEnd={() => store('litho.preview.split', frac())} />
       </Show>
-      <div class="shiftbar">
+      <div class="shiftbar" ref={barEl}>
         <button disabled={win() === 0} title={t('back to the source (Alt Home)')} onClick={() => doShift(0)}>{t('« source')}</button>
         <span style={{ 'font-size': '12.5px', color: '#3a3f3a' }}>{levelCount() ? `levels ${win() + 1}–${win() + 2}` : ''}</span>
         <span style={{ flex: 1 }} />

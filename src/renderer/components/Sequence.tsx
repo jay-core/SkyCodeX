@@ -9,7 +9,7 @@ import { routesBetween, RouteInfo } from '../../shared/flowboxes';
 import type { RunFrame, Exit } from '../../shared/flowrun';
 import { settings, root } from '../lib/store';
 import { api, basename } from '../lib/api';
-import { lines, textTick } from '../lib/seqtext';
+import { lines, textTick, cannotRead } from '../lib/seqtext';
 import { metroRow, MetroRow } from '../../shared/metrofacts';
 import { hlLine } from '../lib/hlcode';
 import StepPreview, { openStep, StepSplit, junctionPick, setJunctionPick, junctionNav } from './StepPreview';
@@ -920,6 +920,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <Show when={!sel() && uses(it)}><span class="u" title={`uses ${uses(it)}`}>uses {uses(it)}</span></Show>
                     <For each={usesMarks(it)}>{(m) => <span class="nt sonly" classList={{ cadd: m.added }} title={m.text}>{m.text}</span>}</For>
                     <Show when={tag()}><span class="tag" title={tag()}>{tag()}</span></Show>
+                    <Show when={r().file && cannotRead(r().file)}><span class="mchip t-warn" title={`${r().file} could not be read, so its code is not shown`}>its file could not be read</span></Show>
                     <Show when={notesByItem()[it]}><span class="snote" title={notesByItem()[it]}>✎ {notesByItem()[it]}</span></Show>
                     </span>
                   </div>

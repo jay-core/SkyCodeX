@@ -1,6 +1,6 @@
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
 import { setWalkSpeed, seq, trail, status, runStatus, stepMove, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords, changed } from '../lib/flowstore';
-import { root, flash, settings } from '../lib/store';
+import { root, settings } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
 import { lspState } from '../lib/lsp';
@@ -553,15 +553,20 @@ export default function GridView(props: { switcher: JSX.Element }) {
     const fm = probe.measureText('Mg'), LH = Math.ceil(fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent);
     const wrap = (t: string, w: number) => { const out: string[] = []; let cur = ''; for (const ch of t) { if (cur && probe.measureText(cur + ch).width > w) { out.push(cur); cur = ch; } else cur += ch; } if (cur) out.push(cur); return out; };
     const names = cols().map((cc, i) => wrap(cc.name, G.x.w[i] - 2 - PAD)), top = Math.max(head(), NAME_GAP + most(names, (l) => l.length, 1) * LH + 2 * NAME_GAP);
-    const W = side() + G.x.size + tot() + RIGHT + TOT_GAP, H = top + G.y.size + foot() + RIGHT, sc = Math.min(2, 16000 / W, 16000 / H);
-    const c = document.createElement('canvas'); c.width = Math.round(W * sc); c.height = Math.round(H * sc);
-    const g = c.getContext('2d')!; g.scale(sc, sc); g.fillStyle = '#171817'; g.fillRect(0, 0, W, H);
+    const W = side() + G.x.size + tot() + RIGHT + TOT_GAP, H = top + G.y.size + foot() + RIGHT, sc = 2, TILE = 16000;
+    const TW = Math.round(W * sc), TH = Math.round(H * sc), nx = Math.ceil(TW / TILE), ny = Math.ceil(TH / TILE), saved: string[] = [];
+    for (let ty = 0; ty < ny; ty++) for (let tx = 0; tx < nx; tx++) {
+    const c = document.createElement('canvas'); c.width = Math.min(TILE, TW - tx * TILE); c.height = Math.min(TILE, TH - ty * TILE);
+    const g = c.getContext('2d')!; g.setTransform(sc, 0, 0, sc, -tx * TILE, -ty * TILE); g.fillStyle = '#171817'; g.fillRect(0, 0, W, H);
     g.font = probe.font; g.textBaseline = 'middle';
     cols().forEach((cc, i) => { g.fillStyle = col().get(cc.file)!; g.fillRect(side() + G.x.at[i], top - NAME_GAP, G.x.w[i] - 2, 2); g.fillStyle = '#9ea39b'; names[i].forEach((ln, k) => g.fillText(ln, side() + G.x.at[i] + PAD, top - 2 * NAME_GAP - (names[i].length - k - 0.5) * LH)); });
     rows().forEach((rr, j) => { const my = top + G.y.at[j] + (G.y.w[j] - 2) / 2; g.fillStyle = col().get(rr.file)!; g.fillRect(BAND_X + BAND_W - 2, top + G.y.at[j], 2, G.y.w[j] - 2); g.fillStyle = '#9ea39b'; g.fillText(rr.name, ROW_NAMES + NAME_GAP, my); g.fillText(`×${rr.count}`, side() + G.x.size + TOT_GAP + NAME_GAP, my); });
     cols().forEach((cc, i) => { g.fillStyle = '#9ea39b'; g.fillText(String(cc.count), side() + G.x.at[i] + PAD, top + G.y.size + foot() / 2); rows().forEach((rr, j) => { const v = m.cells.get(`${cc.key}>${rr.key}`); if (!v) return; g.fillStyle = '#1f211f'; g.fillRect(side() + G.x.at[i], top + G.y.at[j], G.x.w[i] - 2, G.y.w[j] - 2); g.fillStyle = '#c9cec6'; g.fillText(v.map((it) => it + 1).join(' · '), side() + G.x.at[i] + NAME_GAP, top + G.y.at[j] + (G.y.w[j] - 2) / 2); }); });
-    await api.fs.writeBase64(file, c.toDataURL('image/png').split(',')[1]);
-    flash(`saved ${basename(file)} · ${c.width} × ${c.height}`, 3000);
+    const out = nx * ny === 1 ? file : file.replace(/(\.png)?$/i, `-${ty + 1}-${tx + 1}.png`);
+    await api.fs.writeBase64(out, c.toDataURL('image/png').split(',')[1]);
+    saved.push(basename(out));
+    }
+    say('PNG', `saved ${nx * ny === 1 ? saved[0] : `${saved.length} images, ${ny} rows × ${nx} columns: ${saved[0]} … ${saved[saved.length - 1]}`}`, `${TW} × ${TH} px`);
   }
 
   const go = (it: number) => { stop(); setCaption(null); report(stepMove({ jump: it })); canvas.focus(); };

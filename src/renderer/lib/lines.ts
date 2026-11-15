@@ -1,8 +1,9 @@
 import { createSignal } from 'solid-js';
+import { fontWidth } from './measure';
 
 export const PAL = ['#86a8e7', '#79c9ae', '#bc9fe6', '#d4c26a', '#6fc0dc', '#a6cf82', '#e2dccb', '#9c96f0'];
 const [palette, setPaletteSig] = createSignal<string[]>(PAL);
-export const pal = (k: number) => { const p = palette(); return p[k % p.length]; };
+export const pal = (k: number) => { const p = palette(); return k < p.length ? p[k] : `hsl(${Math.round((k * 137.508) % 360)} 55% 70%)`; };
 export const setPalette = (p: string[]) => setPaletteSig(p.length ? p : PAL);
 
 export interface LinePoint { x: number; y: number }
@@ -17,6 +18,7 @@ export interface Link {
   onDot?: boolean;
   hot?: boolean;
   dim?: boolean;
+  maxX?: number;
 }
 
 export function linkSvg(links: Link[]): string {
@@ -33,17 +35,21 @@ export function linkSvg(links: Link[]): string {
     if (l.edge) {
       const e = l.edge;
       if (!l.name) continue;
-      out += edgeStub(x2, y2, e, l.color, l.name);
+      out += edgeStub(x2, y2, e, l.color, l.name, l.maxX);
     } else if (!l.onDot) out += `<circle cx="${x2}" cy="${y2}" r="${l.hot ? 2.6 : 1.6}" fill="${l.color}" opacity="${0.8 * fade}"/>`;
   }
   return out;
 }
 
-export function edgeStub(x: number, y: number, e: number, color: string, label: string): string {
-  const w = Math.round(label.length * 6.4) + 26;
+const STUB_FONT = '300 11.5px Selawik, sans-serif';
+export function edgeStub(x: number, y: number, e: number, color: string, label: string, maxX = Infinity): string {
+  const width = fontWidth(STUB_FONT), room = maxX - x - 26;
+  let shown = label;
+  if (width(shown) > room) { while (shown.length > 1 && width(`${shown}…`) > room) shown = shown.slice(0, -1); shown = `${shown}…`; }
+  const w = width(shown) + 26;
   return `<rect x="${x}" y="${y - 7}" width="${w}" height="14" fill="#151615" opacity=".92"/>`
     + `<path d="M${x + 4} ${y - e * 3} l4 ${e * 5} l4 ${-e * 5}" stroke="${color}" fill="none" stroke-width="1.3"/>`
-    + `<text x="${x + 17}" y="${y + 4}" fill="${color}" font-size="11.5" font-weight="300" font-family="Selawik, sans-serif">${escapeXml(label)}</text>`;
+    + `<text x="${x + 17}" y="${y + 4}" fill="${color}" font-size="11.5" font-weight="300" font-family="Selawik, sans-serif">${escapeXml(shown)}</text>`;
 }
 
 export function curveSvg(a: number, ya: number, b: number, yb: number, color: string, hot = false, dim = false): string {
