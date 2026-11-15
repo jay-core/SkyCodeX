@@ -20,7 +20,7 @@ import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
 import { hwheel } from '../lib/hwheel';
 import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
-import { styleOf } from '../lib/measure';
+import { styleOf, textWidthIn } from '../lib/measure';
 
 type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
 
@@ -243,6 +243,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
+  const [fnoW, setFnoW] = createSignal(0);
+  createEffect(on([nums, geom], ([ns]) => requestAnimationFrame(() => { const el = canvas?.querySelector('.srow .fno'); if (!el) return; const w = textWidthIn(el); let most = 0; for (const n of ns) if (n?.fn) most = Math.max(most, w(`${n.again ? '↻' : ''}ƒ${n.fn}`)); setFnoW(most); })));
   const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f)); c.set(it, m); } return m; };
   const fileCol = createMemo(() => {
     const m = new Map<string, string>(), s = S();
@@ -575,9 +577,9 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setWidth(canvas.clientWidth); setHeight(canvas.clientHeight); setSkyH(canvas.querySelector('.ssky')?.getBoundingClientRect().height ?? 0); }); });
     ro.observe(canvas);
     onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); });
-    canvas.focus();
     createEffect(on([skyOn, S], () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
   });
+    canvas.focus();
   createEffect(on([() => cur()?.at, textTick, width], () => requestAnimationFrame(() => {
     if (!band) return;
     const h = (band.firstElementChild as HTMLElement | null)?.scrollHeight ?? 0;
@@ -765,7 +767,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             </Show>
           </span>
         </div>
-        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} style={{ '--sky-h': `${skyOn() ? skyH() : 0}px`, '--spine': `${SPINE}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
+        <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} style={{ '--sky-h': `${skyOn() ? skyH() : 0}px`, '--spine': `${SPINE}px`, '--fno-w': `${fnoW()}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
             <div class="mlegend">
@@ -936,7 +938,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   <div class="in">
                     <Show when={summary().text}><div class="sum" classList={{ code: summary().code }}>{summary().text}</div></Show>
                     <Show when={callCode()}>{(cc) => (
-                      <div class="scall">
+                      <div class="scall" style={{ '--ln-d': String(Math.max(1, ...cc().lines.map((l) => String(l.n).length))) }}>
                         <div class="from">{cc().from}</div>
                         <For each={cc().lines}>{(l) => <div classList={{ hit: l.hit }}><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} /></div>}</For>
                       </div>
@@ -958,7 +960,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 </div>
               </Show>
               <Show when={peek() && peekCode()}>
-                <div class="speek" classList={{ up: peek()!.up }} style={{ left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
+                <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
                   <div class="h">{peekCode()!.head}<i>{peekCode()!.loc}</i><span class="lk">peek</span></div>
                   <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} /></div>}</For>
                   <Show when={peekCode()!.more}><div class="more">…</div></Show>

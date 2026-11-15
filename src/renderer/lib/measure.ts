@@ -54,3 +54,10 @@ export function textHeight(cls: string, tag = ''): (text: string, width: number)
     return Math.ceil(probe.getBoundingClientRect().height);
   };
 }
+
+export function textWidthIn(el: Element): (text: string) => number {
+  const font = getComputedStyle(el).font;
+  ctx ??= document.createElement('canvas').getContext('2d');
+  const g = ctx;
+  return (text) => { if (!g) return 0; g.font = font; return Math.ceil(g.measureText(text).width); };
+}

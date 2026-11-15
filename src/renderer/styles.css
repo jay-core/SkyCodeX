@@ -427,7 +427,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .seqv.metro .srow { gap: 0; transition: top .42s cubic-bezier(.16,1,.3,1), left .42s cubic-bezier(.16,1,.3,1), opacity .42s, color .42s, background-color .12s; }
 .seqv.metro .srow:not(.sel):hover { background-color: rgba(227, 214, 173, .055); box-shadow: inset 2px 0 rgba(227, 214, 173, .35); }
 .seqv.metro .srow .n { min-width: 26px; padding-right: 6px; }
-.seqv.metro .srow .fno { flex: none; width: 50px; height: 23px; line-height: 23px; overflow: hidden; white-space: nowrap; font: 400 11px/23px var(--mono); color: #6f766f; }
+.seqv.metro .srow .fno { flex: none; width: max(50px, var(--fno-w, 0px)); height: 23px; line-height: 23px; overflow: hidden; white-space: nowrap; font: 400 11px/23px var(--mono); color: #6f766f; }
 .seqv.metro .srow .fno .rp { display: inline-block; line-height: 1; margin-right: 2px; font: 400 10px var(--ui); vertical-align: 0; }
 .seqv .scap, .gview .scap { bottom: calc(var(--sky-h) + 12px); }
 .seqv.metro .srow .mmain { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: baseline; gap: 6px; }
@@ -562,7 +562,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scall { margin-top: 8px; font: 12px/1.6 var(--mono); color: #8b9189; }
 .scall .from { font: 300 11.5px var(--ui); color: #5f665f; margin-bottom: 2px; }
 .scall > div:not(.from) { display: flex; white-space: pre; overflow: hidden; }
-.scall .ln, .speek .ln { width: 34px; flex: none; text-align: right; padding-right: 12px; color: #3a3f3a; }
+.scall .ln, .speek .ln { width: max(34px, calc(var(--ln-d, 1) * 1ch + 12px)); flex: none; text-align: right; padding-right: 12px; color: #3a3f3a; }
 .scall .hit { background: rgba(173,155,111,.13); box-shadow: inset 3px 0 #ad9b6f; color: #e3e6df; } .scall .hit .ln { color: #8a7f5f; }
 .speek { position: absolute; z-index: var(--z-metro-peek); min-width: 420px; max-width: 560px; background: #202220; box-shadow: 0 16px 36px rgba(0,0,0,.55); padding: 8px 14px 8px 0; pointer-events: none; animation: speek-in .18s ease-out; }
 .speek.up { transform: translateY(-100%); }

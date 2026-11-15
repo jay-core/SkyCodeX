@@ -262,6 +262,15 @@ for the user's decision with a mock-up (they set the metro's own spacing): `Sequ
 `flowseq.ts:197` the text 26 px after the deepest lane, and the peek's 220 px (so `Sequence.tsx:968` stays open).
 94 of 392 fixed; 5 kept by verdict; 293 open.
 
+**Fixed (2026-11-15, the metro, class D):** `styles.css:477` the step-and-function column is as wide as its widest
+label in the run (measured with the column's own font, `lib/measure.ts` `textWidthIn`), never narrower than its
+50 px; `styles.css:613` the line numbers of the step card and the peek are as wide as their longest number, never
+narrower than 34 px (from line 1000 a number no longer runs into the code). Measured on tinyhttp: the column 50 px
+(widest label 28 px), nothing cut; line numbers 34 px at steps 2–4, nothing cut. Rules on 23 programs and tinyhttp:
+every count unchanged. Still open: `styles.css:508` the setting menu's 380 px. Sized to its content, the "compare" menu
+grew to 1,584 px and ran 678 px past the window, so the change was undone; fitting a wider menu needs the menus' own
+placement (`SettingChip.tsx`, `CompareChip.tsx`), outside this task. 96 of 392 fixed; 5 kept by verdict; 291 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the
