@@ -26,6 +26,7 @@ Built from one commit for macOS, Windows and Linux. 308 of the 392 interface fau
   - fixes are looked for in the first 12 errors, and the note says so and when the time for checking ran out;
   - the compile database SkyCodeX writes leaves out third_party, third-party and vendor folders and says so, and names any limit it reaches (20,000 sources, 12 folder levels, 400 header folders);
   - compilers that do not answer within 5 s are listed.
+- **The grid's frozen footer** sits at the visible bottom, above the run bars; rows scrolled under it no longer show below it.
 - **Buttons always visible.** A recent folder's remove button, a tab's close and the window's buttons are always faintly visible, not only on hover.
 - **Engine.** A one-line function definition counts as a function for the preview. Two of the colour settings were used by no rule; they are removed.
 - **Stability.** The preview keeps its selection while clangd settles; clicks are never lost; clangd restarts by itself; compile database reads are safe and writes atomic. Settling stops once the flow is stable, and calls clangd reported are not left waiting.

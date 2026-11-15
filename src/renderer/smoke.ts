@@ -701,7 +701,7 @@ export function auditGrid(): string[] {
   const view = document.querySelector('.gview .gscroll')?.getBoundingClientRect();
   if (!view) return ['no grid'];
   const opaque = (el: Element | null) => !!el && getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)' && getComputedStyle(el).backgroundColor !== 'transparent';
-  const layerOf = (e: Element) => { const c = e.closest('.gcorner'), t = e.closest('.gtot'), m = e.closest('.gmk'); return c && opaque(c) ? 5 : t && opaque(t) ? 4 : m && opaque(m) ? 3 : e.closest('.gch, .gfb') ? 2 : e.closest('.grh, .grb') ? 1 : 0; };
+  const layerOf = (e: Element) => { if (e.closest('.gtothd')) return 6; const c = e.closest('.gcorner'), t = e.closest('.gtot'), m = e.closest('.gmk'); return c && opaque(c) ? 5 : t && opaque(t) ? 4 : m && opaque(m) ? 3 : e.closest('.gch, .gfb') ? 2 : e.closest('.grh, .grb') ? 1 : 0; };
   const items = [...document.querySelectorAll('.gview .grh b, .gview .gch b, .gview .gch span, .gview .gfb, .gview .grb span, .gview .gax, .gview .gtot .t, .gview .gmk .m')]
     .map((e) => ({ r: e.getBoundingClientRect(), t: (e.textContent ?? '').replace(/​/g, '').trim().slice(0, 24), e, layer: layerOf(e) }))
     .filter((x) => x.t && x.r.width >= 1 && x.r.bottom > view.top && x.r.top < view.bottom && x.r.right > view.left && x.r.left < view.right);

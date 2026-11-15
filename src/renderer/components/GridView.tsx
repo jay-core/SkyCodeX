@@ -177,12 +177,13 @@ export default function GridView(props: { switcher: JSX.Element }) {
   let scroller!: HTMLDivElement, canvas!: HTMLDivElement;
   const [vw, setVw] = createSignal(900), [fullH, setFullH] = createSignal(600), [skyH, setSkyH] = createSignal(0), [sl, setSl] = createSignal(0), [st, setSt] = createSignal(0);
   const vh = () => fullH() - skyH();
+  const skyCover = () => { const sky = canvas?.querySelector('.ssky'); if (!sky || !scroller) return 0; const r = scroller.getBoundingClientRect(); return Math.max(0, Math.min(scroller.clientHeight, r.top + scroller.clientTop + scroller.clientHeight - sky.getBoundingClientRect().top)); };
   onMount(() => {
     let f = 0;
-    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setVw(scroller.clientWidth); setFullH(scroller.clientHeight); setSkyH(canvas.querySelector('.ssky')?.getBoundingClientRect().height ?? 0); }); });
+    const ro = new ResizeObserver(() => { cancelAnimationFrame(f); f = requestAnimationFrame(() => { setVw(scroller.clientWidth); setFullH(scroller.clientHeight); setSkyH(skyCover()); }); });
     onCleanup(() => cancelAnimationFrame(f));
     ro.observe(scroller); onCleanup(() => ro.disconnect());
-    createEffect(on(S, () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
+    createEffect(on(S, () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(skyCover()); })));
     createEffect(on([vw, keySteps, model, () => flowLinks().error], () => requestAnimationFrame(() => canvas?.querySelectorAll<HTMLElement>('.gkey').forEach(keyEdges))));
     requestAnimationFrame(() => canvas?.focus());
   });
@@ -289,6 +290,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
   const rectOf = (i: number, j: number): Rect => ({ x: side() + geo().x.at[i], y: head() + geo().y.at[j], w: geo().x.w[i] - 2, h: geo().y.w[j] - 2 });
   const totX = () => Math.min(side() + geo().x.size + TOT_GAP, sl() + vw() - tot());
   const footY = () => Math.min(head() + geo().y.size + NAME_GAP, st() + vh() - foot());
+  const footCover = () => Math.max(lay().footH, st() + vh() - footY());
   const span = (p: Pos, lo: number, hi: number) => {
     let a = 0, b = p.at.length;
     while (a < b) { const m = (a + b) >> 1; if (p.at[m] + p.w[m] < lo) a = m + 1; else b = m; }
@@ -707,11 +709,12 @@ export default function GridView(props: { switcher: JSX.Element }) {
                   <div class="gtot" style={{ left: `${totX()}px`, top: '0px', width: `${tot() - 2}px`, height: `${head() + geo().y.size + foot() + 8}px` }}>
                     <div class="gtothd" style={{ top: `${st()}px`, height: `${head() - EDGE}px` }}><div class="gax w2" style={{ left: `${NAME_GAP}px`, bottom: `${NAME_GAP - EDGE}px` }}>times called</div></div>
                     <For each={rows()}>{(r, j) => <div class="t" classList={{ pk: pick()?.r === r.key }} style={{ top: `${head() + geo().y.at[j()]}px`, height: `${geo().y.w[j()] - 2}px`, left: `${NAME_GAP}px`, gap: `${NAME_GAP}px` }}><i style={{ width: `${Math.max(4, Math.round((r.runs / maxRow()) * BAR_W))}px` }} />{timesText(r)}</div>}</For>
+                    <div class="gtothd" style={{ top: `${footY()}px`, height: `${footCover()}px` }} />
                   </div>
-                  <div class="gcorner foot" style={{ left: `${sl()}px`, top: `${footY()}px`, width: `${side() - EDGE}px`, height: `${lay().footH}px` }}>
+                  <div class="gcorner foot" style={{ left: `${sl()}px`, top: `${footY()}px`, width: `${side() - EDGE}px`, height: `${footCover()}px` }}>
                     <div class="gax" style={{ right: `${NAME_GAP}px`, bottom: `${NAME_GAP}px` }}>calls it makes →</div>
                   </div>
-                  <div class="gmk" style={{ top: `${footY()}px`, width: `${side() + geo().x.size}px`, height: `${Math.max(lay().footH, st() + vh() - footY())}px` }}>
+                  <div class="gmk" style={{ top: `${footY()}px`, width: `${side() + geo().x.size}px`, height: `${footCover()}px` }}>
                     <For each={cols()}>{(c, i) => <div class="m" classList={{ pk: pick()?.c === c.key }} style={{ left: `${side() + geo().x.at[i()]}px`, width: `${geo().x.w[i()] - 2}px`, height: `${lay().mH}px` }}><i style={{ height: `${Math.max(3, Math.round((c.count / maxCol()) * BAR_H))}px` }} />{c.count}</div>}</For>
                   </div>
                 </div>

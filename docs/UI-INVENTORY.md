@@ -497,6 +497,12 @@ of the 20,000 matches. The other limits kept but not yet said are listed in [REL
 against club 6b: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the
 same, no errors, 185 s. 308 of 392 fixed; 53 kept by verdict or not a fault; 31 open.
 
+**Found by the release's boot check (2026-11-15):** in the packaged app the grid's frozen footer stood above the
+visible bottom, so rows scrolled under it showed below it, with their names and totals: the visible height took off
+the run bars' whole height instead of the part that covers the scroll area. The overlap is now measured
+(`GridView.tsx`, `skyCover`), and the footer's corner and the totals column are covered down to it like the call counts.
+The boot check's grid audit now counts the totals heading as a cover (`smoke.ts`, `auditGrid`). Not one of the 392.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the
