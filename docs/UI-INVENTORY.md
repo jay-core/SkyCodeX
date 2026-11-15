@@ -418,6 +418,18 @@ it is now (`:33`). Checks: default, compiler and programs smoke against club 1: 
 level having `basic_string` in 7 runs and not in 2 (clangd's reply varies; the same build showed it again on a rerun);
 rules: 24 of 24 programs, every count the same, no errors. 243 of 392 fixed; 52 kept by verdict or not a fault; 97 open.
 
+**Club 3, sizes and offsets (2026-11-15):** fixed, 12. The header's height is one value (`--hdr-h`) that the page
+(`styles.css:196`) and the palette (`:348`) are placed from; the app bar's measured height places the app menu
+(`:359`) and the messages (`App.tsx:103`); the preview's split stops at the measured bar (`:326`); the slider's value
+sits 5 px above the slider's bottom, whatever its height (`:217`); the search panel leaves the split's own width
+(`App.tsx:93`, `--split-w`); the compiler window is centred by its measured width (`CompilerWindow.tsx:33`); filtered
+files are indented by the tree's own indent (`FilesPane.tsx:26`, `:79`); a repair tip that does not fit beside its row
+starts under the fix text (`repair.ts:44`); the search results' line numbers are as wide as the longest (`:721`). Kept,
+1: `styles.css:56` (`.ph` holds one line of fixed-size text and cannot grow; headings that wrap use `.ph.wrap`).
+Already fixed: `:129` (with the preview), `:798`, `:805` (C and D, with the grid). Checks against club 2: default,
+compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the same, no errors, 184 s.
+255 of 392 fixed; 53 kept by verdict or not a fault; 84 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

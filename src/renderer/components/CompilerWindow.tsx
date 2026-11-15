@@ -30,7 +30,8 @@ const stored = () => { try { return JSON.parse(localStorage.getItem('litho.compi
 export default function CompilerWindow() {
   const [info, { refetch }] = createResource(async () => (await api.compiler.info()) as Info);
   const [mini, setMini] = createSignal(false);
-  const [pos, setPos] = createSignal(stored() ?? { x: Math.max(16, (window.innerWidth - 600) / 2), y: 80 });
+  const saved = stored();
+  const [pos, setPos] = createSignal(saved ?? { x: 16, y: 80 });
   const [rel, setRel] = createSignal<Record<string, Release[] | string>>({});
   const [picking, setPicking] = createSignal(false);
   const [allRel, setAllRel] = createSignal(false);
@@ -42,7 +43,7 @@ export default function CompilerWindow() {
   onCleanup(off);
   const reach = (x: number, y: number) => ({ x: Math.min(window.innerWidth - 120, Math.max(-el.offsetWidth + 120, x)), y: Math.min(window.innerHeight - 40, Math.max(0, y)) });
   onMount(() => {
-    setPos(reach(pos().x, pos().y));
+    setPos(saved ? reach(saved.x, saved.y) : { x: Math.max(16, (window.innerWidth - el.offsetWidth) / 2), y: 80 });
     const a = el.animate([{ transform: 'translate3d(0,10px,0) scale(.985)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'backwards' });
     a.pause(); afterPaint().then(() => a.play());
   });

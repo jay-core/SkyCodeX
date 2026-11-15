@@ -38,7 +38,7 @@ export default function SearchPanel() {
         <span class="d sum" title={summary()}>{summary()}</span>
         <button class="chip" onClick={closeSearch}>{t('close')}</button>
       </div>
-      <div class="cres" ref={list}>
+      <div class="cres" ref={list} style={{ '--ln-d': String(String(result.hits.reduce((m, h) => Math.max(m, h.line + 1), 1)).length) }}>
         <For each={groups()}>{([file, idx]) => (
           <>
             <div class="grp"><b>{basename(file)}</b><span>{rel(file).slice(0, -basename(file).length)}</span><span class="grow" /><span>{idx.length}</span></div>

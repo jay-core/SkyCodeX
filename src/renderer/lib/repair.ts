@@ -41,7 +41,7 @@ function showTip(row: HTMLElement, why: string) {
   document.body.appendChild(tip);
   const r = (row.querySelector('.src') ?? row).getBoundingClientRect(), w = tip.offsetWidth;
   const beside = r.right + 24 + w <= window.innerWidth - 8;
-  tip.style.left = `${beside ? r.right + 24 : Math.max(8, row.getBoundingClientRect().left + 40)}px`;
+  tip.style.left = `${beside ? r.right + 24 : Math.max(8, (row.querySelector('.ed') ?? row).getBoundingClientRect().left)}px`;
   tip.style.top = `${beside ? r.top - 8 : row.getBoundingClientRect().bottom + 4}px`;
 }
 

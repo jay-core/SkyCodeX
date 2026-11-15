@@ -72,6 +72,14 @@ export default function App() {
   };
   onMount(() => window.addEventListener('keydown', onKey));
   onMount(() => { for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, settleToasts, true); });
+  onMount(() => {
+    const bar = document.querySelector('.appbar');
+    if (!bar) return;
+    const set = () => document.documentElement.style.setProperty('--appbar-h', `${Math.round(window.innerHeight - bar.getBoundingClientRect().top)}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(bar); ro.observe(document.documentElement); set();
+    onCleanup(() => ro.disconnect());
+  });
   onCleanup(() => { for (const ev of ['keydown', 'pointerdown'] as const) window.removeEventListener(ev, settleToasts, true); });
   onCleanup(() => window.removeEventListener('keydown', onKey));
   window.addEventListener('beforeunload', () => {  });
@@ -92,7 +100,7 @@ export default function App() {
         </Show>
         <Split onDrag={(dx) => { setFilesW(Math.max(140, filesW() - dx)); redraw(); }} />
         <div style={{ width: `${filesW()}px`, flex: 'none' }}><FilesPane /></div>
-        <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `${filesW() + 5}px`, 'z-index': 'var(--z-search-panel)' }}><SearchPanel /></div></Show>
+        <Show when={searchOpen()}><div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, right: `calc(${filesW()}px + var(--split-w))`, 'z-index': 'var(--z-search-panel)' }}><SearchPanel /></div></Show>
         <svg class="links" ref={overlay} />
       </div>
       <Show when={page() === 'flow'}><div style={{ flex: 1, 'min-height': 0 }}><Flow /></div></Show>

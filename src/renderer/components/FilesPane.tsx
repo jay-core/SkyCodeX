@@ -9,6 +9,7 @@ import { t } from '../lib/i18n';
 const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
 const [here, setHere] = createSignal('');
 const dirOf = (p: string) => p.replace(/[\\/][^\\/]*$/, '');
+const indent = (depth: number) => 12 + depth * 13;
 const inRoot = (p: string) => !!p && !!root() && (p === root() || p.startsWith(root() + '/') || p.startsWith(root() + '\\'));
 const folderNow = () => (inRoot(here()) ? here() : inRoot(files.active) ? dirOf(files.active) : root());
 const relTo = (p: string) => (p === root() ? '' : p.slice(root().length + 1).replace(/\\/g, '/'));
@@ -23,7 +24,7 @@ function Dir(props: { path: string; depth: number }) {
       const open = () => expanded().has(e.path);
       return (
         <>
-          <div class="ti" classList={{ on: files.active === e.path }} style={{ 'padding-left': `${12 + props.depth * 13}px` }}
+          <div class="ti" classList={{ on: files.active === e.path }} style={{ 'padding-left': `${indent(props.depth)}px` }}
             onClick={() => {
               if (e.dir) { const s = new Set(expanded()); s.has(e.path) ? s.delete(e.path) : s.add(e.path); setExpanded(s); setHere(e.path); }
               else { setHere(dirOf(e.path)); openFile(e.path); }
@@ -77,7 +78,7 @@ function Found() {
         <>
           <div class="ti fdir"><Marked text={d ? `${d}/` : './'} q={filter().trim()} /></div>
           <For each={fs}>{(f) => (
-            <div class="ti" classList={{ on: flat()[sel()] === f }} style={{ 'padding-left': '25px' }} onMouseEnter={() => setSel(flat().indexOf(f))}
+            <div class="ti" classList={{ on: flat()[sel()] === f }} style={{ 'padding-left': `${indent(1)}px` }} onMouseEnter={() => setSel(flat().indexOf(f))}
               onClick={() => { setHere(dirOf(f)); openFile(f); }}><Marked text={basename(f)} q={filter().trim()} /></div>
           )}</For>
         </>
