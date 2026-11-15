@@ -112,7 +112,7 @@ const sameGraph = (a: FlowGraph | null, b: FlowGraph | null) => !!a && !!b && sa
 function statusOf(g: FlowGraph): string {
   const files = g.boxes.filter((b) => !b.dead).length, stop = g.truncated ? ` · stopped at ${g.limit} functions` : '';
   return g.note || (g.library
-    ? `from the public API (${g.library} functions) · ${g.fns.length} functions reached · ${files} files${stop}`
+    ? `from the public API (${g.library} functions${g.apiLeft ? `; ${g.apiLeft} more declarations past the first 2,000 are not used` : ''}) ·${g.fns.length} functions reached · ${files} files${stop}`
     : `${g.fns.length} functions · ${files} files${stop}`);
 }
 const say = (text: string) => { if (!held) setStatus(text); };

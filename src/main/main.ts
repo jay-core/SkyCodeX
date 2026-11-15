@@ -392,7 +392,7 @@ function readWith(file: string, uri: string, text: string, langId: string, ms: n
 }
 interface Suggestion { error: { range: RDiag['range']; message: string }; edit: { from: number; to: number; insert: string }; src: string; why: string; clang: boolean; cleared: number }
 interface Tried { error: string; src: string; insert: string; cleared: number; after: string[] | null }
-async function repairCheck(file: string, uri: string, text: string, gen: number, detail: boolean): Promise<{ ok: boolean; message?: string; errors?: number; suggestions?: Suggestion[]; tries?: number; ms?: number; base?: string[]; tried?: Tried[] }> {
+async function repairCheck(file: string, uri: string, text: string, gen: number, detail: boolean): Promise<{ ok: boolean; message?: string; errors?: number; suggestions?: Suggestion[]; tries?: number; ms?: number; base?: string[]; tried?: Tried[]; checked?: number; outOfBudget?: boolean }> {
   const stale = { ok: false, message: 'stale' };
   if (gen !== checkGen) return stale;
   if (!lspCheck.running || checkRoot !== lspRoot || checkCc !== lsp.ccDir) {
@@ -407,7 +407,7 @@ async function repairCheck(file: string, uri: string, text: string, gen: number,
   const base = await readWith(file, uri, text, lang, 45000);
   if (gen !== checkGen) return stale;
   if (!base) return { ok: false, message: 'clangd did not answer' };
-  const errors = base.filter((d) => (d.severity ?? 1) === 1).slice(0, 12), starts = lineStarts(text);
+  const all = base.filter((d) => (d.severity ?? 1) === 1), errors = all.slice(0, 12), starts = lineStarts(text);
   const out: Suggestion[] = [], tried: Tried[] = [];
   let tries = 0;
   for (const d of errors) {
@@ -424,7 +424,7 @@ async function repairCheck(file: string, uri: string, text: string, gen: number,
     const best = Math.max(0, ...ok.map((s) => s.cleared));
     out.push(...ok.filter((s) => s.cleared === best).slice(0, 3));
   }
-  return { ok: true, errors: errors.length, suggestions: out, tries, ms: Date.now() - t0, ...(detail ? { base: base.map((x) => `${x.range.start.line + 1}: ${x.message}`), tried } : {}) };
+  return { ok: true, errors: all.length, checked: errors.length, outOfBudget: tries >= 40 || Date.now() - t0 > 25000, suggestions: out, tries, ms: Date.now() - t0, ...(detail ? { base: base.map((x) => `${x.range.start.line + 1}: ${x.message}`), tried } : {}) };
 }
 ipcMain.handle('repair:check', (e, file: string, uri: string, text: string, detail = false) => {
   if (fromWorker(e) || !lspRoot || !lspClangd) return { ok: false, message: 'clangd is not reading a folder' };

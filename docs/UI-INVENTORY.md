@@ -480,6 +480,17 @@ and names any limit reached: 20,000 sources, 12 folder levels, 400 header folder
 club 5: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the same, no
 errors, 184 s. 301 of 392 fixed; 53 kept by verdict or not a fault; 38 open.
 
+**Club 6b, the user's decisions (2026-11-15):** fixed, 6. Engine: the functions taken as a lock, an unlock, an
+allocation or a free can be added in the settings (`analysis.lock_calls`, `unlock_calls`, `alloc_calls`, `free_calls`;
+`flowpairs.ts`, `flowfacts.ts`, `flowrun.ts`, `settings-schema.ts`, `store.ts`, `Settings.tsx`). Limits kept, now said
+when reached: search stops at 20,000 matches and names the files over 4 MB it skipped (`main/search.ts:5`); only the
+first 50,000 files are searched, and the summary says so (`main/search.ts:29`, `SearchPanel.tsx:32`); "how they
+connect" traces the first 20 programs and says how many more are not traced (`Programs.tsx:26` with `:30`); the flow
+says how many declarations past the first 2,000 are not used (`flow.ts:80`, `flowstore.ts`); fixes are looked for in
+the first 12 errors, and the note says so, and says when the time for checking ran out (`main.ts:407`, `repair.ts`).
+Checks against club 6a: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count
+the same, no errors, 194 s. 307 of 392 fixed; 53 kept by verdict or not a fault; 32 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

@@ -31,7 +31,7 @@ export default function SearchPanel() {
     const n = `${result.matches.toLocaleString()} match${result.matches === 1 ? '' : 'es'} in ${result.files.toLocaleString()} file${result.files === 1 ? '' : 's'}`;
     if (result.error) return `the search failed: ${result.error}`;
     if (result.running) return `${result.hits.length.toLocaleString()} so far…`;
-    return `${n} · ${result.searched.toLocaleString()} files searched in ${(result.ms / 1000).toFixed(1)} s${result.capped ? ' · stopped at 20,000' : ''}`;
+    return `${n} · ${result.searched.toLocaleString()} files searched in ${(result.ms / 1000).toFixed(1)} s${result.hitsCapped ? ' · stopped at 20,000 matches' : ''}${result.filesCapped ? ' · only the first 50,000 files of the folder are searched' : ''}${result.big ? ` · ${result.big.toLocaleString()} file${result.big > 1 ? 's' : ''} over 4 MB not searched` : ''}`;
   };
   return (
     <div class="csearch" role="dialog" aria-label={t('search in the folder')} onKeyDown={key}>

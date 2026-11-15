@@ -1,5 +1,5 @@
 import type { Effects } from './flowfacts';
-import { PAIR_CALL, unclosed, Unclosed } from './flowpairs';
+import { isPairCall, unclosed, Unclosed } from './flowpairs';
 import { caseOf, exprOf, has, paramsIn, plainType, settledValue, showValue, switchArms, truthOf, valuesOf, Expr, Vals } from './flowvalues';
 
 export interface Pos { line: number; character: number }
@@ -395,7 +395,7 @@ class Analyser {
       if (ind && !sites.some((s) => s.to.project)) out.push({ t: 'indirect', via: ind, text: callee?.range ? this.oneLine(callee.range) : '', at: n.range!.start });
       if (!ind && !sites.length) { const nm = calleeName(callee); if (nm) this.unlisted.add(nm.replace(/^.*::/, '')); }
       const never = NORETURN.test((callee as { arcana?: string } | undefined)?.arcana ?? '') || NORETURN.test((unwrap(callee) as { arcana?: string } | undefined)?.arcana ?? '');
-      const kept = sites.some((x) => x.to.project || PAIR_CALL.test(x.to.name.replace(/^.*::/, ''))) ? this.written(n, callee) : {};
+      const kept = sites.some((x) => x.to.project || isPairCall(x.to.name.replace(/^.*::/, ''))) ? this.written(n, callee) : {};
       for (const s of sites) out.push({ t: 'call', to: s.to, at: s.at, ...(never ? { noreturn: true } : {}), ...kept });
       return;
     }

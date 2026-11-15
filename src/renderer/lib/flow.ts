@@ -16,7 +16,7 @@ export interface LaneLink { from: string; to: string; kind: 'starts' | 'shares';
 export interface FlowGraph {
   boxes: FlowBox[]; edges: FlowEdge[]; fns: FlowFn[]; entries: { file: string; label: string }[];
   lanes: FlowLane[]; links: LaneLink[]; shared: string[];
-  note: string; truncated: boolean; limit: number; unresolved: number; library: number; ms: number;
+  note: string; truncated: boolean; limit: number; unresolved: number; library: number; apiLeft?: number; ms: number;
 }
 
 const texts = new Map<string, { text: string; tree: Tree | null }>();
@@ -78,6 +78,7 @@ export async function resolveEntry(e: Entry): Promise<CallItem> {
 
 const PUBLIC_DIR = /^(inc|include|includes|public|api)$/i;
 const MAX_API = 2000;
+let apiLeft = 0;
 
 async function findApi(root: string): Promise<CallItem[]> {
   const headers = ((await api.fs.sources(root)) as string[]).filter((f) => {
@@ -86,9 +87,10 @@ async function findApi(root: string): Promise<CallItem[]> {
     return dirs.slice(0, 2).some((d) => PUBLIC_DIR.test(d)) && !dirs.some((d) => /^(tests?|examples?|samples?|third[_-]?party|external|vendor)$/i.test(d));
   });
   const decls: { file: string; pos: Pos }[] = [];
+  apiLeft = 0;
   const walk = (file: string, list: DocSymbol[]) => {
     for (const s of list) {
-      if ((s.kind === 6 || s.kind === 12) && !/^(~|operator\b)/.test(s.name) && decls.length < MAX_API) decls.push({ file, pos: s.selectionRange.start });
+      if ((s.kind === 6 || s.kind === 12) && !/^(~|operator\b)/.test(s.name)) { if (decls.length < MAX_API) decls.push({ file, pos: s.selectionRange.start }); else apiLeft++; }
       if (s.children?.length) walk(file, s.children);
     }
   };
@@ -423,7 +425,7 @@ export async function buildFlow(root: string, onProgress?: (n: number) => void, 
   const unresolved = [...fns.values()].filter((f) => HEADER.test(f.file) && f.item.range.end.line === f.item.range.start.line && !nodes.get(f.key)?.calls.length).length;
   return {
     boxes, edges: [...edgeMap.values()], fns: [...fns.values()], entries: entryLabels, lanes, links, shared,
-    note, truncated, limit: LIMIT, unresolved, library: apiItems.length, ms: Math.round(performance.now() - t0),
+    note, truncated, limit: LIMIT, unresolved, library: apiItems.length, apiLeft: mains.length ? 0 : apiLeft, ms: Math.round(performance.now() - t0),
   };
 }
 

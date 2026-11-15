@@ -1,4 +1,5 @@
 import type { AstNode, Pos, Range } from './flowrun';
+import { extraNames } from './flowpairs';
 
 export interface Effects {
   owner?: string;
@@ -77,9 +78,9 @@ export function effects(fn: AstNode, text: string): Effects {
     if (n.kind === 'Var' && LOCK_TYPE.test(arc(n))) add(out.locks, src(n.range).replace(/^.*?[({]\s*/, '').replace(/\s*[)}].*$/, '') || n.detail || 'a lock');
     if (n.kind === 'Call' || n.kind === 'CXXMemberCall') {
       const callee = calleeName(n);
-      if (callee && LOCK_CALL.test(callee)) add(out.locks, firstArg(n, src) || callee);
+      if (callee && (LOCK_CALL.test(callee) || extraNames.lock.has(callee))) add(out.locks, firstArg(n, src) || callee);
       if (callee === 'lock' && n.kind === 'CXXMemberCall') add(out.locks, src(kids(kids(n)[0] ?? ({} as AstNode))[0]?.range) || 'a lock');
-      if (callee && ALLOC_CALL.test(callee)) add(out.allocates, callee);
+      if (callee && (ALLOC_CALL.test(callee) || extraNames.alloc.has(callee))) add(out.allocates, callee);
       let s: AstNode = n, p = parent.get(n);
       while (p && (p.kind === 'ExprWithCleanups' || p.kind === 'CXXBindTemporary' || p.kind === 'MaterializeTemporary')) { s = p; p = parent.get(p); }
       const at = calleeAt(n);

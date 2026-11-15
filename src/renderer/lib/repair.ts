@@ -16,8 +16,8 @@ const dropFix = StateEffect.define<number>();
 const applied = StateEffect.define<number>();
 const dismissed = new Map<string, Set<string>>();
 const errorsIn = new Map<string, number>();
-function noteFor(file: string, n: number, fixes: number) {
-  setRepairNote({ file, text: n ? `${n} ${n === 1 ? t('error') : t('errors')} · ${fixes ? `${fixes} ${fixes === 1 ? t('fix') : t('fixes')} ${t('found, each checked with clangd')}` : t('no fix found')}` : '' });
+function noteFor(file: string, n: number, fixes: number, more = '') {
+  setRepairNote({ file, text: n ? `${n} ${n === 1 ? t('error') : t('errors')} · ${fixes ? `${fixes} ${fixes === 1 ? t('fix') : t('fixes')} ${t('found, each checked with clangd')}` : t('no fix found')}${more}` : '' });
 }
 let nextId = 1;
 
@@ -167,7 +167,8 @@ const checker = (file: string) => ViewPlugin.fromClass(class {
     }).filter((f) => !gone.has(f.key));
     view.dispatch({ effects: setFixes.of(fixes) });
     errorsIn.set(file, r.errors ?? 0);
-    noteFor(file, r.errors ?? 0, fixes.length);
+    const extra = r as { checked?: number; outOfBudget?: boolean };
+    noteFor(file, r.errors ?? 0, fixes.length, `${extra.checked != null && extra.checked < (r.errors ?? 0) ? ` · ${t('fixes were looked for in the first')} ${extra.checked}` : ''}${extra.outOfBudget ? ` · ${t('the time for checking ran out')}` : ''}`);
   }
   destroy() { this.dead = true; clearTimeout(this.timer); this.off(); hideTip(); }
 });

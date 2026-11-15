@@ -6,6 +6,7 @@ import { api, basename, normPath } from './api';
 import { setPowerPrefs } from './power';
 import { setPalette } from './lines';
 import { SETTINGS as ALL_SETTINGS } from '../../shared/settings-schema';
+import { setExtraNames } from '../../shared/flowpairs';
 
 const COLOR_DEFS = ALL_SETTINGS.filter((d) => d.type === 'color');
 import { noteText } from './langs';
@@ -38,6 +39,8 @@ export const setStateFactory = (f: typeof makeState) => { makeState = f; };
 
 export function applySettings(s: Settings, p: Problem[]) {
   setSettingsSig(s); setProblems(p);
+  const names = (k: string) => String(s[k] ?? '').split(/[,\s]+/).filter(Boolean);
+  setExtraNames({ lock: names('analysis.lock_calls'), unlock: names('analysis.unlock_calls'), alloc: names('analysis.alloc_calls'), free: names('analysis.free_calls') });
   const r = document.documentElement.style;
   r.setProperty('--code-size', `${s['font.size']}px`);
   r.setProperty('--code-lh', String(s['font.line_height']));

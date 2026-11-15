@@ -15,25 +15,25 @@ export interface SettingDef {
   label?: string;
 }
 
-export const SECTIONS: { name: string; doc: string }[] = [
-  { name: 'font', doc: 'Code font. Every installed font can be used.' },
-  { name: 'font.ui', doc: 'Interface font.' },
-  { name: 'font.preview', doc: 'Preview panes inherit the code font, then apply these.' },
-  { name: 'theme', doc: 'Appearance.' },
-  { name: 'ui', doc: 'Accessibility.' },
-  { name: 'editor', doc: 'Editing behaviour.' },
-  { name: 'preview', doc: 'Preview panes.' },
-  { name: 'window', doc: 'Window frame.' },
-  { name: 'clangd', doc: 'C/C++ language engine.' },
-  { name: 'compiler', doc: 'Toolchains, the compiler the code is read as, and language packs (the compiler window).' },
-  { name: 'motion', doc: 'Animation.' },
-  { name: 'colors.editor', doc: 'Colours of the whole window: backgrounds, text, gutter, selection.' },
-  { name: 'colors.code', doc: 'Colours of code, in the editor and in every preview card.' },
-  { name: 'colors.diagnostics', doc: 'Errors, warnings and notes from clangd.' },
-  { name: 'colors.cards', doc: 'Preview cards take these in turn; each call is outlined in its card’s colour.' },
-  { name: 'colors.flow', doc: 'The flow views: the step you are on, repetition, risk.' },
-  { name: 'power', doc: 'Running on battery.' },
-];
+export const SECTIONS: { name: string; doc: string }[] = `font | Code font. Every installed font can be used.
+font.ui | Interface font.
+font.preview | Preview panes inherit the code font, then apply these.
+theme | Appearance.
+ui | Accessibility.
+editor | Editing behaviour.
+preview | Preview panes.
+window | Window frame.
+clangd | C/C++ language engine.
+compiler | Toolchains, the compiler the code is read as, and language packs (the compiler window).
+analysis | Functions the flow treats as taking or releasing a lock, or allocating or freeing memory, besides its built-in lists.
+motion | Animation.
+colors.editor | Colours of the whole window: backgrounds, text, gutter, selection.
+colors.code | Colours of code, in the editor and in every preview card.
+colors.diagnostics | Errors, warnings and notes from clangd.
+colors.cards | Preview cards take these in turn; each call is outlined in its card’s colour.
+colors.flow | The flow views: the step you are on, repetition, risk.
+power | Running on battery.
+`.trim().split("\n").map((l) => { const [name, doc] = l.split(" | "); return { name, doc }; });
 
 export const SETTINGS: SettingDef[] = [
   { key: 'font.family', type: 'string', default: 'ArX F1', doc: 'any installed font' },
@@ -57,6 +57,10 @@ export const SETTINGS: SettingDef[] = [
   { key: 'preview.include_other', type: 'boolean', default: true, doc: 'after the functions: macros, static_assert, lambdas and calls through pointers' },
   { key: 'preview.max_cards', type: 'number', default: 12, min: 1, max: 100, doc: 'per level; the rest fold into "+N more"', unit: 'cards' },
   { key: 'window.chrome', type: 'enum', default: 'minimal', values: ['minimal', 'native'], doc: 'native uses the system title bar · restart to apply' },
+  { key: 'analysis.lock_calls', type: 'string', default: '', doc: 'more functions that take a lock, comma-separated, added to the built-in list · on the next refresh' },
+  { key: 'analysis.unlock_calls', type: 'string', default: '', doc: 'more functions that release a lock, comma-separated · on the next refresh' },
+  { key: 'analysis.alloc_calls', type: 'string', default: '', doc: 'more functions that allocate memory, comma-separated · on the next refresh' },
+  { key: 'analysis.free_calls', type: 'string', default: '', doc: 'more functions that free memory, comma-separated · on the next refresh' },
   { key: 'clangd.path', type: 'string', default: 'auto', doc: '"auto" (inbuilt, else the system\'s), "inbuilt", "system", "pack:<id>" or a path' },
   { key: 'compiler.toolchain', type: 'string', default: 'auto', doc: 'its standard headers are indexed with the project: "auto" (newest pack), "none" or a pack id' },
   { key: 'compiler.read_as', type: 'enum', default: 'clang', values: ['clang', 'gcc', 'msvc'], doc: 'the compiler the code is read as, with its headers and macros: "gcc" asks g++, "msvc" uses Visual Studio\'s cl.exe · a project\'s own compile_commands.json keeps its compilers' },

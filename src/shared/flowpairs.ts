@@ -9,6 +9,12 @@ const KINDS: Kind[] = [
   { what: 'folder', by: 'result', open: /^(?:opendir|fdopendir)$/, close: /^closedir$/ },
 ];
 const MEMBER_LOCK = /^(?:lock|lock_shared)$/, MEMBER_UNLOCK = /^(?:unlock|unlock_shared)$/;
+export type NameList = 'lock' | 'unlock' | 'alloc' | 'free';
+export const extraNames: Record<NameList, Set<string>> = { lock: new Set(), unlock: new Set(), alloc: new Set(), free: new Set() };
+export function setExtraNames(lists: Record<NameList, string[]>) { for (const k of Object.keys(extraNames) as NameList[]) extraNames[k] = new Set(lists[k]); }
+const extraOpen = (k: Kind, name: string) => (k.what === 'lock' && extraNames.lock.has(name)) || (k.what === 'memory' && extraNames.alloc.has(name));
+const extraClose = (k: Kind, name: string) => (k.what === 'lock' && extraNames.unlock.has(name)) || (k.what === 'memory' && extraNames.free.has(name));
+export const isPairCall = (name: string) => PAIR_CALL.test(name) || Object.values(extraNames).some((s) => s.has(name));
 
 export const PAIR_CALL = new RegExp(`${KINDS.flatMap((k) => [k.open.source, k.close.source]).join('|')}|^(?:lock|lock_shared|unlock|unlock_shared)$`);
 
@@ -32,7 +38,7 @@ function role(n: Extract<FlowNode, { t: 'call' }>, stmt: string): { open: boolea
   const name = n.to.name.replace(/^.*::/, '');
   if (n.obj != null && (MEMBER_LOCK.test(name) || MEMBER_UNLOCK.test(name)) && /mutex/i.test(n.to.container)) return { open: MEMBER_LOCK.test(name), what: 'lock', name: n.obj };
   for (const k of KINDS) {
-    const open = k.open.test(name), close = k.close.test(name);
+    const open = k.open.test(name) || extraOpen(k, name), close = k.close.test(name) || extraClose(k, name);
     if (!open && !close) continue;
     if (k.by === 'arg' || close) { const a = n.args?.[0]; return a ? { open, what: k.what, name: norm(a) } : null; }
     const m = /(?:^|[^=!<>])\b([A-Za-z_]\w*(?:(?:\.|->)[A-Za-z_]\w*)*)\s*(?:\[[^\]]*\])?\s*=(?!=)[^;]*\b\w*\(/.exec(stmt);

@@ -25,11 +25,12 @@ export default function Programs(props: { switcher: unknown }) {
   const flat = createMemo(() => [...(q().trim() ? [] : [lane()]), ...groups().flatMap((g) => g.shown)]);
   const pick = (i: number) => { setPrograms(false); setLane(i); };
   const CONNECT_MAX = 20;
-  const [sharedAll, setSharedAll] = createSignal(false);
+  const [sharedAll, setSharedAll] = createSignal(false), [left, setLeft] = createSignal(0);
   const [links, setLinks] = createSignal<{ busy: string; starts: string[]; shared: { file: string; by: string[] }[]; of: number; error?: string } | null>(null);
   async function connect() {
     const qq = q().trim();
-    const list = entries().map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'interrupt' && (!qq || matchesIn(`${e.label} ${e.rel}`, qq, 1).length)).slice(0, CONNECT_MAX);
+    const every = entries().map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'interrupt' && (!qq || matchesIn(`${e.label} ${e.rel}`, qq, 1).length)), list = every.slice(0, CONNECT_MAX);
+    setLeft(every.length - list.length);
     if (list.length < 2) { setLinks({ busy: '', starts: [], shared: [], of: list.length }); return; }
     setSharedAll(false);
     setLinks({ busy: `tracing ${list.length} programs…`, starts: [], shared: [], of: list.length });
@@ -83,7 +84,7 @@ export default function Programs(props: { switcher: unknown }) {
             <div class="plinks">
               <Show when={l().busy || l().error} fallback={<>
                 <Show when={l().of >= 2} fallback={<div class="grp"><b>{l().of === 1 ? 'one program' : 'no programs'} listed</b><span>— connecting needs two or more{q().trim() ? ' · clear or widen the filter' : ''}</span></div>}>
-                  <div class="grp"><b>how {l().of} programs connect</b><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
+                  <div class="grp"><b>how {l().of} programs connect</b><Show when={left()}><span>— the first {CONNECT_MAX}; {left()} more are not traced · filter to choose others</span></Show><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
                 </Show>
                 <For each={l().starts}>{(t) => <div class="pl">{t}</div>}</For>
                 <Show when={l().shared.length}><div class="pl sub">{l().shared.length} file{l().shared.length > 1 ? 's' : ''} shared:</div></Show>
