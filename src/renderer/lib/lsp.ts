@@ -11,6 +11,7 @@ import * as other from './langlsp';
 export const [lspState, setLspState] = createSignal<'off' | 'starting' | 'ready' | 'failed'>('off');
 export const [lspMessage, setLspMessage] = createSignal('');
 export const [indexing, setIndexing] = createSignal<string | null>(null);
+export const [indexProgress, setIndexProgress] = createSignal<{ done?: number; of?: number; pct?: number } | null>(null);
 export const [indexEpoch, setIndexEpoch] = createSignal(0);
 
 const versions = new Map<string, number>();
@@ -40,9 +41,13 @@ api.lsp.onNotify((method, params) => {
     for (const cb of diagWatchers) cb(file);
   } else if (method === '$/progress') {
     const v = params.value ?? {};
-    if (v.kind === 'begin') setIndexing(v.title ?? 'indexing');
-    else if (v.kind === 'report') setIndexing(`${v.title ?? 'indexing'}${v.percentage != null ? ` ${v.percentage}%` : ''}${v.message ? ` · ${v.message}` : ''}`);
-    else if (v.kind === 'end') { setIndexing(null); defCache.clear(); setIndexEpoch((n) => n + 1); }
+    if (v.kind === 'begin') { setIndexing(v.title ?? 'indexing'); setIndexProgress(null); }
+    else if (v.kind === 'report') {
+      setIndexing(`${v.title ?? 'indexing'}${v.percentage != null ? ` ${v.percentage}%` : ''}${v.message ? ` · ${v.message}` : ''}`);
+      const m = /^(\d+)\/(\d+)$/.exec(String(v.message ?? '').trim());
+      setIndexProgress({ ...(m ? { done: +m[1], of: +m[2] } : {}), ...(v.percentage != null ? { pct: +v.percentage } : {}) });
+    }
+    else if (v.kind === 'end') { setIndexing(null); setIndexProgress(null); defCache.clear(); setIndexEpoch((n) => n + 1); }
   } else if (method === '$/exit') {
     const now = Date.now();
     while (stops.length && now - stops[0] > 60_000) stops.shift();

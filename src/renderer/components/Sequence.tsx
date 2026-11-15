@@ -15,6 +15,7 @@ import { hlLine } from '../lib/hlcode';
 import StepPreview, { openStep, StepSplit, junctionPick, setJunctionPick, junctionNav } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
+import LoadBar from './LoadBar';
 import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
@@ -764,6 +765,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             <Show when={analysisNote()}>{(a) => <span class="seqchg warn" title={a().full}>{a().text}</span>}</Show>
             <Show when={rippleNote()}><span class="seqchg" title={rippleNote()!.full}>{rippleNote()!.text}</span></Show>
           </Show>
+          <LoadBar />
           <span class="grow" />
           <Show when={header() && runStatus()}><span class="sub">{runStatus()}</span></Show>
           <Show when={found().length}>

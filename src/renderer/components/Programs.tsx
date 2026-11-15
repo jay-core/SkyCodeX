@@ -5,6 +5,7 @@ import { root } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { matchesIn } from '../../shared/search';
 import { Marked } from './FilesPane';
+import LoadBar from './LoadBar';
 
 const FIRST = 3;
 
@@ -67,6 +68,7 @@ export default function Programs(props: { switcher: unknown }) {
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <span style={{ color: 'var(--bright)' }}>all programs · {entries().length} entry points</span>
+          <LoadBar />
           <span class="sub" style={{ 'margin-left': '14px' }}>{status()}</span>
           <span class="grow" />
           <button class="chip" classList={{ on: !!links() }} title={`trace the programs listed (up to ${CONNECT_MAX}) to see which starts which and the files they share`} onClick={() => (links() && !links()!.busy ? setLinks(null) : connect())}>how they connect</button>

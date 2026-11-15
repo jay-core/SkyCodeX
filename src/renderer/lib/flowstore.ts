@@ -5,7 +5,8 @@ import type { Hit } from '../../shared/flowwatch';
 import { rankEntries } from '../../shared/entries';
 import { root, files, states } from './store';
 import { api } from './api';
-import { lspState, indexEpoch, indexing, projectRoot } from './lsp';
+import { lspState, indexEpoch, indexing, indexProgress, projectRoot } from './lsp';
+import { ready, type LoadInputs, type LoadPart } from './loadbar';
 import { buildSeq, startState, move, Move, Seq, StepState } from '../../shared/flowseq';
 import { alignRuns, alignChange, functionTexts, Side } from '../../shared/flowalign';
 import { t } from './i18n';
@@ -70,22 +71,28 @@ export async function rebuild(): Promise<void> {
     builtFor = root();
     builtEpoch = indexEpoch();
     const fp = api.flow.fingerprint(root()), from = chosen, refining = !!graph();
+    counting = !settlingNow() && !retrying();
+    mark('entry', { state: 'run' });
     say(refining ? 'refining as clangd indexes…' : t('finding entry points…'));
     const found = rankEntries(await findEntries(root()));
+    mark('entry', { state: 'done' });
     const i = Math.max(0, found.findIndex((e) => entryKey(e) === chosen));
     if (!held) { if (!sameJson(found, entries())) setEntries(found); setLaneRaw(i); }
     const e = found[i];
     const start = e ? await resolveEntry(e) : null;
     const what = e ? `${e.name === 'main' ? '' : `${e.name} in `}${e.label}` : 'the public API';
     say(refining ? 'refining as clangd indexes…' : `tracing calls from ${what}…`);
-    const g = await buildFlow(root(), (n) => say(refining ? `refining as clangd indexes… · ${n} functions` : `tracing calls from ${what}… ${n} functions`), start ? [start] : []);
+    mark('trace', { state: 'run', done: 0 });
+    const g = await buildFlow(root(), (n) => { mark('trace', { state: 'run', done: n }); say(refining ? `refining as clangd indexes… · ${n} functions` : `tracing calls from ${what}… ${n} functions`); }, start ? [start] : []);
+    mark('trace', { state: 'done', done: g.fns.length });
     live = { g, run: null, entries: found, lane: i, fp: await fp, chosen: from };
     if (!held) { if (!sameGraph(g, graph())) setGraph(g); setStatus(statusOf(g)); }
     await buildLaneRun(g);
     const missing = live?.run?.unlisted ?? [];
     if (missing.length && !settlingNow() && `${signature(g)}~${missing.join()}` !== stuck) void rebuildSettled();
-    if (g.unresolved && Date.now() - firstBuild < 30000) { clearTimeout(retryTimer); retryTimer = window.setTimeout(() => { retryTimer = 0; void rebuild(); }, 2000); }
+    if (g.unresolved && Date.now() - firstBuild < 30000) { clearTimeout(retryTimer); setRetrying(true); retryTimer = window.setTimeout(() => { retryTimer = 0; void rebuild(); }, 2000); }
   } catch (e) {
+    if (counting) setLoad((l) => ({ entry: ended(l.entry), trace: ended(l.trace), read: ended(l.read) }));
     const why = String((e as Error)?.message ?? e).split('\n')[0];
     setRunStatus('');
     if (held) { clearTimeout(holdTimer); setStatus(`${statusOf(held.graph)} · as last time · could not check it: ${why}`); }
@@ -93,6 +100,8 @@ export async function rebuild(): Promise<void> {
     void api.log(`flow build: ${String((e as Error)?.stack ?? e)}`);
   } })();
   try { await building; } finally { building = null; }
+  setBuiltRoot(builtFor);
+  if (!retryTimer) setRetrying(false);
   if (again) { again = false; await rebuild(); }
   void checkpoint();
 }
@@ -108,6 +117,19 @@ function statusOf(g: FlowGraph): string {
 }
 const say = (text: string) => { if (!held) setStatus(text); };
 let retryTimer = 0;
+export const [retrying, setRetrying] = createSignal(false);
+const IDLE = { entry: { state: 'wait' }, trace: { state: 'wait' }, read: { state: 'wait' } } as const satisfies Record<string, LoadPart>;
+export const [load, setLoad] = createSignal<{ entry: LoadPart; trace: LoadPart; read: LoadPart }>(IDLE);
+export const [settlePass, setSettlePass] = createSignal(0);
+export const [builtRoot, setBuiltRoot] = createSignal('');
+export const loadInputs = (): LoadInputs => ({ lsp: lspState(), built: builtRoot() === root(), indexing: !!indexing(), index: indexProgress(), settling: settlingNow(), retrying: retrying(), ...load() });
+let counting = true;
+const ended = (p: LoadPart): LoadPart => (p.state === 'run' ? { ...p, state: 'done' } : p);
+function mark(k: 'entry' | 'trace' | 'read', p: LoadPart) {
+  if (!counting) return;
+  const fresh = p.state === 'run' && load()[k].state !== 'run' && ready(loadInputs());
+  setLoad((l) => (fresh ? { ...IDLE, [k]: p } : { ...l, [k]: { ...l[k], ...p } }));
+}
 
 declare const __ANALYSER__: string;
 interface Kept { analyser: string; fp: string; entries: Entry[]; lane: number; graph: FlowGraph; run: Run }
@@ -162,12 +184,14 @@ export const [settlingNow, setSettlingNow] = createSignal(false);
 export async function rebuildSettled(): Promise<void> {
   const mine = ++settling, until = Date.now() + 60000;
   setSettlingNow(true);
+  setSettlePass(1);
   try {
     await rebuild();
     while (mine === settling && Date.now() < until) {
       const before = signature(live?.g ?? null);
       await new Promise((r) => setTimeout(r, 2000));
       if (mine !== settling) return;
+      setSettlePass((n) => n + 1);
       await rebuild();
       if (signature(live?.g ?? null) === before && !live?.run?.unlisted?.length) return;
     }
@@ -180,7 +204,9 @@ async function buildLaneRun(g: FlowGraph) {
   const l = g.lanes[0];
   if (!l) { if (!held) { setSeq(null); setTrail([]); } return; }
   if (!held) setRunStatus(t('reading each function…'));
-  const run = await buildRun(l.start, (d, n) => { if (!held) setRunStatus(`reading each function… ${d} of ${n}`); });
+  mark('read', { state: 'run' });
+  const run = await buildRun(l.start, (d, n) => { mark('read', { state: 'run', done: d, of: n }); if (!held) setRunStatus(`reading each function… ${d} of ${n}`); });
+  mark('read', { state: 'done' });
   if (live?.g === g) live.run = run;
   if (!held) showRun(run);
   setRunStatus('');

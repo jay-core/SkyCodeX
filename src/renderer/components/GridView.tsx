@@ -14,6 +14,7 @@ import { routesBetween, frameWords, RouteInfo } from '../../shared/flowboxes';
 import StepPreview, { openStep, StepSplit, stepW, setGridPick } from './StepPreview';
 import Magnifier from './Magnifier';
 import PlayControls from './PlayControls';
+import LoadBar from './LoadBar';
 import { Skyline } from './Sequence';
 
 const GAP = 4;
@@ -584,6 +585,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
           <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd" title={header()}><i class="selmk" />{header()}</span></Show>
           <Show when={analysisNote()}>{(a) => <span class="seqchg warn" title={a().full}>{a().text}</span>}</Show>
           <Show when={entryUses()}>{(u) => <span class="seqchg" title={`${u().name} uses ${u().names}: short helpers, folded into its step`}>{u().name} uses {u().names}</span>}</Show>
+          <LoadBar />
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()} restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />

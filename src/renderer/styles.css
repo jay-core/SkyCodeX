@@ -39,7 +39,7 @@
   --z-start-window: 32;
   --z-app-menu: 35; --z-engine-window: 35;
   --z-metro-find-list: 40; --z-toast: 40;
-  --z-repair-tip: 50; --z-glide: 50;
+  --z-repair-tip: 50; --z-glide: 50; --z-load-tip: 50;
   --z-magnifier: 60;
   --hdr-h: 56px; --split-w: 5px;
 }
@@ -80,6 +80,11 @@ input, select { font: inherit; color: var(--bright); }
 .ph { height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; font: 300 15px var(--ui); color: #4f564f; white-space: nowrap; }
 .ph .grow { flex: 1; }
 .ph.wrap, .ph.fwrap { height: auto; min-height: 36px; flex-wrap: wrap; row-gap: 2px; }
+.lbar { display: inline-flex; flex: none; padding: 2px 3px; border: 1px solid #2e322e; transition: opacity .6s; }
+.lbar.out { opacity: 0; pointer-events: none; }
+.lbar canvas { display: block; width: 292px; height: 15px; }
+.lbartip { position: fixed; z-index: var(--z-load-tip); max-width: 340px; padding: 7px 10px 8px; background: var(--pop); border: 1px solid #3a3f3a; box-shadow: 0 4px 14px rgba(0, 0, 0, .45); font: 300 12px var(--ui); color: var(--fg); line-height: 1.45; white-space: normal; pointer-events: none; }
+.lbartip .lbt { color: #6f766f; margin-bottom: 3px; } .lbartip .lbt b { font: 400 12.5px var(--ui); color: #c9cec6; }
 .toasts { position: fixed; right: 18px; bottom: calc(var(--appbar-h, 48px) + 4px); z-index: var(--z-toast); display: grid; gap: 8px; max-height: 60vh; overflow-y: auto; }
 .toastrow { display: flex; align-items: flex-start; gap: 10px; max-width: 460px; background: var(--pop); padding: 10px 10px 10px 14px; box-shadow: 0 18px 40px rgba(0,0,0,.5); }
 .toastrow .toast { font: 300 13.5px/1.5 var(--ui); color: var(--bright); min-width: 0; overflow-wrap: anywhere; }
