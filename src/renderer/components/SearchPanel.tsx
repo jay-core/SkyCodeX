@@ -6,20 +6,20 @@ import { Marked } from './FilesPane';
 import { SKIPPED_NOTE } from '../../shared/search';
 import { t } from '../lib/i18n';
 
-const SHOWN = 3000;
+const STEP = 3000;
 
 export default function SearchPanel() {
   let input!: HTMLInputElement, list!: HTMLDivElement;
-  const [sel, setSel] = createSignal(0);
+  const [sel, setSel] = createSignal(0), [shown, setShown] = createSignal(STEP);
   const rel = (f: string) => (f.startsWith(root() + '/') ? f.slice(root().length + 1) : f);
   const groups = createMemo(() => {
     const g = new Map<string, number[]>();
-    result.hits.slice(0, SHOWN).forEach((h, i) => g.set(h.file, [...(g.get(h.file) ?? []), i]));
+    result.hits.slice(0, shown()).forEach((h, i) => g.set(h.file, [...(g.get(h.file) ?? []), i]));
     return [...g];
   });
   const open = (i: number) => { const h = result.hits[i]; if (h) { closeSearch(); openFile(h.file, { line: h.line, character: h.col }); } };
   const key = (e: KeyboardEvent) => {
-    const n = Math.min(SHOWN, result.hits.length);
+    const n = Math.min(shown(), result.hits.length);
     if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(n - 1, sel() + 1)); list.querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, sel() - 1)); list.querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
@@ -36,7 +36,7 @@ export default function SearchPanel() {
   return (
     <div class="csearch" role="dialog" aria-label={t('search in the folder')} onKeyDown={key}>
       <div class="q"><span class="d">⌕</span>
-        <input ref={input} value={query()} placeholder={t('search in the folder')} spellcheck={false} onInput={(e) => { setSel(0); runSearch(e.currentTarget.value); }} />
+        <input ref={input} value={query()} placeholder={t('search in the folder')} spellcheck={false} onInput={(e) => { setSel(0); setShown(STEP); runSearch(e.currentTarget.value); }} />
         <span class="d sum" title={`${summary()} · ${SKIPPED_NOTE}`}>{summary()}</span>
         <button class="chip" onClick={closeSearch}>{t('close')}</button>
       </div>
@@ -51,7 +51,7 @@ export default function SearchPanel() {
             )}</For>
           </>
         )}</For>
-        <Show when={result.hits.length > SHOWN}><div class="grp">{`${(result.hits.length - SHOWN).toLocaleString()} more — narrow the search`}</div></Show>
+        <Show when={result.hits.length > shown()}><button class="grp lnk" onClick={() => setShown(shown() + STEP)}>{`${(result.hits.length - shown()).toLocaleString()} more · show ${Math.min(STEP, result.hits.length - shown()).toLocaleString()} more, or narrow the search`}</button></Show>
       </div>
     </div>
   );

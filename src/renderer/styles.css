@@ -685,6 +685,8 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .cres .grp { display: flex; gap: 10px; align-items: baseline; margin: 12px 0 2px; font: 300 12.5px var(--ui); color: var(--dim); }
 .cres .grp b { font-weight: 400; color: var(--fg); }
 .cres .grp .grow { flex: 1; }
+.cres .grp.lnk { background: none; border: 0; padding: 0; cursor: pointer; color: var(--link); text-align: left; }
+.cres .grp.lnk:hover { text-decoration: underline; }
 .cres .hit { display: flex; gap: 14px; align-items: baseline; height: 23px; font: 12.5px var(--mono); color: var(--fg); cursor: default; }
 .cres .hit .ln { width: max(46px, calc(var(--ln-d, 1) * 1ch + 12px)); text-align: right; color: var(--faint); flex: none; }
 .cres .hit.on { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 3px 0 var(--accent); color: var(--bright); }

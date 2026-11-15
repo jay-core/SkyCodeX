@@ -491,6 +491,12 @@ the first 12 errors, and the note says so, and says when the time for checking r
 Checks against club 6a: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count
 the same, no errors, 194 s. 307 of 392 fixed; 53 kept by verdict or not a fault; 32 open.
 
+**Club 6c (2026-11-15):** fixed, 1. E± `SearchPanel.tsx:8` with `:16`: the hits past the first 3,000 open 3,000 at a
+time with "show more" instead of only being counted. `search.ts:14` is not reached: its one caller passes what is left
+of the 20,000 matches. The other limits kept but not yet said are listed in [RELEASE-1.2.md](RELEASE-1.2.md). Checks
+against club 6b: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the
+same, no errors, 185 s. 308 of 392 fixed; 53 kept by verdict or not a fault; 31 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the
