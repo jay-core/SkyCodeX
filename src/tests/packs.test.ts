@@ -76,7 +76,7 @@ describe('unpacking stays inside its folder', () => {
     );
     const s = await extractTar(Readable.from([archive]), d);
     expect(fs.readFileSync(path.join(d, 'pack/bin/clang'), 'utf8')).toContain('echo hi');
-    expect(fs.statSync(path.join(d, 'pack/bin/clang')).mode & 0o111).not.toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(d, 'pack/bin/clang')).mode & 0o111).not.toBe(0);
     expect(fs.readlinkSync(path.join(d, 'pack/bin/clang++'))).toBe('clang');
     expect(fs.readFileSync(path.join(d, long), 'utf8')).toBe('long name kept');
     expect(fs.readFileSync(path.join(d, 'pack/hard'), 'utf8')).toContain('echo hi');
@@ -107,7 +107,7 @@ describe('unpacking stays inside its folder', () => {
     ]));
     const s = await extractZip(f, out);
     expect(fs.readFileSync(path.join(out, 'top/bin/clangd'), 'utf8')).toBe('bin');
-    expect(fs.statSync(path.join(out, 'top/bin/clangd')).mode & 0o111).not.toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(out, 'top/bin/clangd')).mode & 0o111).not.toBe(0);
     expect(fs.readlinkSync(path.join(out, 'top/bin/link'))).toBe('clangd');
     expect(fs.existsSync(path.join(out, 'top/bin/evil-link'))).toBe(false);
     expect(fs.existsSync(path.join(d, 'zip-escape.txt'))).toBe(false);

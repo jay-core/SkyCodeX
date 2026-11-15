@@ -9,7 +9,7 @@ import { LspClient, findClangd } from '../main/lsp';
 const SAMPLE = path.resolve(__dirname, '../../samples/tinyhttp');
 
 beforeAll(() => {
-  if (!fs.existsSync(path.join(SAMPLE, 'build/tinyhttp'))) execFileSync(path.join(SAMPLE, 'build.sh'));
+  if (!fs.existsSync(path.join(SAMPLE, 'build/tinyhttp'))) execFileSync('sh', [path.join(SAMPLE, 'build.sh')]);
 });
 
 describe('clangd restart', () => {

@@ -76,7 +76,7 @@ describe('Rust components', () => {
     expect(mergeRustComponents(r)).toEqual(['rustc', 'cargo']);
     expect(fs.readdirSync(r).sort()).toEqual(['bin', 'lib']);
     expect(fs.existsSync(path.join(r, 'lib/rustlib/x/a.rlib'))).toBe(true);
-    expect(fs.statSync(path.join(r, 'bin/rustc')).mode & 0o111).toBeTruthy();
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(r, 'bin/rustc')).mode & 0o111).toBeTruthy();
   });
 });
 
