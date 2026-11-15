@@ -76,7 +76,7 @@ function createWindow() {
     frame: native,
     backgroundColor: '#171817',
     title: 'SkyCodeX',
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false, backgroundThrottling: !smoke },
   });
   win.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame) e.preventDefault(); });
   const allowed = new Set(['local-fonts', 'clipboard-sanitized-write']);

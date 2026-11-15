@@ -402,8 +402,10 @@ grid: `:802`, `:841`. Moved to the limits, 12, as each changes what the engine o
 and this club with the same clangd: default smoke 137 of 143 fields the same or timing, the rest a connector count and
 the first search hit, which vary between runs of the same code (search uses 8 parallel workers), and match HEAD on a
 second run; compiler smoke the same but for the copy's own paths; programs smoke the same once the files pane's
-heading got its own class (`.ph.wrap` is what the programs check reads); rules: marks without a hover 3,067 → 3,052,
-every other count unchanged, no errors. 226 of 392 fixed; 52 kept by verdict or not a fault; 114 open.
+heading got its own class (`.ph.wrap` is what the programs check reads); rules: every count unchanged (marks without a
+hover 3,067 → 3,067), no errors. Correction: the first record of this run read 3,052 because `recursion-direct` hit the
+5-minute limit and was not checked, and the comparison did not say so; run again alone it passed in 28 s with its 15
+marks, as before. 226 of 392 fixed; 52 kept by verdict or not a fault; 114 open.
 
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion

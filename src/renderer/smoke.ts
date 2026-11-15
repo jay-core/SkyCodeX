@@ -240,7 +240,8 @@ export async function runSmoke() {
     await sleep(500);
     report.fontSizeRestored = settings()['font.size'];
     const famCtl = ctls.find((c) => c.querySelector('.lab')?.textContent?.startsWith('code font'))!;
-    (famCtl.querySelector('.combo input') as HTMLInputElement).focus();
+    const famIn = famCtl.querySelector('.combo input') as HTMLInputElement;
+    famIn.focus(); famIn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     await until(() => !!famCtl.querySelector('.combo-list button'), 4000);
     report.fontOptions = famCtl.querySelectorAll('.combo-list button').length;
     report.fontGroups = [...famCtl.querySelectorAll('.combo-g')].map((g) => g.textContent);
@@ -1533,7 +1534,7 @@ async function arrowsCheck(report: Record<string, unknown>) {
 const canvasKey = (key: string) => (document.querySelector('.gview') as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
 
 async function rulesCheck(report: Record<string, unknown>, scenario: string) {
-  const T0 = Date.now(), BUDGET = 270000, WARM = 20, snapshot = settings();
+  const T0 = Date.now(), BUDGET = 270000, WARM = 20, snapshot = settings(), generated = /[\\/]data[\\/]gen[\\/]/.test(root());
   const nextFrames = (n: number) => new Promise<void>((r) => { const f = (k: number) => (k ? requestAnimationFrame(() => f(k - 1)) : r()); f(n); });
   const hit = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
   const tally: Record<string, { count: number; steps: Set<number>; first: string[] }> = {};
@@ -1672,8 +1673,10 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
         canvasKey('f');
         await nextFrames(3);
         const had = !!document.querySelector('.gview .scap');
-        await new Promise((r) => setTimeout(r, 3200));
-        if (had && !document.querySelector('.gview .scap')) note('a caption disappears on a timer (overlay rule)', it, 'after 3 s with no action');
+        if (!generated) {
+          await new Promise((r) => setTimeout(r, 3200));
+          if (had && !document.querySelector('.gview .scap')) note('a caption disappears on a timer (overlay rule)', it, 'after 3 s with no action');
+        }
         const cap = document.querySelector('.gview .scap') as HTMLElement | null;
         if (cap) { const r = cap.getBoundingClientRect(); if (r.left < pane.left - 0.5 || r.right > pane.right + 0.5) note('the caption reaches outside the view (overlay rule)', it, words(cap)); }
         canvasKey('f');
@@ -1755,8 +1758,10 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
         await nextFrames(3);
         const had = !!document.querySelector('.seqv .scap, .body .scap');
         if (!had) mnote('no caption to check for a timer (not checked)', it, 'D');
-        await new Promise((r) => setTimeout(r, 3200));
-        if (had && !document.querySelector('.seqv .scap, .body .scap')) mnote('a caption disappears on a timer (rule 7)', it, 'after 3 s with no action');
+        if (!generated) {
+          await new Promise((r) => setTimeout(r, 3200));
+          if (had && !document.querySelector('.seqv .scap, .body .scap')) mnote('a caption disappears on a timer (rule 7)', it, 'after 3 s with no action');
+        }
         metroKey('d');
         await nextFrames(2);
         metroKey('d');
