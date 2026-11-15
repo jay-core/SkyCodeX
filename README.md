@@ -21,7 +21,7 @@ Copyright (c) 2026 Jatin Aggarwal. See [LICENSE](LICENSE). (Formerly called Lith
 **2. Analyses on that run, graded honestly**
 Each result is marked *proved*, *possible* or *can't tell*. Nothing is guessed.
 - **Ways out:** every early `return`, `throw` and `break`, and what leads to it.
-- **Pairs that don't close:** a `lock` without its `unlock` (or `malloc`/`free`, `open`/`close`) on some path.
+- **Pairs that don't close:** a `lock` without its `unlock` (or `malloc`/`free`, `open`/`close`) on some path. Your own lock and allocation functions can be added in the settings (`analysis.lock_calls`, `unlock_calls`, `alloc_calls`, `free_calls`).
 - **Watch a variable:** every step that reads or sets it, even through renames.
 - **A value's journey:** one value followed across calls.
 - **Values settled per call:** `draw(true)` makes `if (clear)` true there, and the branch that can't happen fades out.
@@ -61,9 +61,11 @@ Get the file for your system from [Releases](https://github.com/jay-core/SkyCode
 
 | System | File |
 |---|---|
-| macOS 13+, Apple silicon | `SkyCodeX-1.1.0-mac-arm64.zip` |
-| Windows 10/11, x64 | `SkyCodeX-1.1.0-win-x64.zip` |
-| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.1.0-linux-x64.tar.gz` |
+| macOS 13+, Apple silicon | `SkyCodeX-1.2.0-mac-arm64.zip` |
+| Windows 10/11, x64 | `SkyCodeX-1.2.0-win-x64.zip` |
+| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.2.0-linux-x64.tar.gz` |
+
+What changed in 1.2, and what is still open: [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
 
 Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
@@ -115,7 +117,7 @@ npm run package    # builds and packs release/SkyCodeX-<version>-<os>-<arch> for
 ```
 
 - **macOS:** built on a Mac, signed ad hoc, zipped.
-- **Windows and Linux:** built by GitHub Actions on each system when a `v…` tag is pushed ([`release.yml`](.github/workflows/release.yml)). Each build is started once with a boot check before it's attached to the release.
+- **Windows and Linux:** built by GitHub Actions on each system ([`release.yml`](.github/workflows/release.yml)), started from the Actions tab with *Run workflow* on the `v…` tag and that tag as its input. Each build is started once with a boot check before it's attached to the release.
 
 ## Project layout
 
