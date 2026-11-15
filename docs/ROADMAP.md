@@ -49,6 +49,7 @@ The agreed plan, kept in one place. Each item says what was decided and why; wor
 | 2026-11-02 | **In the first release:** Configurations and What a change does ship in the first SkyCodeX release, not after it. |
 | 2026-11-02 | **Commits:** the work so far was committed on 2026-11-02 (7290b6a). The last commit comes after the optimisation phase is complete. |
 | 2026-10-30 | **Target for results:** match what the standards define and what industry expects of reliable analysis. Every check has a written spec and test cases with known answers. |
+| 2026-11-15 | **Flow loading bar** (chosen from mock-ups in the real app on ThreadX). One box in five parts, one per loading step: entry points, index, trace, reading each function, stable. Each part is a square grid of small dots whose first and last columns sit on its edges; progress is an arrow of the same dots. A known total (index files, functions read) fills exactly and only forward; an unknown one shows the arrow moving smoothly left to right until the step is done. Each part has a hover box (not clickable): name, state, what the step does, its live count. With reduced motion the arrow stays still. The bar leaves only when everything is ready (clangd ready, not indexing, not settling or retrying, no step running), then fades out with nothing left running. Tests: TEST-SUITE P5.B. |
 
 ## SkyFlowX (confirmed, not started)
 
