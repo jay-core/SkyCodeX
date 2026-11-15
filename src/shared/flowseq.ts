@@ -405,7 +405,7 @@ export function stepFacts(s: Seq, at: number, passes: Record<number, number>): F
   else out.push({ head: 'called from', text: 'the start of the run', grade: 'proved' });
   if (r.kind === 'ref') out.push({ head: 'again', text: r.recursive ? `a call back into step ${R[r.ref!].n}, which is still running` : `the same function as step ${R[r.ref!].n}, running again here`, grade: 'proved', steps: [r.ref!] });
   if (r.kind === 'indirect') out.push({ head: 'target', text: VIA[r.via ?? ''] ?? 'not known here', grade: 'unknown' });
-  if (r.kind === 'indirect' && r.could?.length) out.push({ head: 'could be', text: `${r.could.slice(0, 6).join(' · ')}${r.could.length > 6 ? ` +${r.could.length - 6}` : ''} — functions whose address the code takes`, grade: 'possible' });
+  if (r.kind === 'indirect' && r.could?.length) out.push({ head: 'could be', text: `${r.could.join(' · ')} — functions whose address the code takes`, grade: 'possible' });
   if (r.kind === 'value') out.push({ head: 'named', text: `${r.name} is passed on here, not called (a callback or a pointer)`, grade: 'proved' });
   const e = r.kind === 'step' ? s.run.effects?.[r.key] : undefined;
   if (e) {
@@ -455,7 +455,8 @@ export interface CodeBlock { owner: number; lines: CodeLine[] }
 const DECISION = /^(?:\}\s*)?(?:if|else|switch|case|default|return|break|continue|throw|goto|for|while|do|co_return|co_yield|try|catch)\b/;
 const MAX_BLOCK = 40;
 
-export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file: string) => string[] | null): Map<number, CodeBlock[]> {
+export const MORE_LINES = -3;
+export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file: string) => string[] | null, whole: (it: number) => boolean = () => false): Map<number, CodeBlock[]> {
   const R = s.run.rows, out = new Map<number, CodeBlock[]>(), kids = kidsOf(s.run);
   s.items.forEach((row, it) => {
     const r = R[row];
@@ -469,16 +470,19 @@ export function codeBlocks(s: Seq, detail: (row: number) => Detail, text: (file:
     const calls = (kids.get(row) ?? []).filter((c) => R[c].at && s.itemOf[c] >= 0).sort((a, b) => R[a].at!.line - R[b].at!.line);
     const callLines = new Set(calls.map((c) => R[c].at!.line));
     const base = (L[from] ?? '').search(/\S/);
+    let unit = 0;
+    for (let n = from; n < last; n++) { const raw = L[n] ?? '', d = raw.search(/\S/) - Math.max(0, base); if (raw.trim() && d > 0 && (!unit || d < unit)) unit = d; }
+    unit ||= 4;
     const take = (a: number, b: number, after: number) => {
       const rows: CodeLine[] = [];
       for (let n = a; n <= b && n < last; n++) {
         const raw = L[n] ?? '', t = raw.trim();
         if (!t || /^[{}]+;?$/.test(t) || callLines.has(n)) continue;
         if (lvl === 'decisions' && !DECISION.test(t)) continue;
-        rows.push({ n, text: t, depth: Math.max(0, Math.round((raw.search(/\S/) - Math.max(0, base)) / 4)) });
+        rows.push({ n, text: t, depth: Math.max(0, Math.round((raw.search(/\S/) - Math.max(0, base)) / unit)) });
       }
       if (!rows.length) return;
-      const shown = rows.length > MAX_BLOCK ? [...rows.slice(0, MAX_BLOCK - 1), { n: -1, text: `… ${rows.length - MAX_BLOCK + 1} more lines`, depth: 0 }] : rows;
+      const shown = rows.length > MAX_BLOCK && !whole(it) ? [...rows.slice(0, MAX_BLOCK - 1), { n: MORE_LINES, text: `… ${rows.length - MAX_BLOCK + 1} more lines`, depth: 0 }] : rows;
       out.set(after, [...(out.get(after) ?? []), { owner: it, lines: shown }]);
     };
     let at = from, after = it;

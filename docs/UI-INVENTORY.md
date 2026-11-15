@@ -324,6 +324,29 @@ no longer rebuilds the code rows and their children list is no longer quadratic,
 walks every step ("all code" on 90,001 steps 258 → 116 ms), because every step's code height enters the layout.
 129 of 392 fixed; 28 kept by verdict; 235 open.
 
+**Fixed (2026-11-15, the metro, the user's decisions: "proceed with your recommendations"):** 27 faults; 3 kept.
+H, 5: a caption stays until the next key or move (no 2.6 s timer); the return route stays until the next move (no
+1.7 s timer and no fade); "link copied", "couldn't copy" (with the link) and "saved" are captions that stay, not 3–8 s
+messages. O, 3: one Esc closes only the topmost thing (the what-if menu, share, keys, a junction, play, the followed
+value, the what-if, the path, in that order); the what-if menu is measured and kept inside the view; the key list is
+capped at the view's height and scrolls. F, 3: "around" is off by default at every size (no 400-step switch); its chip
+is always shown (no 150-step switch); every loop in view has its arc (no 8-row limit), each with the loop's text on
+hover. E±, 3: the unsaved-edits note lists every function and step on hover; "could be" in a step's facts lists every
+function; a code block cut at 40 lines opens in full when its "… N more lines" row is clicked. G, 10: what-if choices
+or junctions that fail to compute say so in the caption; jump letters grow to three past 361 rows; a short name that two
+functions of the run share shows its class; the line-colour key says when its 10 colours repeat; with reduced motion the
+return route is drawn without motion instead of not at all; a "go to" that is neither a step number nor a walk says so
+and stays open; the run bars' key names "named, not called"; the card counts loops with comments and strings removed;
+code rows take each function's own indent step, not 4. C, 3: code rows start at the measured start of the row's text
+(not 22 px); the column heads sit at the legend's bottom (not 24 px down); the peek opens after the measured end of the
+call text (not 220 px). Kept by verdict: `flowseq.ts:12` helpers of up to 3 lines fold (a content rule, the same at
+every size), `flowseq.ts:196` the track lanes and `:197` the text after the deepest lane (the metro's own spacing).
+Found while fixing: the step column's measuring (class D) looped over every step on each layout change, which is now
+each move; it runs once per run. Rules on 23 programs and tinyhttp before → after: a caption disappears on a timer
+24 → 0; marks without a hover on tinyhttp 605 → 635 with every loop's arc, 564 once the arcs have their titles; every
+other count unchanged; no errors. Still open: `flowcore.ts:9`, `:23` the loop labels' full text needs `flow.ts` and
+`preview.ts`, which show them, outside this task. 156 of 392 fixed; 31 kept by verdict; 205 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

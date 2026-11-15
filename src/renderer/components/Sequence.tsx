@@ -4,10 +4,10 @@ import { watch, journey, watchable, argName } from '../../shared/flowwatch';
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
   move, Move, stackSeq, placeAt, stepNumbers, ordinal, stepFacts, embers, loopsAt, leadingComment, ownFrames, stepWays, hiddenBy, foldable, chapters,
-  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings, most } from '../../shared/flowseq';
+  encodeWalk, decodeWalk, walkthrough, whatIf, StepState, Fact, WhatIf, codeBlocks, Detail, findings, most, MORE_LINES } from '../../shared/flowseq';
 import { routesBetween, RouteInfo } from '../../shared/flowboxes';
 import type { RunFrame, Exit } from '../../shared/flowrun';
-import { settings, root, flash } from '../lib/store';
+import { settings, root } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
 import { metroRow, MetroRow } from '../../shared/metrofacts';
@@ -28,7 +28,6 @@ const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16;
 const plain = (h: string) => h.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
-const AROUND_AT = 400;
 
 const KEYS: [string, string][] = [
   ['→ / ←', 'next step / back along the path walked'], ['⇧ →', 'step over: skip what runs inside'], ['↑', 'step out: finish this function'],
@@ -64,7 +63,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const [what, setWhat] = createSignal<WhatIf | null>(null);
   const [whatMenu, setWhatMenu] = createSignal<{ it: number; options: WhatIf[] } | null>(null);
   const [compare, setCompare] = createSignal(false);
-  const whatOptions = (it: number) => { try { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); } catch { return [] as WhatIf[]; } };
+  const whatOptions = (it: number) => { try { const s = S()!; return ownFrames(s.run, s.items[it]).filter((f) => s.span.get(f)?.[0] === it).map((f) => whatIf(s, f)).filter((w): w is WhatIf => !!w); } catch (e) { queueMicrotask(() => say({ key: '?', what: 'the what-if choices could not be worked out here', why: String(e) })); return [] as WhatIf[]; } };
   const store = runKey;
   const [read, setRead] = createSignal<Set<string>>(new Set());
   createEffect(on([seq, root], () => setRead(new Set(load<string[]>(store('read'), [])))));
@@ -84,7 +83,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!jump()) return [] as { it: number; k: string }[];
     const g = geom()!, lo = scroll(), hi = scroll() + viewH() - ROW;
     const rows = visible().filter((it) => g.Y(it) >= lo && g.Y(it) <= hi && it !== cur()?.at);
-    return rows.map((it, i) => ({ it, k: HINT[Math.floor(i / HINT.length) % HINT.length] + HINT[i % HINT.length] }));
+    const len = Math.max(2, Math.ceil(Math.log(Math.max(1, rows.length)) / Math.log(HINT.length)));
+    return rows.map((it, i) => { let k = ''; for (let d = 0, v = i; d < len; d++, v = Math.floor(v / HINT.length)) k = HINT[v % HINT.length] + k; return { it, k }; });
   });
 
   const rippleChain = createMemo(() => { const s = S(), out = new Set<number>(); if (!s) return out; for (const it of changedItems()) for (let i: number | null = s.run.rows[s.items[it]].caller; i != null; i = s.run.rows[i].caller) out.add(s.itemOf[i]); return out; });
@@ -160,10 +160,10 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   }
   const CODE_H = 18;
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const junctions = createMemo((): Junction[] => { const s = S(); textTick(); if (!s) return []; try { return junctionsOf(s, (f) => lines(f)); } catch { return []; } });
+  const junctions = createMemo((): Junction[] => { const s = S(); textTick(); if (!s) return []; try { return junctionsOf(s, (f) => lines(f)); } catch (e) { queueMicrotask(() => say({ key: 'junctions', what: 'the junction rows could not be worked out', why: String(e) })); return []; } });
   const [around, setAround] = createSignal<boolean | null>(null);
   const [opened, setOpened] = createSignal<Set<number>>(new Set());
-  const aroundOn = () => around() ?? (S()?.items.length ?? 0) > AROUND_AT;
+  const aroundOn = () => around() ?? false;
   const aroundSet = createMemo(() => {
     const s = S(), c = cur(), out = new Set<number>();
     if (!s || !c || !aroundOn()) return out;
@@ -179,10 +179,12 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const foldedAll = createMemo(() => (aroundOn() ? new Set([...aroundSet(), ...folded()]) : folded()));
   const hidden = createMemo(() => { const h = S() ? hiddenBy(S()!, foldedAll()) : new Set<number>(); const w = what(); if (w) for (let i = w.skip[0]; i <= w.skip[1]; i++) h.add(i); return h; });
+  const [wholeBlocks, setWholeBlocks] = createSignal<Set<number>>(new Set());
+  createEffect(on(seq, () => setWholeBlocks(new Set<number>()), { defer: true }));
   const blocks = createMemo(() => {
     const s = S();
     if (!s) return new Map<number, CodeBlockJ[]>();
-    const m = codeBlocks(s, detailOf, (f) => lines(f)) as Map<number, CodeBlockJ[]>;
+    const m = codeBlocks(s, detailOf, (f) => lines(f), (it) => wholeBlocks().has(it)) as Map<number, CodeBlockJ[]>;
     for (const g of s.run.ghosts ?? []) {
       const it = s.itemOf[g.after], owner = s.itemOf[g.owner];
       if (it == null || it < 0 || owner == null || owner < 0) continue;
@@ -249,10 +251,19 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return b.caller !== s.items[c.at] && b.caller !== a.caller && b.caller != null ? s.run.rows[b.caller].name : '';
   });
   const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R()[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
-  const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  const lastName = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
+  const clash = createMemo(() => {
+    const s = S(), by = new Map<string, Set<string>>();
+    if (s) for (const r of s.run.rows) { const k = lastName(r.name), v = by.get(k); if (v) v.add(r.name); else by.set(k, new Set([r.name])); }
+    return new Set([...by].filter(([, v]) => v.size > 1).map(([k]) => k));
+  });
+  const short = (n: string) => { const k = lastName(n); return clash().has(k) ? n.replace(/^.*::(?=[^:]+::[^:]+$)/, '') : k; };
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
   const [fnoW, setFnoW] = createSignal(0);
-  createEffect(on([nums, geom], ([ns]) => requestAnimationFrame(() => { const el = canvas?.querySelector('.srow .fno'); if (!el) return; const w = textWidthIn(el); let most = 0; for (const n of ns) if (n?.fn) most = Math.max(most, w(`${n.again ? '↻' : ''}ƒ${n.fn}`)); setFnoW(most); })));
+  const [codeX, setCodeX] = createSignal(0);
+  let fnoFor: unknown = null, codeFor: unknown = null;
+  createEffect(on([nums, geom], ([ns]) => requestAnimationFrame(() => { if (fnoFor === ns) return; const el = canvas?.querySelector('.srow .fno'); if (!el) return; const w = textWidthIn(el); let most = 0; for (const n of ns) if (n?.fn) most = Math.max(most, w(`${n.again ? '↻' : ''}ƒ${n.fn}`)); fnoFor = ns; setFnoW(most); })));
+  createEffect(on([fnoW, geom], ([fw]) => requestAnimationFrame(() => { if (codeFor === fw) return; const mm = canvas?.querySelector('.srow .mmain') as HTMLElement | null; if (!mm) return; codeFor = fw; setCodeX(mm.offsetLeft); })));
   const metroCache = createMemo(() => { S(); nums(); textTick(); return { rows: new Map<number, MetroRow>(), pure: new Map<number, boolean>() }; });
   const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.rows.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f), c.pure); c.rows.set(it, m); } return m; };
   const fileCol = createMemo(() => {
@@ -262,14 +273,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const colOf = (it: number) => fileCol().get(metro(it).file) ?? fileCol().get(rowOf(it).file) ?? '#7b8279';
   const codeRows = createMemo(() => {
-    const g = geom(), out: { x: number; top: number; it: number; n: number; text: string; jn?: Junction }[] = [];
+    const g = geom(), out: { x: number; top: number; it: number; owner: number; n: number; text: string; jn?: Junction }[] = [];
     if (!g) return out;
     const vis = new Set(visible()), hid = hidden();
     for (const [it, blocks] of code()) {
       if (hid.has(it) || !vis.has(it)) continue;
       let y = g.Y(it) + g.H(it) - (codeExtra().get(it) ?? 0) + 2;
       for (const b of blocks) for (const l of b.lines) {
-        out.push({ x: l.jn ? g.x[it] : g.x[b.owner] + 22 + l.depth * 12, top: y, it, n: l.n, text: l.text, jn: l.jn });
+        out.push({ x: l.jn ? g.x[it] : g.x[b.owner] + codeX() + l.depth * 12, top: y, it, owner: b.owner, n: l.n, text: l.text, jn: l.jn });
         y += l.jn ? ROW : CODE_H;
       }
     }
@@ -295,10 +306,13 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   });
   const rippleNote = createMemo(() => {
     const s = S(), c = changed();
-    if (!s || !c.size) return '';
+    if (!s || !c.size) return null;
     const names = [...c].map((r) => short(s.run.rows[r].name));
     const at = [...changedItems()].map((it) => num(it));
-    return `edited, not saved: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} · runs at ${at.slice(0, 6).join(', ')}${at.length > 6 ? ' …' : ''}`;
+    return {
+      text: `edited, not saved: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''} · runs at ${at.slice(0, 6).join(', ')}${at.length > 6 ? ' …' : ''}`,
+      full: `edited, not saved: ${names.join(', ')} · runs at ${at.join(', ')} · functions whose unsaved code differs from the file on disk, and the calls that reach them`,
+    };
   });
   const notes = (it: number) => {
     const s = S()!, r = rowOf(it), out: string[] = [];
@@ -321,15 +335,14 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     return [...by].map(([w, ns]) => ({ text: `${w}: ${ns.join(', ')}`, added: w === 'added' }));
   };
 
-  let capTimer: ReturnType<typeof setTimeout> | undefined;
-  function say(c: { key: string; what: string; why: string }, ms = 2600) {
+  function say(c: { key: string; what: string; why: string }) {
     setCaption(c);
-    clearTimeout(capTimer);
-    if (ms) capTimer = setTimeout(() => setCaption(null), ms);
   }
   function go(m: Move, quiet = false) {
     const s = S();
     if (!s || !trail().length) return;
+    setRet(null);
+    if (!quiet) setCaption(null);
     if (m === 'next' && foldedAll().has(cur()!.at)) m = 'over';
     const p = path();
     if (m === 'next' && p) {
@@ -360,12 +373,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     if (!p) return;
     timer = setInterval(() => { if (atEnd()) { setPlaying(false); return; } go('next', true); }, 900 / k);
   }));
-  onCleanup(() => { clearInterval(timer); clearInterval(tourTimer); clearTimeout(capTimer); clearTimeout(peekTimer); });
+  onCleanup(() => { clearInterval(timer); clearInterval(tourTimer); clearTimeout(peekTimer); });
 
   const [ret, setRet] = createSignal<{ d: string; head: string; key: number } | null>(null);
   let retKey = 0;
   function showReturn(from: number, to: number) {
-    if (reduce()) return;
     const key = ++retKey;
     requestAnimationFrame(() => {
       const s = S(), g = geom();
@@ -381,8 +393,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       const ybot = Math.min(y2 - 6, g.Y(s.lastItem[ci]) + g.H(s.lastItem[ci]) - 4);
       const x0 = g.x[from] - 8, x2 = g.x[to] - 8;
       const d = `M${x0} ${y1} L${xa} ${y1} L${xa} ${ybot} L${xb} ${ybot} L${xb} ${y2} L${x2} ${y2}`;
-      setRet({ d, head: `M${x2 - 6} ${y2 - 3.5} L${x2} ${y2} L${x2 - 6} ${y2 + 3.5}`, key });
-      setTimeout(() => { if (ret()?.key === key) setRet(null); }, 1700);
+      if (key === retKey) setRet({ d, head: `M${x2 - 6} ${y2 - 3.5} L${x2} ${y2} L${x2 - 6} ${y2 + 3.5}`, key });
     });
   }
 
@@ -444,10 +455,10 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   function tell() {
     const s = S(), c = cur();
     if (!s || !c) return;
-    if (c.at >= s.items.length) { say({ key: 'tour', what: 'the end of the run', why: `${short(R()[s.items[0]].name)} returns` }, 0); return; }
+    if (c.at >= s.items.length) { say({ key: 'tour', what: 'the end of the run', why: `${short(R()[s.items[0]].name)} returns` }); return; }
     const r = R()[s.items[c.at]], by = r.caller != null ? short(R()[r.caller].name) : '';
     const loop = r.frames.map((f) => s.run.frames[f]).filter((f) => f.kind === 'loop').pop();
-    say({ key: 'tour', what: `${num(c.at)} ${r.kind === 'indirect' ? r.text : short(r.name)}`, why: `${by ? `called by ${by}` : 'the start of the run'}${loop ? ` · ${loop.count != null ? `×${loop.count}` : 'in a loop'}` : ' · once'}` }, 0);
+    say({ key: 'tour', what: `${num(c.at)} ${r.kind === 'indirect' ? r.text : short(r.name)}`, why: `${by ? `called by ${by}` : 'the start of the run'}${loop ? ` · ${loop.count != null ? `×${loop.count}` : 'in a loop'}` : ' · once'}` });
   }
   function decisionAhead(): string {
     const s = S(), c = cur();
@@ -464,7 +475,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   function tourStep() {
     if (atEnd()) { stopTour(); return; }
     const d = decisionAhead();
-    if (d && tour() === 'on') { setTour('waiting'); say({ key: 'tour waits', what: d, why: '↵ go on · R another pass · L leave · Esc stops' }, 0); return; }
+    if (d && tour() === 'on') { setTour('waiting'); say({ key: 'tour waits', what: d, why: '↵ go on · R another pass · L leave · Esc stops' }); return; }
     if (tour() !== 'on') return;
     go('next', true);
     tell();
@@ -484,8 +495,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     setShare(false);
     const t = encodeWalk(entryKey(), trail(), 40, notesByItem());
     const kept = trail().length > 40 ? ` · it keeps the last 40 of ${trail().length} steps walked` : '';
-    try { await navigator.clipboard.writeText(t); flash(`link to this walk copied · paste it into G (go to) to reopen it${kept}`, 4000); }
-    catch { flash(`couldn't copy: ${t}`, 8000); }
+    try { await navigator.clipboard.writeText(t); say({ key: 'share', what: 'link to this walk copied', why: `paste it into G (go to) to reopen it${kept}` }); }
+    catch { say({ key: 'share', what: 'couldn’t copy the link · here it is', why: t }); }
   }
   async function saveWalkthrough() {
     setShare(false);
@@ -500,7 +511,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const file = (await api.fs.saveDialog(`${root()}/${basename(root())}-walk.md`)) as string | null;
     if (!file) return;
     await api.fs.write(file, md);
-    flash(`saved ${basename(file)}`, 3000);
+    say({ key: 'share', what: `saved ${basename(file)}`, why: file });
   }
   async function openWalk(text: string): Promise<boolean> {
     let s = S();
@@ -522,6 +533,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   function onKey(e: KeyboardEvent) {
     if (gotoOpen() || find() || noteOpen() || pick() || e.metaKey || e.ctrlKey) return;
     const k = e.key, sh = e.shiftKey;
+    if (!tour() && k !== 'Shift' && k !== 'Alt' && k !== 'Tab') setCaption(null);
     if (jump()) {
       e.preventDefault(); e.stopPropagation();
       if (k === 'Escape' || k === 'Backspace' && !jump()!.typed) { setJump(null); return; }
@@ -550,7 +562,16 @@ export default function Sequence(props: { switcher: JSX.Element }) {
       n: () => { if (cur() && !atEnd()) setNoteOpen(true); }, N: () => { if (cur() && !atEnd()) setNoteOpen(true); },
       k: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); }, K: () => { setSkyOn(!skyOn()); keep('flow.skyline', skyOn()); },
       ' ': () => setPlaying(!playing()), '+': () => setSpeed(Math.min(4, speed() * 1.5)), '=': () => setSpeed(Math.min(4, speed() * 1.5)), '-': () => setSpeed(Math.max(0.25, speed() / 1.5)),
-      Escape: () => { setJunctionPick(null); setHelp(false); setFollowed(null); setPick(null); setPlaying(false); setShare(false); setWhatMenu(null); if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); } else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); } },
+      Escape: () => {
+        if (whatMenu()) setWhatMenu(null);
+        else if (share()) setShare(false);
+        else if (help()) setHelp(false);
+        else if (junctionPick()) setJunctionPick(null);
+        else if (playing()) setPlaying(false);
+        else if (followed()) setFollowed(null);
+        else if (what()) { setWhat(null); setCompare(false); say({ key: 'Esc', what: 'as the code runs again', why: '' }); }
+        else if (path()) { setPath(null); say({ key: 'Esc', what: 'left the path', why: '' }); }
+      },
     };
     if (k === 'ArrowDown' && cur() && !atEnd() && rowOf(cur()!.at).kind === 'indirect') { say({ key: '↓', what: 'step into', why: 'where it goes is known only at run time' }); e.preventDefault(); return; }
     if (k === 'Tab') return;
@@ -638,7 +659,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const chapAt = (it: number) => chaps().filter((ch) => it >= ch.from && it <= ch.to).pop();
   const stepNo = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? r.n : r.kind === 'ref' ? R()[r.ref!].n : r.caller != null ? R()[r.caller].n : 0; };
 
-  const [peek, setPeek] = createSignal<{ it: number; up: boolean } | null>(null);
+  const [peek, setPeek] = createSignal<{ it: number; up: boolean; x: number } | null>(null);
   let peekTimer: ReturnType<typeof setTimeout> | undefined;
   const peekCode = createMemo(() => {
     const p = peek(), s = S();
@@ -749,7 +770,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               )}</For>
             </span>
             <Show when={path()}><span class="seqpth" title={`path ${path()!.index + 1} → ${path()!.target}`}>path {path()!.index + 1} → {path()!.target}</span></Show>
-            <Show when={rippleNote()}><span class="seqchg" title="functions whose unsaved code differs from the file on disk, and the calls that reach them">{rippleNote()}</span></Show>
+            <Show when={rippleNote()}><span class="seqchg" title={rippleNote()!.full}>{rippleNote()!.text}</span></Show>
           </Show>
           <span class="grow" />
           <Show when={header() && runStatus()}><span class="sub">{runStatus()}</span></Show>
@@ -771,7 +792,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={leaving()}><button class="chip" classList={{ on: waysOut() }} aria-pressed={waysOut()} title="ways out: the usual path dims, every early return, throw, break, goto and call that never returns lights, with what leads there (E)" onClick={() => { toggleWaysOut(); canvas.focus(); }}>ways out</button></Show>
           <SettingChip />
           <CompareChip />
-          <Show when={aroundOn() || N() > 150}><button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button></Show>
+          <button class="chip" classList={{ on: aroundOn() }} aria-pressed={aroundOn()} title="around the step: its callers and two levels of calls in full, every other call folded to one row (A)" onClick={() => { toggleAround(); canvas.focus(); }}>around</button>
           <button class="chip" classList={{ on: detailAll() !== 'calls' || detailFn().size > 0 }} title="how much code to show between calls: calls only, with decisions, or all code (⇧D everywhere, D for the current function)" onClick={() => { cycleDetail(true); canvas.focus(); }}>{detailAll() === 'calls' ? 'calls' : detailAll() === 'decisions' ? 'decisions' : 'all code'}</button>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => { stopTour(); setPlaying(!playing()); canvas.focus(); }}
             restart={() => { stopTour(); setPlaying(false); go('home'); canvas.focus(); }} step={() => { stopTour(); setPlaying(false); go('next'); canvas.focus(); }} />
@@ -792,7 +813,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
           <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
             <div class="mlegend">
               <div class="mrow">
-                <div class="mfiles" onWheel={hwheel}><span>line colour = file</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f)}</span>}</For></div>
+                <div class="mfiles" onWheel={hwheel}><span>{fileCol().size > METRO.length ? `line colour = file · ${METRO.length} colours, repeating` : 'line colour = file'}</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f)}</span>}</For></div>
                 <div class="mkeys"><span><b>◆</b>decides</span><span><b class="x">⊣</b>way out</span><span><b class="l">↻</b>loop</span><span><b class="l">⑂</b>via pointer</span></div>
               </div>
               <div class="mhead" style={{ left: `${geom()!.x[0] ?? 0}px`, width: `${Math.max(60, width() - SPINE - (geom()!.x[0] ?? 0) - 10)}px` }}>
@@ -828,9 +849,9 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   );
                 }}</For>
                 <defs><marker id="mloop" markerUnits="userSpaceOnUse" viewBox="0 0 6 5" refX="6" refY="2.5" markerWidth="6" markerHeight="5" orient="auto"><path d="M0 0 L6 2.5 L0 5 z" fill="#6f9e9e" /></marker></defs>
-                <For each={visFrames().filter((f) => { const sp = S()!.span.get(f)!; return sp[1] > sp[0] && sp[1] - sp[0] < 8 && !hidden().has(sp[1]); })}>{(f) => {
+                <For each={visFrames().filter((f) => { const sp = S()!.span.get(f)!; return sp[1] > sp[0] && !hidden().has(sp[1]); })}>{(f) => {
                   const d = () => { const g = geom()!, [a, b] = S()!.span.get(f)!, ya = g.Y(a) + ROW / 2, yb = g.Y(b) + ROW / 2, x0 = Math.max(3, Math.min(g.barX[a], g.barX[b]) - 24); return `M${g.barX[b] - 6} ${yb} C${x0} ${yb} ${x0} ${ya} ${g.barX[a] - 8} ${ya}`; };
-                  return <path class="jloop" d={d()} marker-end="url(#mloop)" />;
+                  return <path class="jloop" d={d()} marker-end="url(#mloop)"><title>{`↻ ${S()!.run.frames[f].text}`}</title></path>;
                 }}</For>
                 <For each={visible().filter((it) => rowOf(it).kind === 'indirect' && (rowOf(it).could?.length ?? 0) > 0)}>{(it) => {
                   const n = Math.min(3, rowOf(it).could!.length);
@@ -859,8 +880,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 <svg class="sret" width="10" height="10" ref={(el) => requestAnimationFrame(() => {
                   const arc = el.querySelector('.arc') as SVGPathElement, len = arc.getTotalLength();
                   arc.style.strokeDasharray = `3 3`;
+                  if (reduce()) return;
                   arc.animate([{ clipPath: `inset(0 0 100% 0)` }, { clipPath: 'inset(0 0 0 0)' }], { duration: 650, easing: 'ease-out' });
-                  el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 1700, fill: 'forwards' });
                   (el.querySelector('.hd') as SVGPathElement).animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: Math.max(400, len * 8) });
                 })}><path class="arc" d={r.d} /><path class="hd" d={r.head} /></svg>
               )}</Show>
@@ -871,7 +892,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <span class="d">◆</span><span class="c">{j.cond}</span><span class="w">then <code>{w.then}</code> · else {w.else}</span>
                   </div>
                 ); })()
-                : <div class="sline" style={{ top: `${l.top}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>
+                : <div class="sline" classList={{ more: l.n === MORE_LINES }} title={l.n === MORE_LINES ? 'show every line of this block' : undefined}
+                    onClick={l.n === MORE_LINES ? (e) => { e.stopPropagation(); setWholeBlocks(new Set([...wholeBlocks(), l.owner])); } : undefined} style={{ top: `${l.top}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>
               <For each={visible()}>{(it) => {
                 const r = () => rowOf(it);
                 const e = () => ember().indexOf(it);
@@ -881,7 +903,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   <div class={`srow k-${r().kind}`} data-name={r().kind === 'indirect' ? r().text : short(r().kind === 'ref' && r().ref != null ? R()[r().ref!].name : r().name)} classList={{ sel: sel(), near: !!tag(), [`e${e() + 1}`]: e() >= 0 && !sel(), far: !sel() && !tag() && e() < 0 && !chain().has(S()!.items[it]), thread: r().thread, off: !onPath(it) && !sel(), pathed: !!path() && onPath(it), chg: changedItems().has(it), chgc: rippleChain().has(it) && !changedItems().has(it), wx: waysOut() && exitsAt(it).length > 0, wq: waysOut() && !exitsAt(it).length && !sel(), fw: !!followed() && hitsAt(it).length > 0, fq: !!followed() && !hitsAt(it).length && !sel(), sdead: !!deadAt(it) && !sel(), cadd: r().change === 'added', cchg: r().change === 'changed' }}
                     style={{ left: `${geom()!.x[it]}px`, top: `${geom()!.Y(it)}px`, width: `${Math.max(60, width() - SPINE - geom()!.x[it] - 10)}px` }}
                     onClick={() => { setPeek(null); go({ jump: it }); canvas.focus(); }}
-                    onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; peekTimer = setTimeout(() => setPeek({ it, up }), 450); }}
+                    onMouseEnter={(ev) => { clearTimeout(peekTimer); if (sel()) return; const up = (ev.currentTarget as HTMLElement).getBoundingClientRect().top > canvas.getBoundingClientRect().top + height() * 0.5; const row = ev.currentTarget as HTMLElement, end = row.querySelector('.mmain')?.lastElementChild?.getBoundingClientRect().right ?? row.getBoundingClientRect().left, x = end - row.getBoundingClientRect().left + geom()!.x[it] + 12; peekTimer = setTimeout(() => setPeek({ it, up, x }), 450); }}
                     onMouseLeave={() => { clearTimeout(peekTimer); setPeek(null); }}>
                     <span class="n" title="step: its place in the run">{it + 1}</span>
                     <span class="fno" title={nums()[it]?.fn ? `function ${nums()[it].fn} · its ${ordinal(nums()[it].call)} call` : undefined}>{nums()[it]?.again ? <span class="rp">↻</span> : null}{nums()[it]?.fn ? `ƒ${nums()[it].fn}` : r().kind === 'indirect' ? '⇢' : '·'}</span>
@@ -932,7 +954,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 );
               }}</Show>
               <Show when={whatMenu()}>{(m) => (
-                <div class="swmenu" style={{ left: `${geom()!.x[m().it] + 30}px`, top: `${geom()!.Y(m().it) + ROW}px` }}>
+                <div class="swmenu" ref={(el) => requestAnimationFrame(() => { const r = el.getBoundingClientRect(), v = canvas.getBoundingClientRect(); const dx = Math.min(0, v.right - SPINE - 8 - r.right), dy = r.bottom > v.bottom - 8 ? -(r.height + ROW) : 0; el.style.transform = `translate(${Math.max(dx, v.left + 8 - r.left)}px, ${dy}px)`; })}
+                  style={{ left: `${geom()!.x[m().it] + 30}px`, top: `${geom()!.Y(m().it) + ROW}px` }}>
                   <For each={m().options}>{(o) => <button title={o.ask} onClick={(e) => { e.stopPropagation(); askWhat(o); }}>{o.ask}</button>}</For>
                 </div>
               )}</Show>
@@ -980,7 +1003,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 </div>
               </Show>
               <Show when={peek() && peekCode()}>
-                <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.Y(peek()!.it) - 4 : geom()!.Y(peek()!.it) + ROW + 2}px` }}>
+                <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(peek()!.x, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.Y(peek()!.it) - 4 : geom()!.Y(peek()!.it) + ROW + 2}px` }}>
                   <div class="h">{peekCode()!.head}<i>{peekCode()!.loc}</i><span class="lk">peek</span></div>
                   <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} title={plain(l.html)} /></div>}</For>
                   <Show when={peekCode()!.more}><div class="more">…</div></Show>
@@ -1019,7 +1042,11 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               onKeyDown={async (e) => {
                 e.stopPropagation();
                 const v = (e.target as HTMLInputElement).value;
-                if (e.key === 'Enter') { setGotoOpen(false); if (!(await openWalk(v))) { const n = Number(v); if (n) go({ goto: n }); } canvas.focus(); }
+                if (e.key === 'Enter') {
+                  const el = e.currentTarget as HTMLInputElement;
+                  if (!(await openWalk(v))) { const n = Number(v); if (!n) { el.value = ''; el.placeholder = `“${v}” is not a step number or a shared walk`; return; } go({ goto: n }); }
+                  setGotoOpen(false); canvas.focus();
+                }
                 if (e.key === 'Escape') { setGotoOpen(false); canvas.focus(); }
               }} /></div>
           </Show>
@@ -1169,7 +1196,7 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
   createEffect(on(() => { const t = tip(); return t ? `${t.what}|${t.kind}|${t.where}|${t.loop}|${t.note}|${t.pos}|${t.changed}` : ''; }, () => requestAnimationFrame(() => { if (tipEl?.isConnected) setTipW(tipEl.offsetWidth); })));
   return <div class="ssky" ref={box} aria-label="the run bars: the run as a profile of call depth · click or drag to go · K hides it">
     <div class="skyk" onWheel={hwheel}>
-      <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span>
+      <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span><span><i style={{ background: SKY_COL.value }} />named, not called</span>
       <span><i class="now" />now</span><span><i class="loop" />in a loop</span><span><i class="ed" />edited</span><span><i class="nt" />note</span><span>taller = deeper</span>
       <span class="grow" />
       <Show when={props.read}><span class="seqread" title="functions you have been to in this run (kept between sessions)">{props.read}</span></Show>

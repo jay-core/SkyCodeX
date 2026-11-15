@@ -212,7 +212,7 @@ export function detailCard(s: Seq, at: number, cell: number[] | null, cur: numbe
     calls: shown, caller,
     passesIn: r.args?.length ? r.args.join(', ') : '', getsBack: m.result,
     itsCalls: [...itsCalls].map(([name, steps]) => ({ name, steps })), library: libraryCalls(s, fnRowIdx, lines),
-    loops: (body.match(/\b(for|while)\s*\(|\bdo\s*\{/g) ?? []).length,
+    loops: (body.replace(/\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '').match(/\b(for|while)\s*\(|\bdo\s*\{/g) ?? []).length,
     waysOut: (s.run.exits?.[key] ?? []).map((x) => ({ text: x.text, line: x.line + 1, early: x.early })),
     effects: {
       changes: fx ? [...fx.writes.map((w) => `member ${w}`), ...fx.globalWrites.map((g) => `global ${g}`)].join(', ') || 'only its own locals and parameters' : 'not known',
