@@ -42,11 +42,13 @@ function cursor() {
   return { file: files.active, view: v, pos: offsetToPos(v.state.doc, sel.head), from: offsetToPos(v.state.doc, sel.from), to: offsetToPos(v.state.doc, sel.to) };
 }
 
+const notReady = () => { flash(lspState() === 'failed' ? 'clangd is unavailable · see the compiler window' : 'clangd is still starting · try again in a moment'); };
 export async function rename() {
   const c = cursor();
-  if (!c || lspState() !== 'ready') return;
+  if (!c) return;
+  if (lspState() !== 'ready') { notReady(); return; }
   const word = c.view.state.wordAt(c.view.state.selection.main.head);
-  if (!word) return;
+  if (!word) { flash('put the cursor on a name to rename it'); return; }
   const old = c.view.state.sliceDoc(word.from, word.to);
   setPalette({
     placeholder: `rename ${old} to…`,
@@ -66,7 +68,8 @@ export async function rename() {
 
 export async function quickFix() {
   const c = cursor();
-  if (!c || lspState() !== 'ready') return;
+  if (!c) return;
+  if (lspState() !== 'ready') { notReady(); return; }
   const line = c.pos.line;
   const diagnostics = diagnosticsFor(c.file).filter((d) => d.range.start.line <= line && d.range.end.line >= line);
   let actions: any[] = [];
@@ -87,7 +90,8 @@ export async function quickFix() {
 
 export async function findReferences() {
   const c = cursor();
-  if (!c || lspState() !== 'ready') return;
+  if (!c) return;
+  if (lspState() !== 'ready') { notReady(); return; }
   let refs: any[] = [];
   try { refs = (await req('textDocument/references', { textDocument: { uri: fileToUri(c.file) }, position: c.pos, context: { includeDeclaration: true } })) ?? []; } catch {  }
   if (!refs.length) { flash('no references found'); return; }
@@ -106,7 +110,7 @@ export async function quickOpen() {
 }
 
 export async function goToSymbol() {
-  if (lspState() !== 'ready') return;
+  if (lspState() !== 'ready') { notReady(); return; }
   setPalette({
     placeholder: 'go to symbol in project… (type to search)',
     items: [],

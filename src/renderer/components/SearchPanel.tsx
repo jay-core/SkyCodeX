@@ -3,6 +3,7 @@ import { basename } from '../lib/api';
 import { root, openFile } from '../lib/store';
 import { query, runSearch, result, closeSearch } from '../lib/search';
 import { Marked } from './FilesPane';
+import { SKIPPED_NOTE } from '../../shared/search';
 import { t } from '../lib/i18n';
 
 const SHOWN = 3000;
@@ -28,6 +29,7 @@ export default function SearchPanel() {
   const summary = () => {
     if (!query().trim()) return t('type to search every file in the folder — any case');
     const n = `${result.matches.toLocaleString()} match${result.matches === 1 ? '' : 'es'} in ${result.files.toLocaleString()} file${result.files === 1 ? '' : 's'}`;
+    if (result.error) return `the search failed: ${result.error}`;
     if (result.running) return `${result.hits.length.toLocaleString()} so far…`;
     return `${n} · ${result.searched.toLocaleString()} files searched in ${(result.ms / 1000).toFixed(1)} s${result.capped ? ' · stopped at 20,000' : ''}`;
   };
@@ -35,7 +37,7 @@ export default function SearchPanel() {
     <div class="csearch" role="dialog" aria-label={t('search in the folder')} onKeyDown={key}>
       <div class="q"><span class="d">⌕</span>
         <input ref={input} value={query()} placeholder={t('search in the folder')} spellcheck={false} onInput={(e) => { setSel(0); runSearch(e.currentTarget.value); }} />
-        <span class="d sum" title={summary()}>{summary()}</span>
+        <span class="d sum" title={`${summary()} · ${SKIPPED_NOTE}`}>{summary()}</span>
         <button class="chip" onClick={closeSearch}>{t('close')}</button>
       </div>
       <div class="cres" ref={list} style={{ '--ln-d': String(String(result.hits.reduce((m, h) => Math.max(m, h.line + 1), 1)).length) }}>

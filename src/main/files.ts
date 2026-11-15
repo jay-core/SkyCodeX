@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { SKIPPED_DIRS } from '../shared/search';
 
 export function atomicWrite(file: string, text: string | Buffer): void {
   const dir = path.dirname(file);
@@ -57,7 +58,7 @@ export function listSources(root: string, cap = 20000): string[] {
   return listFiles(root, cap, isSource);
 }
 
-const SKIP_DIRS = /^(build|out|cmake-build-.*|\.git|node_modules|third_party|external|vendor)$/i;
+const SKIP_DIRS = new RegExp(`^(${SKIPPED_DIRS.map((d) => d.replace(/[.]/g, '\\.').replace(/\*/g, '.*')).join('|')})$`, 'i');
 
 export function listFiles(root: string, cap = 50000, keep: (p: string) => boolean = () => true): string[] {
   const out: string[] = [];

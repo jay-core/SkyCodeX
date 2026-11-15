@@ -110,6 +110,7 @@ export default function CompilerWindow() {
       </div>
       <Show when={!mini()}>
         <div class="cwin-b">
+          <Show when={!info.error} fallback={<div class="sub">couldn't read the compiler's state: {String(info.error)} · <button class="lnk" onClick={() => refetch()}>try again</button></div>}>
           <Show when={info()} fallback={<div class="sub">reading…</div>}>{(i) => (
             <>
               <div class="csec">language engine</div>
@@ -171,7 +172,7 @@ export default function CompilerWindow() {
                   <Show when={typeof rel().toolchain === 'string'}><div class="dim">{rel().toolchain as string}</div></Show>
                   <For each={allRel() ? releases('toolchain') : releases('toolchain').slice(0, 10)}>{(r) => (
                     <button classList={{ have: i().packs.some((p) => p.id === r.id) }} disabled={i().packs.some((p) => p.id === r.id) || busy()} onClick={() => setConfirm({ r })}>
-                      <span>{r.name} {r.version}</span><span class="dim">{r.asset} · {mb(r.size)}</span>{i().packs.some((p) => p.id === r.id) ? <span class="tag">installed</span> : null}
+                      <span>{r.name} {r.version}</span><span class="dim">{r.asset} · {r.size ? mb(r.size) : 'size unknown'}</span>{i().packs.some((p) => p.id === r.id) ? <span class="tag">installed</span> : null}
                     </button>
                   )}</For>
                   <Show when={!allRel() && releases('toolchain').length > 10}><button class="lnk" onClick={() => setAllRel(true)}>show {releases('toolchain').length - 10} older releases</button></Show>
@@ -243,6 +244,7 @@ export default function CompilerWindow() {
               <Show when={i().packsNote}><div class="dim">{i().packsNote}</div></Show>
             </>
           )}</Show>
+          </Show>
         </div>
       </Show>
     </div>

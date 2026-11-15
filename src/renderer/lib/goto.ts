@@ -93,7 +93,7 @@ async function peekText(loc: Loc): Promise<string> {
   const lines = await fileText(loc.file);
   let depth = 0, seen = false, end = loc.line;
   for (let i = loc.line; i < lines.length && i < loc.line + 40; i++) {
-    for (const ch of lines[i]) { if (ch === '{') { depth++; seen = true; } else if (ch === '}') depth--; }
+    for (const ch of lines[i].replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$|\/\*.*?\*\//g, '')) { if (ch === '{') { depth++; seen = true; } else if (ch === '}') depth--; }
     end = i;
     if ((seen && depth <= 0) || (!seen && /;\s*$/.test(lines[i]))) break;
   }

@@ -96,8 +96,11 @@ export function attachView(file: string, view: EditorView | null) {
   if (view) { views.set(file, view); pushDiagnostics(view, file); } else views.delete(file);
 }
 
+export const [unreadable, setUnreadable] = createSignal<Record<string, string>>({});
 function pushDiagnostics(view: EditorView, file: string) {
   const doc = view.state.doc;
+  const bad = (diags.get(file) ?? []).find((d) => /^Unable to handle compilation/.test(d.message))?.message ?? '';
+  if ((unreadable()[file] ?? '') !== bad) setUnreadable({ ...unreadable(), [file]: bad });
   const out: CmDiagnostic[] = (diags.get(file) ?? []).filter((d) => !/^Unable to handle compilation/.test(d.message)).map((d) => {
     const from = posToOffset(doc, d.range.start.line, d.range.start.character);
     let to = posToOffset(doc, d.range.end.line, d.range.end.character);

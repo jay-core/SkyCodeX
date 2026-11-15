@@ -1,5 +1,5 @@
 import { For, Show, createSignal, createResource, createMemo } from 'solid-js';
-import { matchesIn } from '../../shared/search';
+import { matchesIn, SKIPPED_NOTE } from '../../shared/search';
 import { openSearch } from '../lib/search';
 import { api, DirEntry, basename } from '../lib/api';
 import { root, files, openFile, openFolder, flash } from '../lib/store';
@@ -19,7 +19,11 @@ export const refreshTree = () => { clearTimeout(treeTimer); treeTimer = window.s
 
 function Dir(props: { path: string; depth: number }) {
   const [entries] = createResource(() => [props.path, listVersion()] as const, async ([p]) => (await api.fs.list(p)) as DirEntry[]);
+  const note = (text: string) => <div class="ti" style={{ 'padding-left': `${indent(props.depth + 1)}px`, color: 'var(--faint)' }}>{text}</div>;
   return (
+    <Show when={!entries.error} fallback={note(`couldn't list this folder: ${String(entries.error)}`)}>
+    <Show when={entries() !== undefined} fallback={note(t('listing…'))}>
+    <Show when={entries()!.length} fallback={note(t('empty'))}>
     <For each={entries() ?? []}>{(e) => {
       const open = () => expanded().has(e.path);
       return (
@@ -37,6 +41,9 @@ function Dir(props: { path: string; depth: number }) {
         </>
       );
     }}</For>
+    </Show>
+    </Show>
+    </Show>
   );
 }
 
@@ -73,7 +80,7 @@ function Found() {
   };
   return (
     <div class="tree found">
-      <div class="fcount">{all.loading ? t('listing files…') : matched().length > hits().length ? `the first ${hits().length} of ${matched().length} matching files · type more to narrow` : `${hits().length} of ${(all() ?? []).length} files`}</div>
+      <div class="fcount" title={SKIPPED_NOTE}>{all.loading ? t('listing files…') : matched().length > hits().length ? `the first ${hits().length} of ${matched().length} matching files · type more to narrow` : `${hits().length} of ${(all() ?? []).length} files`}</div>
       <For each={groups()}>{([d, fs]) => (
         <>
           <div class="ti fdir"><Marked text={d ? `${d}/` : './'} q={filter().trim()} /></div>

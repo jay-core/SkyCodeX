@@ -5,6 +5,7 @@ import { root } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { matchesIn } from '../../shared/search';
 import { Marked } from './FilesPane';
+import LoadBar from './LoadBar';
 
 const FIRST = 3;
 
@@ -67,6 +68,7 @@ export default function Programs(props: { switcher: unknown }) {
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <span style={{ color: 'var(--bright)' }}>all programs · {entries().length} entry points</span>
+          <LoadBar />
           <span class="sub" style={{ 'margin-left': '14px' }}>{status()}</span>
           <span class="grow" />
           <button class="chip" classList={{ on: !!links() }} title={`trace the programs listed (up to ${CONNECT_MAX}) to see which starts which and the files they share`} onClick={() => (links() && !links()!.busy ? setLinks(null) : connect())}>how they connect</button>
@@ -80,7 +82,9 @@ export default function Programs(props: { switcher: unknown }) {
           <Show when={links()}>{(l) => (
             <div class="plinks">
               <Show when={l().busy || l().error} fallback={<>
-                <div class="grp"><b>how {l().of} programs connect</b><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
+                <Show when={l().of >= 2} fallback={<div class="grp"><b>{l().of === 1 ? 'one program' : 'no programs'} listed</b><span>— connecting needs two or more{q().trim() ? ' · clear or widen the filter' : ''}</span></div>}>
+                  <div class="grp"><b>how {l().of} programs connect</b><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
+                </Show>
                 <For each={l().starts}>{(t) => <div class="pl">{t}</div>}</For>
                 <Show when={l().shared.length}><div class="pl sub">{l().shared.length} file{l().shared.length > 1 ? 's' : ''} shared:</div></Show>
                 <For each={sharedAll() ? l().shared : l().shared.slice(0, 12)}>{(x) => <div class="pl" title={`${x.file} · ${x.by.join(', ')}`}><span class="f">{basename(x.file)}</span><span class="by">{x.by.length} programs · {x.by.slice(0, 4).join(', ')}{x.by.length > 4 ? ' …' : ''}</span></div>}</For>

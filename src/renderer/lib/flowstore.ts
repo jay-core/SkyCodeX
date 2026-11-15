@@ -29,6 +29,16 @@ export const [seq, setSeq] = createSignal<Seq | null>(null);
 export const [trail, setTrail] = createSignal<StepState[]>([]);
 export const [walkSpeed, setWalkSpeed] = createSignal(0);
 export const [runStatus, setRunStatus] = createSignal('');
+export const analysisNote = () => {
+  const s = seq();
+  if (!s) return null;
+  const R = s.run.rows, nameOf = (k: string) => R.find((r) => r.key === k)?.name ?? k, missing = s.run.missing, failed = Object.entries(s.run.failed ?? {});
+  if (!missing.length && !failed.length) return null;
+  const parts = [missing.length ? `${missing.length} function${missing.length > 1 ? 's' : ''} not found in the project` : '', failed.length ? `${failed.length} not fully analysed` : ''].filter(Boolean);
+  return { text: parts.join(' · '), full: [...missing.map((k) => `${nameOf(k)}: not found in the project`), ...failed.map(([k, why]) => `${nameOf(k)}: ${why}`)].join('\n') };
+};
+export const waitingText = () => (lspState() === 'failed' ? 'the language engine (clangd) failed: the flow needs it · see the compiler window'
+  : lspState() === 'starting' ? 'waiting for the language engine (clangd) to start…' : runStatus() || status() || 'building…');
 export const entryStart = () => graph()?.lanes[0]?.start ?? '';
 export const [programs, setPrograms] = createSignal(true);
 export const isChosen = (i: number) => { const e = entries()[i]; return !!chosen && !!e && entryKey(e) === chosen; };

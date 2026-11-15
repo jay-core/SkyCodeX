@@ -6,7 +6,7 @@ import { completionFor, hoverFor, lintSupport, attachView, indexEpoch } from '..
 import { langOf, syntaxFor, serverLang } from '../lib/langs';
 import { sender, flush as flushOther } from '../lib/langlsp';
 import { saver } from '../lib/power';
-import { files, states, settings, setStateFactory, setMainView, onDocChanged, save, setCrumb, setCursorPos } from '../lib/store';
+import { files, states, settings, setStateFactory, setMainView, onDocChanged, save, setCrumb, setCursorPos, flash } from '../lib/store';
 import { refreshForCursor, mainFn, levels, win } from '../lib/preview';
 import { repairFor } from '../lib/repair';
 import { gotoDefinition } from '../lib/goto';
@@ -85,7 +85,7 @@ export default function Editor(props: { onScroll: () => void; onCursor: () => vo
           : serverLang(file) ? [completionFor(() => file, sender(file), flushOther), hoverFor(() => file, sender(file))] : [],
         lintSupport, marksField, dimPlugin, gotoDefinition({ file: () => file, base: () => 0 }),
         keymap.of([{ key: 'Mod-s', run: () => { save(file); return true; } }]),
-        SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true)] : langOf(file) === 'cpp' && REPAIRABLE.test(file) ? repairFor(file) : [],
+        SYSTEM_PATH.test(file) ? [EditorState.readOnly.of(true), EditorView.domEventHandlers({ beforeinput: () => { flash('a system header: open read-only, so it cannot be edited here'); return false; } })] : langOf(file) === 'cpp' && REPAIRABLE.test(file) ? repairFor(file) : [],
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onDocChanged(file, u.state);
           else states.set(file, u.state);

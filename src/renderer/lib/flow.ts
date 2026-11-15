@@ -457,7 +457,7 @@ export async function buildRun(start: string, onProgress?: (done: number, total:
       const hit = flowCache.get(ck);
       if (hit && hit.text === text && hit.calls === calls) { flows.set(k, hit.info); return; }
       const ast = functionNode((await api.lsp.request('textDocument/ast', { textDocument: { uri: it.uri }, range: it.range }).catch(() => null)) as AstNode | null);
-      const flow = ast ? analyseFunction(ast, text, node.raw.filter((c) => c.fromRanges?.length).map((c) => ({ to: target(c.to), fromRanges: c.fromRanges }))) : { body: [], dropped: [] };
+      const flow = ast ? analyseFunction(ast, text, node.raw.filter((c) => c.fromRanges?.length).map((c) => ({ to: target(c.to), fromRanges: c.fromRanges }))) : { body: [], dropped: [], failed: 'clangd gave no syntax tree for it, so its calls are not shown' };
       const overrides = node.calls.filter((c) => c.virtual).map((c) => nodes.get(c.to)).filter((x): x is Node => !!x).map((x) => target(x.item));
       let fx: FnInfo['effects'];
       if (ast) { try { fx = { ...effects(ast, text), owner: it.kind === 6 || it.kind === 9 ? it.detail : undefined }; } catch { fx = undefined; } }

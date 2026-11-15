@@ -9,7 +9,7 @@ import { atomicWrite, listDir, listSources, listSourcesAsync, listFiles, saveBuf
 import { searchFolder, cancelSearch } from './search';
 import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb, findCompileCommands, type CompileEntry } from './lsp';
 import { buildTargets } from './targets';
-import { resolvePacksDir, listPacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
+import { resolvePacksDir, listPacks, unreadablePacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -557,7 +557,7 @@ ipcMain.handle('compiler:info', async () => {
     setting, active, activeVersion: await clangdVersion(active),
     inbuilt: inb ? { path: inb, version: await clangdVersion(inb) } : null,
     system: sys ? { path: sys, version: await clangdVersion(sys) } : null,
-    packs, packsDir: PACKS.dir, packsNote: PACKS.note ?? null,
+    packs, packsDir: PACKS.dir, packsNote: [PACKS.note, unreadablePacks.length ? `${unreadablePacks.length === 1 ? 'a pack folder' : `${unreadablePacks.length} pack folders`} could not be read: ${unreadablePacks.join(', ')}` : ''].filter(Boolean).join(' · ') || null,
     toolchainSetting: String(settings['compiler.toolchain'] ?? 'auto'), toolchain: activeToolchain()?.id ?? null,
     headers: headersStatus(), installing: installing?.rel.id ?? null, kinds: KIND_INFO,
     readAs: (() => {

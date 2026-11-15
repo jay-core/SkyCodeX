@@ -13,7 +13,7 @@ const PAGES: { name: string; sections: string[] }[] = [
   { name: 'interface', sections: ['ui', 'power'] },
   { name: 'editor', sections: ['editor', 'window'] },
   { name: 'preview', sections: ['preview'] },
-  { name: 'clangd', sections: ['clangd'] },
+  { name: 'clangd', sections: ['clangd', 'compiler'] },
 ];
 const sectionOf = (k: string) => k.slice(0, k.lastIndexOf('.'));
 const NAMES: Record<string, string> = {

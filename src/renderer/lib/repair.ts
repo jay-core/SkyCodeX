@@ -156,9 +156,10 @@ const checker = (file: string) => ViewPlugin.fromClass(class {
     this.sent = text;
     setRepairNote({ file, text: t('checking fixes…') });
     let r: Awaited<ReturnType<typeof api.repair.check>>;
-    try { r = await api.repair.check(file, fileToUri(file), text); } catch { r = { ok: false }; }
+    let why = '';
+    try { r = await api.repair.check(file, fileToUri(file), text); } catch (e) { r = { ok: false }; why = String(e); }
     if (this.dead || this.sent !== text) return;
-    if (!r.ok || view.state.doc.toString() !== text) { this.sent = ''; if (repairNote().file === file) setRepairNote({ file, text: '' }); return; }
+    if (!r.ok || view.state.doc.toString() !== text) { this.sent = ''; if (repairNote().file === file) setRepairNote({ file, text: !r.ok ? `${t('fixes could not be checked')}${why ? ` · ${why}` : ''}` : '' }); return; }
     const doc = view.state.doc, gone = dismissed.get(file) ?? new Set<string>();
     const fixes: Fix[] = (r.suggestions ?? []).map((s) => {
       const at = posToOffset(doc, s.error.range.start.line, s.error.range.start.character);

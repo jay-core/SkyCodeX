@@ -1,9 +1,8 @@
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
-import { setWalkSpeed, seq, trail, status, runStatus, stepMove, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords, changed } from '../lib/flowstore';
+import { setWalkSpeed, seq, trail, status, runStatus, waitingText, analysisNote, stepMove, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords, changed } from '../lib/flowstore';
 import { root, settings } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { lines, textTick } from '../lib/seqtext';
-import { lspState } from '../lib/lsp';
 import { changedItems, notesByItem } from '../lib/runmarks';
 import { move, loopsAt, Move, stepNumbers, most } from '../../shared/flowseq';
 import { buildGrid, GridOrder, GridFn, passesOf } from '../../shared/gridmodel';
@@ -582,6 +581,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
       <div class="pane" style={{ flex: 1 }}>
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd" title={header()}><i class="selmk" />{header()}</span></Show>
+          <Show when={analysisNote()}>{(a) => <span class="seqchg warn" title={a().full}>{a().text}</span>}</Show>
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()} restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />
@@ -628,7 +628,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
             <i class="ka call">⟶</i><span>the calls it makes</span>
           </div>
           <div class="gscroll" style={{ 'padding-bottom': `${skyH()}px` }} ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
-            <Show when={model()} fallback={<div class="empty">{lspState() === 'failed' ? 'the language engine (clangd) failed: the flow needs it · see the compiler window' : runStatus() || status() || 'building…'}</div>}>
+            <Show when={model()} fallback={<div class="empty">{waitingText()}</div>}>
                 <div class="gsz" style={{ width: `${side() + geo().x.size + tot() + 12}px`, height: `${head() + geo().y.size + foot() + 8}px` }}>
                   <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${side() + geo().x.size + 8}px`, height: `${head() - EDGE}px` }} />
                   <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${side() - EDGE}px`, height: `${head() + geo().y.size + EDGE}px` }} />

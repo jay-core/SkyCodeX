@@ -1,7 +1,7 @@
 import { For, Show } from 'solid-js';
 import { api, basename } from '../lib/api';
 import { files, page, setPage, crumb, cursorPos, root, closeFile, setFiles } from '../lib/store';
-import { lspState, indexing } from '../lib/lsp';
+import { lspState, indexing, unreadable } from '../lib/lsp';
 import { serverLang } from '../lib/langs';
 import { saver } from '../lib/power';
 import { langStatus } from '../lib/langlsp';
@@ -30,9 +30,9 @@ export default function Header() {
         <For each={files.list}>{(f) => (
           <>
             <span class="tab">
-              <button classList={{ on: page() === 'editor' && files.active === f.path, dirty: f.dirty }} title={f.path}
+              <button classList={{ on: page() === 'editor' && files.active === f.path, dirty: f.dirty, disk: f.diskChanged }} title={f.diskChanged ? `${f.path} · changed on disk while you have unsaved edits: saving overwrites the disk version` : f.path}
                 onClick={() => { setPage('editor'); setFiles('active', f.path); }}
-                onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{basename(f.path)}</button>
+                onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{files.list.some((o) => o.path !== f.path && basename(o.path) === basename(f.path)) ? `${basename(f.path.replace(/[\\/][^\\/]*$/, ''))}/${basename(f.path)}` : basename(f.path)}</button>
               <button class="tabx" title={t('Close (⌘/Ctrl W)')} aria-label={`${t('Close')} ${basename(f.path)}`} onClick={() => closeFile(f.path)}>×</button>
             </span>
             <Show when={page() === 'editor' && files.active === f.path && crumb()}><span class="crumb" title={crumb()}>{crumb()}</span></Show>
@@ -42,6 +42,7 @@ export default function Header() {
       <div class="status" role="status" aria-live="polite">
         <Show when={saver()}><span title={t('on battery: animations off, background work spaced out (settings → interface → power)')}>{t('battery saver')}</span></Show>
         <Show when={page() === 'editor' && files.active && repairNote().file === files.active && repairNote().text}><span class="rnote" title={repairNote().text}>{repairNote().text}</span></Show>
+        <Show when={page() === 'editor' && files.active && unreadable()[files.active]}><span class="warn" title={unreadable()[files.active]}>{t('clangd cannot read this file')}</span></Show>
         <Show when={page() === 'editor' && files.active}><span>{cursorPos().line}:{cursorPos().col}</span></Show>
         <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span title={indexing() ?? undefined}>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>
       </div>

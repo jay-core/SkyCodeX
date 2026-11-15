@@ -1,5 +1,5 @@
 import { For, Show, createSignal, createMemo, createEffect, on, onMount, onCleanup, JSX } from 'solid-js';
-import { setWalkSpeed, seq, trail, setTrail, runStatus, status, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
+import { setWalkSpeed, seq, trail, setTrail, runStatus, status, waitingText, analysisNote, entries, entryStart, setLane, changed, waysOut, setWaysOut, earlyExits, leavingCount, followed, setFollowed, hitWords } from '../lib/flowstore';
 import { watch, journey, watchable, argName } from '../../shared/flowwatch';
 import { entryKey as keyOfEntry } from '../lib/flow';
 import {
@@ -324,7 +324,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     }
     if (markOf(r)) out.push(markOf(r));
     if (r.unsequenced) out.push('order: compiler’s choice');
-    if (r.approx) out.push('~ in a macro');
+    if (r.approx) out.push(r.caller != null && s.run.failed?.[s.run.rows[r.caller].key] ? '~ analysis failed' : '~ in a macro');
     return out.join('   ');
   };
   const uses = (it: number) => (S()!.uses.get(S()!.items[it]) ?? []).map((i) => { const r = R()[i]; return `${short(r.name)} ${r.kind === 'step' ? r.n : R()[r.ref!].n}`; }).join(' · ');
@@ -761,6 +761,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               )}</For>
             </span>
             <Show when={path()}><span class="seqpth" title={`path ${path()!.index + 1} → ${path()!.target}`}>path {path()!.index + 1} → {path()!.target}</span></Show>
+            <Show when={analysisNote()}>{(a) => <span class="seqchg warn" title={a().full}>{a().text}</span>}</Show>
             <Show when={rippleNote()}><span class="seqchg" title={rippleNote()!.full}>{rippleNote()!.text}</span></Show>
           </Show>
           <span class="grow" />
@@ -801,7 +802,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
         </div>
         <div class="seqv" classList={{ metro: true, still: reduce(), onpath: !!path(), waysout: waysOut(), following: !!followed(), jpick: !!junctionPick() }} style={{ '--sky-h': `${skyOn() ? skyH() : 0}px`, '--spine': `${SPINE}px`, '--fno-w': `${fnoW()}px` }} ref={canvas} tabindex="0" role="application" aria-label="the run, one step per row"
           onKeyDown={onKey} onWheel={(e) => { e.preventDefault(); setManual(manual() + e.deltaY); setPeek(null); }}>
-          <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{runStatus() || status() || 'building…'}</div>}>
+          <Show when={S() && geom()} fallback={<div class="empty" style={{ position: 'absolute', inset: 0 }}>{waitingText()}</div>}>
             <div class="mlegend">
               <div class="mrow">
                 <div class="mfiles" onWheel={hwheel}><span>{fileCol().size > METRO.length ? `line colour = file · ${METRO.length} colours, repeating` : 'line colour = file'}</span><For each={[...fileCol()]}>{([f, c]) => <span title={f}><i style={{ background: c }} />{basename(f)}</span>}</For></div>

@@ -1,3 +1,5 @@
+export const SKIPPED_DIRS = ['build', 'out', 'cmake-build-*', '.git', 'node_modules', 'third_party', 'external', 'vendor'];
+export const SKIPPED_NOTE = `folders not searched: ${SKIPPED_DIRS.join(', ')}`;
 export function matcher(q: string): RegExp | null {
   return q ? new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu') : null;
 }

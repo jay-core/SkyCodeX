@@ -425,7 +425,8 @@ export function stepFacts(s: Seq, at: number, passes: Record<number, number>): F
   for (const f of own) out.push({ head: s.run.frames[f].kind === 'loop' ? 'repeats' : 'when', text: frameText(s.run.frames[f], passes[f]), grade: 'proved' });
   if (r.kind === 'step' || r.kind === 'ref') out.push(howOften(s.run, row));
   if (r.unsequenced) out.push({ head: 'order', text: 'another argument of the same call also calls a project function; which runs first is the compiler’s choice', grade: 'possible' });
-  if (r.approx) out.push({ head: 'where', text: 'inside a macro: placed at its statement, the finest position clangd gives', grade: 'possible' });
+  const owner = r.caller != null ? R[r.caller] : null, why = owner ? s.run.failed?.[owner.key] : undefined;
+  if (r.approx) out.push(why ? { head: 'where', text: `in ${owner!.name}: ${why}`, grade: 'possible' } : { head: 'where', text: 'inside a macro: placed at its statement, the finest position clangd gives', grade: 'possible' });
   const folded = s.uses.get(row);
   if (folded?.length) out.push({ head: 'uses', text: folded.map((i) => `${num(i)} ${R[i].name}`).join(' · '), grade: 'proved', steps: folded });
   return out;

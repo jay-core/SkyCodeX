@@ -430,6 +430,29 @@ Already fixed: `:129` (with the preview), `:798`, `:805` (C and D, with the grid
 compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the same, no errors, 184 s.
 255 of 392 fixed; 53 kept by verdict or not a fault; 84 open.
 
+**Club 4, missing or wrong cases (2026-11-15):** fixed, 25. Said instead of silent: the flow says when clangd is
+starting or failed, from one function both views use (`flowstore.ts:50`); a folder that is empty, still listing, or
+cannot be listed (`FilesPane.tsx:20`, `:22`); fewer than two programs to connect (`Programs.tsx:31`); fixes that
+could not be checked (`repair.ts:161`); a search that failed (`search.ts:21`); the compiler state that could not be
+read, with a retry (`CompilerWindow.tsx:31`); typing in a read-only system header (`Editor.tsx:88`); rename, fixes,
+references and go to symbol while clangd is not ready or with no name under the cursor (`actions.ts:47`, `:69`, `:90`,
+`:109`); clangd's "Unable to handle compilation" for the open file, in the header (`lsp.ts:101`); a file changed on
+disk while it has unsaved edits, on its tab (`store.ts:188`); the folders search and the file filter leave out, from
+one list the main process also uses (`files.ts:60`); a pack folder that cannot be read (`packs.ts:40`); a release with
+no size (`langpacks.ts:40`). Right instead of wrong: two open files of the same name show their folder
+(`Header.tsx:34`); the compiler section has its settings page (`Settings.tsx:10`); a peeked definition's end ignores
+braces in strings and comments (`goto.ts:96`); the free space needed is in MB or GB (`packs.ts:144`); a function with
+no syntax tree, one whose analysis failed, and ways out or pairs that failed are recorded per function (`run.failed`)
+and named in both views' heading with every reason on hover, and such a call says why it is approximate instead of
+"in a macro" (`flow.ts:460`, `flowrun.ts:52`, `:725`, `:804`). Moved to the user's decisions, 7: `lsp.ts:232` (a
+one-line function is not told from a declaration without its text), `flowfacts.ts:25`, `flowpairs.ts:4` (the name
+lists), `settings-schema.ts:92`, `:101` (two colour settings no rule uses: wire or remove), `main/lsp.ts:67` (folders
+left out of the compile database), `compilers.ts:14` (a compiler silent for 5 s). Found by the user: a one-line helper
+(`log_line` in samples/programs) folded into its caller shows in neither the grid nor the step card; the user chose to
+keep folding and show folded calls (next). Checks against club 3: default, compiler and programs smoke 0 fields
+different; rules 24 of 24 programs, every count the same, no errors, 186 s. 280 of 392 fixed; 53 kept by verdict or not
+a fault; 59 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

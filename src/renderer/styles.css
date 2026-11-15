@@ -60,6 +60,7 @@ input, select { font: inherit; color: var(--bright); }
 .pivot button { color: #313531; transition: color .18s; }
 .pivot button:hover { color: #5f665f; }
 .pivot button.on { color: var(--bright); }
+.pivot .disk.dirty::after { background: var(--err); }
 .pivot .dirty::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ty); margin-left: 8px; vertical-align: 6px; }
 .crumb { font: 300 15px var(--ui); color: #7d6f50; margin-left: -12px; white-space: nowrap; flex: none; }
 .hdr .status { margin-left: auto; margin-right: 112px; align-self: flex-start; margin-top: 12px; font: 300 11.5px var(--ui); color: var(--faint); display: flex; gap: 18px; white-space: nowrap; min-width: 0; max-width: 45%; overflow: hidden; }
@@ -621,7 +622,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .shint { position: absolute; z-index: var(--z-jump-letters); width: 30px; height: 17px; background: #2e2b20; color: #f0e3bd; font: 11.5px/17px var(--mono); text-align: center; pointer-events: none; transition: opacity .15s; } .shint.dim { opacity: .15; }
 .srow.chg .n, .srow.chg .nm { color: #9fd8c0 !important; } .srow.chg { opacity: 1 !important; } .srow.chg::after { content: ''; position: absolute; left: 0; top: 5px; width: 2px; height: 13px; background: #79c9ae; }
 .srow.chgc .nm { color: #7fae9c; }
-.seqchg { font: 300 12.5px var(--ui); color: #79c9ae; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.seqchg { font: 300 12.5px var(--ui); color: #79c9ae; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; } .seqchg.warn { color: #e0904f; }
 .seqread { position: absolute; right: 22px; top: 1px; font: 300 11px var(--ui); color: #5f8f7a; white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
 .seqv.onpath .srow.off { opacity: .22 !important; }
 .seqv.onpath .srow.pathed .n { color: var(--accent); }

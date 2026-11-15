@@ -29,15 +29,18 @@ export function resolvePacksDir(besideApp: string, dataDir: string): { dir: stri
   }
 }
 
+export const unreadablePacks: string[] = [];
 export function listPacks(dir: string): PackManifest[] {
   const out: PackManifest[] = [];
+  unreadablePacks.length = 0;
   for (const d of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
     if (d.startsWith('.')) continue;
     const file = [MANIFEST, 'lithograph-pack.json'].map((m) => path.join(dir, d, m)).find((f) => fs.existsSync(f));
     try {
       const m = file ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
       if (m && typeof m.id === 'string' && typeof m.kind === 'string' && typeof m.version === 'string' && typeof m.name === 'string') out.push({ bin: 'bin', ...m });
-    } catch {  }
+      else if (file) unreadablePacks.push(d);
+    } catch { unreadablePacks.push(d); }
   }
   return out.sort((a, b) => a.kind.localeCompare(b.kind) || compareVersions(b.version, a.version));
 }
@@ -141,7 +144,7 @@ export async function installRelease(rel: Release, dir: string, onProgress: (p: 
   if (!insideDir(dir, final)) throw new Error('bad pack name');
   if (fs.existsSync(path.join(final, MANIFEST))) throw new Error(`${rel.id} is already installed`);
   const need = rel.size + expectedBytes(rel);
-  if (freeBytes(dir) < need) throw new Error(`not enough free space: about ${Math.ceil(need / 1e9)} GB is needed`);
+  if (freeBytes(dir) < need) throw new Error(`not enough free space: about ${need >= 1e9 ? `${(need / 1e9).toFixed(1)} GB` : `${Math.ceil(need / 1e6)} MB`} is needed`);
   const local = rel.url.startsWith('file:');
   const dl = path.join(dir, '.downloading'), tmp = path.join(dir, '.unpacking', rel.id), file = local ? fileURLToPath(rel.url) : path.join(dl, rel.asset);
   fs.mkdirSync(dl, { recursive: true });

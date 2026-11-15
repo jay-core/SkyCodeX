@@ -22,7 +22,7 @@ export type FlowNode =
 export type Via = 'pointer' | 'member pointer' | 'std::function' | 'dependent' | 'unresolved';
 export interface Arm { label: string; line: number; body: FlowNode[]; fallsThrough?: boolean; cases?: (Expr | null)[] }
 export type StmtKind = 'code' | 'return' | 'break' | 'continue' | 'throw' | 'goto' | 'co_return';
-export interface FnFlow { body: FlowNode[]; dropped: { name: string; at: Pos }[]; unlisted?: string[]; jumps?: true }
+export interface FnFlow { body: FlowNode[]; dropped: { name: string; at: Pos }[]; unlisted?: string[]; jumps?: true; failed?: string }
 
 const CALLS = new Set(['Call', 'CXXMemberCall', 'CUDAKernelCall', 'UserDefinedLiteral']);
 const CONSTRUCTS = new Set(['CXXConstruct', 'CXXTemporaryObject', 'CXXInheritedCtorInit', 'CXXNew']);
@@ -47,9 +47,9 @@ let lastStarts: number[] = [0];
 const SHAPED = new Set(['If', 'Switch', 'While', 'Do', 'For', 'CXXForRange', 'CXXTry', 'Return', 'Break', 'Continue', 'Goto', 'IndirectGoto', 'CoreturnStmt', 'Coreturn', 'Decl']);
 
 export function analyseFunction(ast: AstNode, text: string, calls: OutCall[]): FnFlow {
-  try { return new Analyser(ast, text, calls).run(); } catch {
+  try { return new Analyser(ast, text, calls).run(); } catch (e) {
     const at = calls.flatMap((c) => c.fromRanges.map((r) => ({ to: c.to, at: r.start }))).sort((a, b) => (before(a.at, b.at) ? -1 : 1));
-    return { body: at.map((x): FlowNode => ({ t: 'call', to: x.to, at: x.at, approx: true })), dropped: [] };
+    return { body: at.map((x): FlowNode => ({ t: 'call', to: x.to, at: x.at, approx: true })), dropped: [], failed: `its analysis failed (${String(e)}), so its calls are listed in order without their branches` };
   }
 }
 
@@ -613,7 +613,7 @@ export interface RunFrame {
   parent: number | null;
   dead?: string;
 }
-export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]>; ghosts?: Ghost[]; deep?: string[] }
+export interface Run { rows: RunRow[]; frames: RunFrame[]; missing: string[]; failed?: Record<string, string>; effects?: Record<string, Effects>; unlisted?: string[]; exits?: Record<string, Exit[]>; pairs?: Record<string, Unclosed[]>; ghosts?: Ghost[]; deep?: string[] }
 export const MAX_RUN_DEPTH = 400;
 export interface Ghost { after: number; owner: number; names: string[]; why: string; kind?: 'removed' }
 
@@ -799,12 +799,13 @@ export function walkRun(start: string, flows: (key: string) => FnInfo | undefine
   const fx: Record<string, Effects> = {};
   for (const k of opened.keys()) { const e = flows(k)?.effects; if (e) fx[k] = e; }
   const ex: Record<string, Exit[]> = {};
-  const pairs: Record<string, Unclosed[]> = {};
+  const pairs: Record<string, Unclosed[]> = {}, failed: Record<string, string> = {};
   for (const k of opened.keys()) {
     const f = flows(k);
     if (!f) continue;
-    try { ex[k] = exitsOf(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); } catch {  }
-    try { const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); if (u.length) pairs[k] = u; } catch {  }
+    if (f.flow.failed) failed[k] = f.flow.failed;
+    try { ex[k] = exitsOf(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); } catch (e) { failed[k] = [failed[k], `its ways out could not be worked out (${String(e)})`].filter(Boolean).join(' · '); }
+    try { const u = unclosed(f.flow.body, (t) => !!flows(t.key)?.effects?.noreturn); if (u.length) pairs[k] = u; } catch (e) { failed[k] = [failed[k], `what it opens and closes could not be worked out (${String(e)})`].filter(Boolean).join(' · '); }
   }
-  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs, ...(ghosts.length ? { ghosts } : {}), ...(deep.size ? { deep: [...deep] } : {}) };
+  return { rows, frames, missing: [...missing], effects: fx, exits: ex, pairs, ...(ghosts.length ? { ghosts } : {}), ...(deep.size ? { deep: [...deep] } : {}), ...(Object.keys(failed).length ? { failed } : {}) };
 }
