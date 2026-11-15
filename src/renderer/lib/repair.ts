@@ -59,7 +59,7 @@ class FixesWidget extends WidgetType {
       row.className = 'rs';
       row.dataset.fix = String(f.id);
       row.innerHTML = `<button class="bx ok" aria-label="${esc(t('apply this fix'))}">✓</button><button class="bx no" aria-label="${esc(t('not this fix'))}">✗</button><span class="ed">${preview(view.state, f)}</span><span class="src">${esc(f.src)}</span>`;
-      row.addEventListener('mouseenter', () => showTip(row, f.why));
+      row.addEventListener('mouseenter', () => showTip(row, `${f.why} · ${row.querySelector('.ed')?.textContent ?? ''} · ${f.src}`));
       row.addEventListener('mouseleave', hideTip);
       const act = (ok: boolean) => (e: Event) => {
         e.preventDefault(); e.stopPropagation(); hideTip();

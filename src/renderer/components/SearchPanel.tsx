@@ -35,7 +35,7 @@ export default function SearchPanel() {
     <div class="csearch" role="dialog" aria-label={t('search in the folder')} onKeyDown={key}>
       <div class="q"><span class="d">⌕</span>
         <input ref={input} value={query()} placeholder={t('search in the folder')} spellcheck={false} onInput={(e) => { setSel(0); runSearch(e.currentTarget.value); }} />
-        <span class="d sum">{summary()}</span>
+        <span class="d sum" title={summary()}>{summary()}</span>
         <button class="chip" onClick={closeSearch}>{t('close')}</button>
       </div>
       <div class="cres" ref={list}>

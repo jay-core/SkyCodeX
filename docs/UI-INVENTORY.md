@@ -380,6 +380,31 @@ tip states the 4,000-function stop and the count shows "+"). Still open, 3: V `S
 fields the same, the rest frame timings within 0.1 ms or one frame and which grid square was hovered; rules on 23
 programs and tinyhttp: every count unchanged, no errors. 188 of 392 fixed; 40 kept by verdict or not a fault; 164 open.
 
+**Club 1, cut and unbounded text (2026-11-15):** fixed, 38. E-, 17: the tab strip scrolls (`styles.css:37`, with
+the wheel); a repair row's tip carries the fix and its source (`:110`, `:113`); full text on hover for a card's name
+(`:137`), a font or option in a list (`:222`), a route (`:308`), the "not functions" divider (`:342`, `:345`), a
+palette item (`:353`), a compiler option and the packs folder (`:394`, `:418`), a matched name (`:710`), the search
+summary (`:715`), a program row (`:736`), a code line in the metro (`:746`), a call in the step card (`:890`); the
+settings pages scroll (`:203`). W, 14: the header's crumb and status (`:42`, `:43`), a file row (`:68`), a recent
+folder's time (`:167`), a shortcut (`:180`), a unit and a slider value (`:215`, `:217`), a palette detail (`:354`), the
+card's action (`:365`), the step card's step, tag and side note (`:763`, `:773`, `:775`) are bounded and end in "…".
+E+, 1: a recent folder's path has its full path on hover (`:166`). Code, 6: the files filter gives the exact number of
+matches and says to type more (`FilesPane.tsx:59` with `:74`); the files pane's buttons wrap (`:122`); the programs'
+shared files open in full and each lists every program on hover (`Programs.tsx:84`, `:85`); older compiler and pack
+releases open with a click (`CompilerWindow.tsx:167`, `:202`). Kept, 11, reachable (E+): `styles.css:523`, `:737`, `:765`,
+`:774` (each with its full text on hover), `Palette.tsx:18`, `actions.ts:118`, `lsp.ts:158` (typing narrows),
+`Programs.tsx:9` with `:22` (the rest open), `search.ts:22`, `:23` (the hit opens at its line),
+`settings-schema.ts:58` (a setting). Not a fault, 1: `styles.css:866` (`.gnote` is used nowhere). Already fixed with the
+grid: `:802`, `:841`. Moved to the limits, 12, as each changes what the engine or the main process returns:
+`compilers.ts:115`, `main.ts:171` with `:172` and `StartWindow.tsx:36`, `main.ts:234`, `:407`, `:422`,
+`Programs.tsx:26` with `:30`, `flow.ts:480`, `goto.ts:95`, `flowrun.ts:443`, `repair.ts:203`, `search.ts:14`,
+`SearchPanel.tsx:8` with `:16`. Still open, 1: `styles.css:56` (`.ph` headings in general). Checks, each run on HEAD
+and this club with the same clangd: default smoke 137 of 143 fields the same or timing, the rest a connector count and
+the first search hit, which vary between runs of the same code (search uses 8 parallel workers), and match HEAD on a
+second run; compiler smoke the same but for the copy's own paths; programs smoke the same once the files pane's
+heading got its own class (`.ph.wrap` is what the programs check reads); rules: marks without a hover 3,067 → 3,052,
+every other count unchanged, no errors. 226 of 392 fixed; 52 kept by verdict or not a fault; 114 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

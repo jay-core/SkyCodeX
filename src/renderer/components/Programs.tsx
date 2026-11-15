@@ -24,11 +24,13 @@ export default function Programs(props: { switcher: unknown }) {
   const flat = createMemo(() => [...(q().trim() ? [] : [lane()]), ...groups().flatMap((g) => g.shown)]);
   const pick = (i: number) => { setPrograms(false); setLane(i); };
   const CONNECT_MAX = 20;
+  const [sharedAll, setSharedAll] = createSignal(false);
   const [links, setLinks] = createSignal<{ busy: string; starts: string[]; shared: { file: string; by: string[] }[]; of: number; error?: string } | null>(null);
   async function connect() {
     const qq = q().trim();
     const list = entries().map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'interrupt' && (!qq || matchesIn(`${e.label} ${e.rel}`, qq, 1).length)).slice(0, CONNECT_MAX);
     if (list.length < 2) { setLinks({ busy: '', starts: [], shared: [], of: list.length }); return; }
+    setSharedAll(false);
     setLinks({ busy: `tracing ${list.length} programs…`, starts: [], shared: [], of: list.length });
     let g: Awaited<ReturnType<typeof connectPrograms>>;
     try {
@@ -81,8 +83,8 @@ export default function Programs(props: { switcher: unknown }) {
                 <div class="grp"><b>how {l().of} programs connect</b><Show when={!l().starts.length && !l().shared.length}><span>— they start none of each other and share no code</span></Show></div>
                 <For each={l().starts}>{(t) => <div class="pl">{t}</div>}</For>
                 <Show when={l().shared.length}><div class="pl sub">{l().shared.length} file{l().shared.length > 1 ? 's' : ''} shared:</div></Show>
-                <For each={l().shared.slice(0, 12)}>{(x) => <div class="pl"><span class="f">{basename(x.file)}</span><span class="by">{x.by.length} programs · {x.by.slice(0, 4).join(', ')}{x.by.length > 4 ? ' …' : ''}</span></div>}</For>
-                <Show when={l().shared.length > 12}><div class="pl sub">+{l().shared.length - 12} more</div></Show>
+                <For each={sharedAll() ? l().shared : l().shared.slice(0, 12)}>{(x) => <div class="pl" title={`${x.file} · ${x.by.join(', ')}`}><span class="f">{basename(x.file)}</span><span class="by">{x.by.length} programs · {x.by.slice(0, 4).join(', ')}{x.by.length > 4 ? ' …' : ''}</span></div>}</For>
+                <Show when={l().shared.length > 12 && !sharedAll()}><button class="pl sub lnk" onClick={() => setSharedAll(true)}>+{l().shared.length - 12} more · show them</button></Show>
               </>}><div class="grp">{l().error ? `couldn't trace them: ${l().error}` : l().busy}</div></Show>
             </div>
           )}</Show>

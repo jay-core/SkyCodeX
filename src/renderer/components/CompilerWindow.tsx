@@ -33,6 +33,7 @@ export default function CompilerWindow() {
   const [pos, setPos] = createSignal(stored() ?? { x: Math.max(16, (window.innerWidth - 600) / 2), y: 80 });
   const [rel, setRel] = createSignal<Record<string, Release[] | string>>({});
   const [picking, setPicking] = createSignal(false);
+  const [allRel, setAllRel] = createSignal(false);
   const [confirm, setConfirm] = createSignal<{ r: Release; replaces?: string } | null>(null);
   const [prog, setProg] = createSignal<Progress | null>(null);
   let el!: HTMLDivElement;
@@ -164,11 +165,12 @@ export default function CompilerWindow() {
               <Show when={picking()}>
                 <div class="cvers">
                   <Show when={typeof rel().toolchain === 'string'}><div class="dim">{rel().toolchain as string}</div></Show>
-                  <For each={releases('toolchain').slice(0, 10)}>{(r) => (
+                  <For each={allRel() ? releases('toolchain') : releases('toolchain').slice(0, 10)}>{(r) => (
                     <button classList={{ have: i().packs.some((p) => p.id === r.id) }} disabled={i().packs.some((p) => p.id === r.id) || busy()} onClick={() => setConfirm({ r })}>
                       <span>{r.name} {r.version}</span><span class="dim">{r.asset} · {mb(r.size)}</span>{i().packs.some((p) => p.id === r.id) ? <span class="tag">installed</span> : null}
                     </button>
                   )}</For>
+                  <Show when={!allRel() && releases('toolchain').length > 10}><button class="lnk" onClick={() => setAllRel(true)}>show {releases('toolchain').length - 10} older releases</button></Show>
                 </div>
               </Show>
 
@@ -199,11 +201,12 @@ export default function CompilerWindow() {
               )}</For>
               <Show when={pickKind()}>{(k) => (
                 <div class="cvers">
-                  <For each={releases(k()).slice(0, 8)}>{(r) => (
+                  <For each={allRel() ? releases(k()) : releases(k()).slice(0, 8)}>{(r) => (
                     <button classList={{ have: i().packs.some((p) => p.id === r.id) }} disabled={i().packs.some((p) => p.id === r.id) || busy()} onClick={() => setConfirm({ r })}>
                       <span>{i().kinds[k()].title} {r.version}</span><span class="dim">{r.asset} · {r.size ? mb(r.size) : 'size unknown'}</span>{i().packs.some((p) => p.id === r.id) ? <span class="tag">installed</span> : null}
                     </button>
                   )}</For>
+                  <Show when={!allRel() && releases(k()).length > 8}><button class="lnk" onClick={() => setAllRel(true)}>show {releases(k()).length - 8} older releases</button></Show>
                 </div>
               )}</Show>
 
@@ -230,7 +233,7 @@ export default function CompilerWindow() {
               <div class="csec">standard headers</div>
               <div class="csub" classList={{ bad: !i().headers.ok }}>{i().headers.ok ? '✓ ' : ''}{i().headers.detail}</div>
               <div class="cfoot">
-                <span class="dim">language_packs · {i().packsDir}</span>
+                <span class="dim" title={i().packsDir}>language_packs · {i().packsDir}</span>
                 <button class="lnk" onClick={() => api.packs.show()}>show folder</button>
               </div>
               <Show when={i().packsNote}><div class="dim">{i().packsNote}</div></Show>
@@ -245,7 +248,7 @@ export default function CompilerWindow() {
 function Opt(props: { on: boolean; label: string; note: string; disabled?: boolean; onPick: () => void }) {
   return (
     <button class="copt" classList={{ on: props.on }} disabled={props.disabled} onClick={() => !props.on && props.onPick()}>
-      <span class="radio" classList={{ on: props.on }} /><span class="l">{props.label}</span><span class="dim">{props.note}</span>
+      <span class="radio" classList={{ on: props.on }} /><span class="l">{props.label}</span><span class="dim" title={props.note}>{props.note}</span>
     </button>
   );
 }

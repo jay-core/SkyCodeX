@@ -29,7 +29,7 @@ function Dir(props: { path: string; depth: number }) {
               else { setHere(dirOf(e.path)); openFile(e.path); }
             }}>
             <span class="ic">{e.dir ? (open() ? '▾' : '▸') : ''}</span>
-            <span>{e.name}</span>
+            <span class="tn" title={e.name}>{e.name}</span>
             <Show when={!e.dir && files.list.some((f) => f.path === e.path && f.dirty)}><span class="dot" style={{ background: 'var(--ty)' }} /></Show>
           </div>
           <Show when={e.dir && open()}><Dir path={e.path} depth={props.depth + 1} /></Show>
@@ -47,17 +47,18 @@ export function Marked(props: { text: string; q: string }) {
     if (at < props.text.length) out.push({ t: props.text.slice(at), m: false });
     return out;
   };
-  return <span class="mk"><For each={parts()}>{(p) => (p.m ? <mark>{p.t}</mark> : p.t)}</For></span>;
+  return <span class="mk" title={props.text}><For each={parts()}>{(p) => (p.m ? <mark>{p.t}</mark> : p.t)}</For></span>;
 }
 
 const [filter, setFilter] = createSignal('');
 function Found() {
   const [all] = createResource(() => [root(), listVersion()] as const, async ([r]) => (r ? await api.fs.files(r) : []));
   const [sel, setSel] = createSignal(0);
-  const hits = createMemo(() => {
+  const matched = createMemo(() => {
     const q = filter().trim();
-    return (all() ?? []).filter((f) => matchesIn(relTo(f), q, 1).length).slice(0, 500);
+    return (all() ?? []).filter((f) => matchesIn(relTo(f), q, 1).length);
   });
+  const hits = createMemo(() => matched().slice(0, 500));
   const groups = createMemo(() => {
     const g = new Map<string, string[]>();
     for (const f of hits()) { const d = relTo(dirOf(f)); g.set(d, [...(g.get(d) ?? []), f]); }
@@ -71,7 +72,7 @@ function Found() {
   };
   return (
     <div class="tree found">
-      <div class="fcount">{all.loading ? t('listing files…') : `${hits().length}${hits().length === 500 ? '+' : ''} of ${(all() ?? []).length} files`}</div>
+      <div class="fcount">{all.loading ? t('listing files…') : matched().length > hits().length ? `the first ${hits().length} of ${matched().length} matching files · type more to narrow` : `${hits().length} of ${(all() ?? []).length} files`}</div>
       <For each={groups()}>{([d, fs]) => (
         <>
           <div class="ti fdir"><Marked text={d ? `${d}/` : './'} q={filter().trim()} /></div>
@@ -117,7 +118,7 @@ export default function FilesPane() {
   const terminal = async () => { const why = (await api.shell.terminal(folderNow())) as string | null; if (why) flash(`couldn't open a terminal: ${why}`, 6000); };
   return (
     <div class="pane files" style={{ height: '100%' }}>
-      <div class="ph"><span style={{ color: 'var(--dim)' }}>{root() ? basename(root()) : 'files'}</span><span class="grow" />
+      <div class="ph fwrap"><span style={{ color: 'var(--dim)' }}>{root() ? basename(root()) : 'files'}</span><span class="grow" />
         <Show when={root()}>
           <button class="chip" title={`a new file in ${relTo(folderNow()) || 'the project folder'}`} onClick={() => create('file')}>{t('new file')}</button>
           <button class="chip" title={`a new folder in ${relTo(folderNow()) || 'the project folder'}`} onClick={() => create('folder')}>{t('new folder')}</button>

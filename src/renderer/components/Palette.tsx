@@ -37,7 +37,7 @@ export default function Palette() {
           <div class="pal-list" id="pal-list" role="listbox">
             <For each={items()}>{(it, i) => (
               <div class="pal-it" id={`pal-${i()}`} role="option" aria-selected={i() === sel()} classList={{ on: i() === sel() }} onMouseEnter={() => setSel(i())} onMouseDown={(e) => { e.preventDefault(); accept(i()); }}>
-                <span class="l">{it.label}</span><span class="d">{it.detail}</span>
+                <span class="l" title={it.label}>{it.label}</span><span class="d" title={it.detail}>{it.detail}</span>
               </div>
             )}</For>
             <Show when={!items().length}><div class="pal-it"><span class="d">{symbolQuery && !q() ? t('type a name') : t('nothing matches')}</span></div></Show>

@@ -884,7 +884,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   </div>
                 ); })()
                 : <div class="sline" classList={{ more: l.n === MORE_LINES }} title={l.n === MORE_LINES ? 'show every line of this block' : undefined}
-                    onClick={l.n === MORE_LINES ? (e) => { e.stopPropagation(); setWholeBlocks(new Set([...wholeBlocks(), l.owner])); } : undefined} style={{ top: `${l.top}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>
+                    onClick={l.n === MORE_LINES ? (e) => { e.stopPropagation(); setWholeBlocks(new Set([...wholeBlocks(), l.owner])); } : undefined} style={{ top: `${l.top}px`, left: `${l.x}px`, 'max-width': `${Math.max(80, width() - SPINE - l.x - 14)}px` }}>{l.n >= 0 ? <span class="ln">{l.n + 1}</span> : null}<span class="tx" title={l.n >= 0 ? l.text : plain(l.text)} innerHTML={l.n >= 0 ? hlLine(l.text) : l.text} /></div>}</For>
               <For each={visible()}>{(it) => {
                 const r = () => rowOf(it);
                 const e = () => ember().indexOf(it);

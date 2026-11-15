@@ -238,7 +238,7 @@ export default function StepPreview() {
                 <Sec t="times called"><div class="big2"><b>{cd().timesCalled}</b> call{cd().timesCalled === 1 ? '' : 's'} to {cd().callee.name} in this run · {cd().callers.map((c) => `${c.count} from ${c.name}`).join(', ')}</div></Sec>
                 <Sec t={cd().tag === 'SELECTED' ? 'the calls in this square' : 'every call'}>
                   <For each={cd().calls}>{(c) => (
-                    <div class="cl" classList={{ now: c.state === 'now', dn: c.state === 'done' }} onClick={() => go(c.item)} title="go to this step">
+                    <div class="cl" classList={{ now: c.state === 'now', dn: c.state === 'done' }} onClick={() => go(c.item)} title={`go to this step · ${c.code}`}>
                       <span class="sp">step {c.step}</span><span class="o">{ordinal(c.nth)}{c.state === 'now' ? ' · now' : ''}</span><span class="lc">{basename(c.file)}:{c.line}</span>
                       <code innerHTML={underlineCall(c.code, cd().callee.name, c.col)} />
                     </div>

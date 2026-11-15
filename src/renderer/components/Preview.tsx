@@ -277,7 +277,7 @@ export default function Preview(props: { overlay: () => SVGSVGElement | undefine
           <div class="pcol-in">
             <For each={lv().cards}>{(card, k) => (
               <>
-                <Show when={k() === firstOther(lv())}><div class="pdiv"><span>{t('not functions · macros, static_assert, lambdas, calls through pointers')}</span></div></Show>
+                <Show when={k() === firstOther(lv())}><div class="pdiv"><span title={t('not functions · macros, static_assert, lambdas, calls through pointers')}>{t('not functions · macros, static_assert, lambdas, calls through pointers')}</span></div></Show>
                 <Card card={card} id={`${li}:${k()}`} color={pal(k())} focus={lv().focus === k()} lit={isLit(li, k())} onFocus={() => focusCard(li, k())} onScroll={redraw} />
               </>
             )}</For>

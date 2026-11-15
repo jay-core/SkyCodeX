@@ -6,6 +6,7 @@ import { serverLang } from '../lib/langs';
 import { saver } from '../lib/power';
 import { langStatus } from '../lib/langlsp';
 import { repairNote } from '../lib/repair';
+import { hwheel } from '../lib/hwheel';
 
 const shortStatus = (s?: string) => (!s ? '' : s === 'starting' ? t('starting…') : s.endsWith(' ready') ? s : t('no language engine'));
 import { t } from '../lib/i18n';
@@ -21,7 +22,7 @@ export const GEAR = (
 export default function Header() {
   return (
     <div class="hdr">
-      <div class="pivot nodrag">
+      <div class="pivot nodrag" onWheel={hwheel}>
         <Show when={root()}>
           <button classList={{ on: page() === 'flow' }} onClick={() => setPage('flow')}>{t('flow')}</button>
           <button classList={{ on: page() === 'editor' && !files.active }} title={root()} onClick={() => { setPage('editor'); setFiles('active', ''); }}>{t('folder')}</button>
@@ -34,15 +35,15 @@ export default function Header() {
                 onAuxClick={(e) => { if (e.button === 1) closeFile(f.path); }}>{basename(f.path)}</button>
               <button class="tabx" title={t('Close (⌘/Ctrl W)')} aria-label={`${t('Close')} ${basename(f.path)}`} onClick={() => closeFile(f.path)}>×</button>
             </span>
-            <Show when={page() === 'editor' && files.active === f.path && crumb()}><span class="crumb">{crumb()}</span></Show>
+            <Show when={page() === 'editor' && files.active === f.path && crumb()}><span class="crumb" title={crumb()}>{crumb()}</span></Show>
           </>
         )}</For>
       </div>
       <div class="status" role="status" aria-live="polite">
         <Show when={saver()}><span title={t('on battery: animations off, background work spaced out (settings → interface → power)')}>{t('battery saver')}</span></Show>
-        <Show when={page() === 'editor' && files.active && repairNote().file === files.active && repairNote().text}><span class="rnote">{repairNote().text}</span></Show>
+        <Show when={page() === 'editor' && files.active && repairNote().file === files.active && repairNote().text}><span class="rnote" title={repairNote().text}>{repairNote().text}</span></Show>
         <Show when={page() === 'editor' && files.active}><span>{cursorPos().line}:{cursorPos().col}</span></Show>
-        <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>
+        <Show when={page() === 'editor' && serverLang(files.active)} fallback={<span title={indexing() ?? undefined}>{indexing() ?? (lspState() === 'ready' ? t('clangd ready') : lspState() === 'starting' ? t('clangd starting…') : lspState() === 'failed' ? t('clangd unavailable') : '')}</span>}><span title={langStatus()[serverLang(files.active)!] ?? ''}>{shortStatus(langStatus()[serverLang(files.active)!])}</span></Show>
       </div>
       <div class="wctl">
         <button title={t('Minimise')} aria-label={t('Minimise')} onClick={() => api.win.minimize()}><svg viewBox="0 0 10 10"><path d="M0 5.5h10" /></svg></button>

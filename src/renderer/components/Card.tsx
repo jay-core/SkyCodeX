@@ -54,7 +54,7 @@ export default function Card(props: { card: CardData; id: string; color: string;
       <div class="card-h">
         <span class="sw" style={{ background: props.color }} />
         <Show when={props.num}><span class="num">{props.num}</span></Show>
-        <span class="nm">{props.card.name}</span>
+        <span class="nm" title={props.card.name}>{props.card.name}</span>
         <Show when={props.card.kind !== 'call'} fallback={<Show when={props.card.std}><span class="chip">{t('std')}</span></Show>}><span class="chip kind">{t(KIND_CHIP[props.card.kind])}</span></Show>
         <Show when={depths()[props.card.key]} keyed>{(v) => {
           if (v === 'busy') return <span class="depth" title={t('measuring how deep its calls go')}>…</span>;

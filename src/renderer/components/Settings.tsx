@@ -6,6 +6,7 @@ import { settings, problems, setSettingsOpen, openFile, info, flash, applySettin
 import { installedFonts, weightsOf, WEIGHT_NAMES, FontFamily } from '../lib/fonts';
 import { afterPaint } from '../lib/motion';
 import { t } from '../lib/i18n';
+import { hwheel } from '../lib/hwheel';
 
 const PAGES: { name: string; sections: string[] }[] = [
   { name: 'appearance', sections: ['font', 'font.ui', 'font.preview', 'theme', 'motion', 'colors.editor', 'colors.code', 'colors.diagnostics', 'colors.cards', 'colors.flow'] },
@@ -68,7 +69,7 @@ function Combo(props: { value: string; load: () => Promise<Opt[]>; onPick: (v: s
           <For each={shown()}>{(o, i) => (
             <>
               <Show when={o.group && (i() === 0 || shown()[i() - 1].group !== o.group)}><div class="combo-g">{o.group}</div></Show>
-              <button classList={{ hi: i() === hi(), on: o.value === props.value }} style={{ 'font-family': o.font ? fontOf(o.value) : undefined }}
+              <button title={o.label} classList={{ hi: i() === hi(), on: o.value === props.value }} style={{ 'font-family': o.font ? fontOf(o.value) : undefined }}
                 onMouseDown={(e) => { e.preventDefault(); pick(o.value); }} onMouseEnter={() => setHi(i())}>{o.label}</button>
             </>
           )}</For>
@@ -250,7 +251,7 @@ export default function Settings() {
         <button class="chip" style={{ 'font-size': '14px' }} onClick={() => { openFile(info()!.settingsFile); close(); }}>{t('open settings.toml')}</button>
         <button class="chip" style={{ 'font-size': '14px', 'margin-left': '24px' }} onClick={close}>{t('close · esc')}</button>
       </div>
-      <div class="pv si"><For each={PAGES}>{(p, i) => <button classList={{ on: pg() === i() }} onClick={() => setPg(i())}>{t(p.name)}</button>}</For></div>
+      <div class="pv si" onWheel={hwheel}><For each={PAGES}>{(p, i) => <button classList={{ on: pg() === i() }} onClick={() => setPg(i())}>{t(p.name)}</button>}</For></div>
       <Show when={problems().length}>
         <div class="problem si"><For each={problems()}>{(p) => <div>{p.line ? `line ${p.line}: ` : ''}{p.message}</div>}</For></div>
       </Show>
