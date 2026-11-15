@@ -68,10 +68,10 @@ const SKIP_DIR = /^(\.|node_modules$|__pycache__$|language_packs$|third[_-]?part
 const SOURCE = /\.(c|cc|cpp|cxx|c\+\+|m|mm)$/i, HEADER = /\.(h|hh|hpp|hxx|h\+\+|inl|ipp|tcc|tpp)$/i;
 const MAX_SOURCES = 20000;
 
-export function scanProject(root: string): { sources: string[]; headerDirs: string[] } {
+export function scanProject(root: string): { sources: string[]; headerDirs: string[]; deeper: boolean } {
   const sources: string[] = [], headerDirs: string[] = [];
-  let level = [root];
-  for (let depth = 0; level.length && depth < 12 && sources.length < MAX_SOURCES; depth++) {
+  let level = [root], depth = 0;
+  for (; level.length && depth < 12 && sources.length < MAX_SOURCES; depth++) {
     const next: string[] = [];
     for (const dir of level) {
       let hasHeader = false;
@@ -86,12 +86,14 @@ export function scanProject(root: string): { sources: string[]; headerDirs: stri
     }
     level = next.sort();
   }
-  return { sources: sources.sort(), headerDirs };
+  return { sources: sources.sort(), headerDirs, deeper: depth >= 12 && level.length > 0 };
 }
+export let dbNote = '';
 
 export function ensureCompileCommands(root: string, stateDir: string, compiler?: Pick<Compiler, 'kind' | 'cxx' | 'cc' | 'include'> | null): string | null {
+  dbNote = '';
   if (!root || findCompileCommands(root)) return null;
-  const { sources, headerDirs } = scanProject(root);
+  const { sources, headerDirs, deeper } = scanProject(root);
   if (!sources.length) return null;
   const own = path.join(root, 'compile_flags.txt');
   const flags = fs.existsSync(own)
@@ -102,6 +104,9 @@ export function ensureCompileCommands(root: string, stateDir: string, compiler?:
   const out = path.join(dir, 'compile_commands.json'), text = JSON.stringify(db, null, 1);
   fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(out) || fs.readFileSync(out, 'utf8') !== text) atomicWrite(out, text);
+  dbNote = ['SkyCodeX wrote the build commands itself: folders named third_party, third-party or vendor are left out',
+    sources.length >= MAX_SOURCES ? `it stopped at ${MAX_SOURCES.toLocaleString()} source files` : '', deeper ? 'folders deeper than 12 levels are left out' : '',
+    !fs.existsSync(own) && headerDirs.length + 1 > 400 ? `only the first 400 of ${headerDirs.length + 1} header folders are searched` : ''].filter(Boolean).join(' · ');
   return dir;
 }
 

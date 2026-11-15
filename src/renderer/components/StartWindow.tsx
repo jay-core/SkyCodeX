@@ -46,15 +46,15 @@ export default function StartWindow() {
           <div>
             <h3>{t('Open recent')}</h3>
             <Show when={recent().length} fallback={<div class="st-none">{t('Folders you open appear here.')}</div>}>
-              <For each={recent()}>{(r, i) => (
+              <div class="st-rl"><For each={recent()}>{(r, i) => (
                 <div class="st-rc" classList={{ gone: !r.found }} role="button" tabindex={r.found ? 0 : -1} aria-disabled={!r.found}
                   title={r.found ? r.path : t('this folder no longer exists')} onClick={() => r.found && open(r.path)} onKeyDown={(e) => { if (e.key === 'Enter' && r.found) { e.stopPropagation(); void open(r.path); } }}>
-                  <span class="k">{i() + 1}</span>
+                  <span class="k" classList={{ none: i() >= 5 }}>{i() < 5 ? i() + 1 : ''}</span>
                   <div class="nmp"><div class="nm">{basename(r.path)}</div><div class="p" title={r.path}>{home(r.path)}</div></div>
                   <span class="w">{r.found ? when(r.at) : t('not found')}</span>
                   <button class="x" title={t('remove from the list')} aria-label={t('remove {name} from the list', { name: basename(r.path) })} onClick={(e) => remove(e, r.path)}>✕</button>
                 </div>
-              )}</For>
+              )}</For></div>
             </Show>
           </div>
           <div>

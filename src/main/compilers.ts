@@ -11,7 +11,8 @@ export interface Compiler {
   include?: string[];
 }
 type Run = (exe: string, args: string[]) => string;
-const run: Run = (exe, args) => { try { return execFileSync(exe, args, { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { return String((e as { stdout?: string; stderr?: string }).stdout || (e as { stderr?: string }).stderr || ''); } };
+export const silentCompilers = new Set<string>();
+const run: Run = (exe, args) => { try { return execFileSync(exe, args, { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { if ((e as { code?: string }).code === 'ETIMEDOUT' || (e as { signal?: string }).signal === 'SIGTERM') silentCompilers.add(exe); return String((e as { stdout?: string; stderr?: string }).stdout || (e as { stderr?: string }).stderr || ''); } };
 
 export function isGcc(versionText: string): boolean {
   const first = versionText.split(/\r?\n/)[0] ?? '';

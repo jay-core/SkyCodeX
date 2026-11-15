@@ -224,7 +224,7 @@ export async function symbols(file: string): Promise<DocSymbol[]> {
   } catch { return []; }
 }
 
-export function enclosingFunction(syms: DocSymbol[], pos: Pos): DocSymbol | null {
+export function enclosingFunction(syms: DocSymbol[], pos: Pos, hasBody: (s: DocSymbol) => boolean = () => false): DocSymbol | null {
   const inside = (r: { start: Pos; end: Pos }) =>
     (pos.line > r.start.line || (pos.line === r.start.line && pos.character >= r.start.character)) &&
     (pos.line < r.end.line || (pos.line === r.end.line && pos.character <= r.end.character));
@@ -232,7 +232,7 @@ export function enclosingFunction(syms: DocSymbol[], pos: Pos): DocSymbol | null
   const walk = (list: DocSymbol[]) => {
     for (const s of list) {
       if (!inside(s.range)) continue;
-      if (FN_KINDS.has(s.kind) && s.range.end.line > s.range.start.line) best = s;
+      if (FN_KINDS.has(s.kind) && (s.range.end.line > s.range.start.line || hasBody(s))) best = s;
       if (s.children) walk(s.children);
     }
   };

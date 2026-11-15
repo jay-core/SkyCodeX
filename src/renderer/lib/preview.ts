@@ -182,7 +182,8 @@ function place(idx: number, fresh: Level): Level {
 let rootKey = '';
 export async function refreshForCursor(file: string, pos: Pos, force = false) {
   const gen = ++rootGen;
-  const fn = enclosingFunction(await symbols(file), pos);
+  const syms = await symbols(file), text = await fileLines(file);
+  const fn = enclosingFunction(syms, pos, (s) => (text[s.range.start.line] ?? '').slice(s.range.start.character, s.range.end.character).includes('{'));
   if (gen !== rootGen) return;
   const key = fn ? `${file}#${fn.range.start.line}` : '';
   if (key !== rootKey) {

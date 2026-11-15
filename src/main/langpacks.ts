@@ -92,7 +92,7 @@ export async function releasesFor(kind: PackKind, platform = process.platform, a
     if (!t) return [];
     const target = platform === 'win32' ? t.replace(/-gnu$/, '-msvc') : t;
     const want = platform === 'win32' ? `rust-analyzer-${target}.zip` : `rust-analyzer-${target}.gz`;
-    const rels = await json('https://api.github.com/repos/rust-lang/rust-analyzer/releases?per_page=8', { Accept: 'application/vnd.github+json' });
+    const rels = await json('https://api.github.com/repos/rust-lang/rust-analyzer/releases?per_page=30', { Accept: 'application/vnd.github+json' });
     const out: Release[] = [];
     for (const r of rels) {
       if (r.prerelease || r.draft || !/^\d{4}-\d{2}-\d{2}$/.test(r.tag_name)) continue;
@@ -105,7 +105,7 @@ export async function releasesFor(kind: PackKind, platform = process.platform, a
   if (kind === 'rust') return cached(kind, async () => {
     const t = rustTarget(platform, arch);
     if (!t) return [];
-    const rels = await json('https://api.github.com/repos/rust-lang/rust/releases?per_page=5', { Accept: 'application/vnd.github+json' });
+    const rels = await json('https://api.github.com/repos/rust-lang/rust/releases?per_page=30', { Accept: 'application/vnd.github+json' });
     const out: Release[] = [];
     for (const r of rels) {
       if (r.prerelease || r.draft || !/^\d+\.\d+\.\d+$/.test(r.tag_name)) continue;

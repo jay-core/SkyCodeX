@@ -89,7 +89,6 @@ function colors(): SettingDef[] {
     c('code.function', '--fn', '#ad9b6f', 'function and macro names'),
     c('code.type', '--ty', '#7f9e82', 'types and classes'),
     c('code.variable', '--var', '#a8929e', 'variables, numbers, true and false'),
-    c('code.parameter', '--par', '#b0857a', 'parameters'),
     c('code.string', '--str', '#ab9070', 'strings and characters'),
     c('code.comment', '--cm', '#5f665f', 'comments'),
     c('diagnostics.error', '--err', '#b8766b', 'errors'),
@@ -98,7 +97,6 @@ function colors(): SettingDef[] {
     ...['#86a8e7', '#79c9ae', '#bc9fe6', '#d4c26a', '#6fc0dc', '#a6cf82', '#e2dccb', '#9c96f0'].map((d, i) => c(`cards.card_${i + 1}`, '', d, `card ${i + 1}, ${i + 9}, … and its calls' outlines and connectors`, `card ${i + 1}`)),
     c('flow.now', '--flow-now', '#ad9b6f', 'the step you are on'),
     c('flow.repetition', '--flow-rep', '#6f9e9e', 'loops and passes'),
-    c('flow.risk', '--flow-risk', '#b8605a', 'races and other risks'),
     c('flow.return', '--flow-return', '#62d6ff', 'the line drawn back to the caller when a call returns'),
   ];
 }

@@ -468,6 +468,18 @@ connector drawn once (0 in 12 earlier runs and in 2 reruns of this build); the p
 grid's heading and the card; rules 24 of 24 programs, every count the same, no errors, 183 s. 286 of 392 fixed; 53
 kept by verdict or not a fault; 53 open.
 
+**Club 6a, the user's decisions (2026-11-15):** fixed, 15. Always faintly visible: a recent folder's remove button
+(`styles.css:168`), a tab's close (`:356`), the window's buttons (`Header.tsx:47`). Longer lists: 30 recent folders,
+scrolling, the first five with number keys (`main.ts:171` with `:172` and `StartWindow.tsx:36`); up to 200 commits to
+compare with, 40 at a time with "show older" (`main.ts:234`); 100 clang and clangd releases, 30 of rust-analyzer and
+Rust (`packs.ts:78`, `langpacks.ts:95`, `:108`). Engine: a one-line function definition counts as a function for the
+preview (`lsp.ts:232`); the two colour settings no rule used are removed (`settings-schema.ts:92`, `:101`); compilers
+that did not answer within 5 s are listed in the compiler window (`compilers.ts:14`); when SkyCodeX writes the build
+commands itself, the compiler window says third_party, third-party and vendor folders are left out (`main/lsp.ts:67`)
+and names any limit reached: 20,000 sources, 12 folder levels, 400 header folders (`:69`, `:74`, `:99`). Checks against
+club 5: default, compiler and programs smoke 0 fields different; rules 24 of 24 programs, every count the same, no
+errors, 184 s. 301 of 392 fixed; 53 kept by verdict or not a fault; 38 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

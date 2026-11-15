@@ -78,7 +78,7 @@ export async function availableReleases(kind: PackKind, platform = process.platf
   if (!src) return [];
   const hit = cache.get(src.repo);
   if (hit && Date.now() - hit.at < 600_000) return hit.list;
-  const res = await fetch(`https://api.github.com/repos/${src.repo}/releases?per_page=40`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SkyCodeX' } });
+  const res = await fetch(`https://api.github.com/repos/${src.repo}/releases?per_page=100`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SkyCodeX' } });
   if (!res.ok) throw new Error(res.status === 403 ? 'GitHub is limiting requests right now — try again in a while' : `GitHub answered ${res.status}`);
   const list: Release[] = [];
   for (const r of (await res.json()) as any[]) {

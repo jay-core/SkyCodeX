@@ -12,7 +12,7 @@ interface Info {
   inbuilt: { path: string; version: string | null } | null; system: { path: string; version: string | null } | null;
   packs: Pack[]; packsDir: string; packsNote: string | null; toolchainSetting: string; toolchain: string | null;
   headers: { ok: boolean; detail: string }; installing: string | null;
-  readAs: { want: 'clang' | 'gcc' | 'msvc'; now: string; note: string; gcc: { path: string; version: string } | null; msvc: { path: string; version: string } | null };
+  readAs: { want: 'clang' | 'gcc' | 'msvc'; now: string; note: string; dbNote: string; silent: string[]; gcc: { path: string; version: string } | null; msvc: { path: string; version: string } | null };
   kinds: Record<Kind, { title: string; language: string; what: string }>;
 }
 const MORE: { language: string; kinds: Kind[] }[] = [
@@ -143,6 +143,8 @@ export default function CompilerWindow() {
               </div>
               <Show when={i().readAs.note}><div class="csub bad">{i().readAs.note}</div></Show>
               <div class="csub">reading as {i().readAs.now} · a project's own compile_commands.json keeps the compilers it names</div>
+              <Show when={i().readAs.silent.length}><div class="csub">did not answer within 5 s, so passed over: {i().readAs.silent.join(', ')}</div></Show>
+              <Show when={i().readAs.dbNote}><div class="csub">{i().readAs.dbNote}</div></Show>
 
               <div class="csec">compiler toolchain <span class="dim">· its standard headers are indexed with the project</span></div>
               <Show when={i().packs.some((p) => p.kind === 'toolchain')} fallback={<div class="csub">none installed — the system's headers are used</div>}>

@@ -7,13 +7,13 @@ import { loadSettings, setSetting } from './settings';
 import { defaultFileText, Settings, SettingProblem } from '../shared/settings-schema';
 import { atomicWrite, listDir, listSources, listSourcesAsync, listFiles, saveBuffer, dropBuffer, loadBuffers, slashPath } from './files';
 import { searchFolder, cancelSearch } from './search';
-import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb, findCompileCommands, type CompileEntry } from './lsp';
+import { LspClient, findClangd, inbuiltClangd, systemClangd, headerCommand, writeSettingDb, otherCompileDbs, readCompileDb, findCompileCommands, dbNote, type CompileEntry } from './lsp';
 import { buildTargets } from './targets';
 import { resolvePacksDir, listPacks, unreadablePacks, installRelease, removePack, packExe, PackKind, PackManifest, Release } from './packs';
 import { releasesFor, stepsFor, KIND_INFO, serverFor, Lang } from './langpacks';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, Compiler, ReadAs } from './compilers';
+import { findGcc, findMsvc, projectDrivers, describe as describeCompiler, silentCompilers, Compiler, ReadAs } from './compilers';
 import { openTerminal } from './terminal';
 import { candidatesFor, verdict, reason as repairReason, cleanMessage, lineStarts, applyEdit, RDiag, Lang as RLang } from '../shared/repair';
 
@@ -171,8 +171,8 @@ const readRecent = (): { path: string; at: number }[] => {
   try { const r = JSON.parse(fs.readFileSync(RECENT, 'utf8')); return Array.isArray(r) ? r.filter((x) => x && typeof x.path === 'string' && typeof x.at === 'number') : []; } catch { return []; }
 };
 const sameFolder = (a: string, b: string) => (process.platform === 'linux' ? a === b : a.toLowerCase() === b.toLowerCase());
-ipcMain.handle('recent:get', () => readRecent().slice(0, 5).map((r) => ({ ...r, found: fs.existsSync(r.path) })));
-ipcMain.handle('recent:add', (_e, p: string) => atomicWrite(RECENT, JSON.stringify([{ path: p, at: Date.now() }, ...readRecent().filter((r) => !sameFolder(r.path, p))].slice(0, 5), null, 1)));
+ipcMain.handle('recent:get', () => readRecent().slice(0, 30).map((r) => ({ ...r, found: fs.existsSync(r.path) })));
+ipcMain.handle('recent:add', (_e, p: string) => atomicWrite(RECENT, JSON.stringify([{ path: p, at: Date.now() }, ...readRecent().filter((r) => !sameFolder(r.path, p))].slice(0, 30), null, 1)));
 ipcMain.handle('recent:remove', (_e, p: string) => atomicWrite(RECENT, JSON.stringify(readRecent().filter((r) => !sameFolder(r.path, p)), null, 1)));
 
 const lsp = new LspClient((method, params) => send('lsp:notify', method, params), (line) => log(`clangd: ${line}`));
@@ -234,7 +234,7 @@ ipcMain.handle('setting:stop', () => stopSetting());
 const gitOut = (root: string, args: string[]) => new Promise<string>((res, rej) => execFile('git', ['-C', root, ...args], { maxBuffer: 64 << 20 }, (err, out) => (err ? rej(err) : res(String(out)))));
 ipcMain.handle('change:history', async (_e, root: string) => {
   try {
-    const out = await gitOut(root, ['log', '-n', '40', '--format=%H%x1f%h%x1f%s%x1f%cr']);
+    const out = await gitOut(root, ['log', '-n', '200', '--format=%H%x1f%h%x1f%s%x1f%cr']);
     return { ok: true, commits: out.split('\n').filter(Boolean).map((l) => { const [sha, short, subject, when] = l.split('\x1f'); return { sha, short, subject, when }; }) };
   } catch (e) {
     const m = String((e as Error).message ?? e);
@@ -563,7 +563,7 @@ ipcMain.handle('compiler:info', async () => {
     readAs: (() => {
       const r = readingAs(), given = String(settings['compiler.path'] ?? '');
       const gcc = detect('gcc', r.want === 'gcc' ? given : ''), msvc = detect('msvc', r.want === 'msvc' ? given : '');
-      return { want: r.want, now: describeCompiler(r.compiler), note: r.note, gcc: gcc && { path: gcc.cxx, version: gcc.version }, msvc: msvc && { path: msvc.cxx, version: msvc.version } };
+      return { want: r.want, now: describeCompiler(r.compiler), note: r.note, dbNote, silent: [...silentCompilers], gcc: gcc && { path: gcc.cxx, version: gcc.version }, msvc: msvc && { path: msvc.cxx, version: msvc.version } };
     })(),
   };
 });
