@@ -453,6 +453,21 @@ keep folding and show folded calls (next). Checks against club 3: default, compi
 different; rules 24 of 24 programs, every count the same, no errors, 186 s. 280 of 392 fixed; 53 kept by verdict or not
 a fault; 59 open.
 
+**Folded calls shown (2026-11-15, the user's choice):** a short helper folded into its caller (`log_line` in
+samples/programs) is listed in the step card ("uses … · short helpers folded into this step"), the entry function's
+folded helpers are named in the grid's heading, and a grid with no squares says what the entry calls instead of
+standing empty. **Club 5, switches and heavy work:** fixed, 6. F `Flow.tsx:51` the program chips show for any number
+of programs and scroll, not only for 2 to 6; F `styles.css:190` the start window's footer wraps below 760 px instead of
+hiding its right part; V `flowalign.ts:69` "lines changed" keeps two rows instead of the whole table (the same result
+on 20,000 random pairs); V `flowstore.ts:141`, `:267`, `:276` a run is turned into text once and kept, not on every
+check. Still open, 8, each needing a redesign rather than a local change: `main.ts:443` (the fingerprint must notice
+any changed file), `FilesPane.tsx:22` (a tree built only where it is seen), `Sequence.tsx:610`, `:1107` (no exact
+partial canvas redraw was found), `flowseq.ts:445`, `StepPreview.tsx:219`, `Preview.tsx:272`, `Magnifier.tsx:14`.
+Checks against club 4: compiler and programs smoke 0 fields different; default smoke the same but for a hovered
+connector drawn once (0 in 12 earlier runs and in 2 reruns of this build); the programs sample shows `log_line` in the
+grid's heading and the card; rules 24 of 24 programs, every count the same, no errors, 183 s. 286 of 392 fixed; 53
+kept by verdict or not a fault; 53 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

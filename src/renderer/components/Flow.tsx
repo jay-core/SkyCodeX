@@ -5,6 +5,7 @@ import { root, files, flash, restartLsp } from '../lib/store';
 import { api } from '../lib/api';
 import { refreshTree } from './FilesPane';
 import { indexEpoch, lspState } from '../lib/lsp';
+import { hwheel } from '../lib/hwheel';
 import Sequence from './Sequence';
 import GridView from './GridView';
 
@@ -48,8 +49,8 @@ export default function Flow() {
       <Show when={entries().length > 1 && !listing()}>
         <button class="backp" title="every program in this folder (Backspace)" onClick={() => setPrograms(true)}>← all programs</button>
       </Show>
-      <Show when={entries().length > 1 && entries().length <= 6 && !listing()}>
-        <span class="lanes"><For each={entries()}>{(e, i) => <button class="chip" classList={{ on: lane() === i() }} aria-pressed={lane() === i()} title={e.rel} onClick={() => setLane(i())}>{e.label}</button>}</For></span>
+      <Show when={entries().length > 1 && !listing()}>
+        <span class="lanes" onWheel={hwheel}><For each={entries()}>{(e, i) => <button class="chip" classList={{ on: lane() === i() }} aria-pressed={lane() === i()} title={e.rel} onClick={() => setLane(i())}>{e.label}</button>}</For></span>
       </Show>
       <button class="chip" classList={{ on: flowView() === 'metro' }} aria-pressed={flowView() === 'metro'} onClick={() => switchView('metro')}>metro</button>
       <button class="chip" classList={{ on: flowView() === 'grid' }} aria-pressed={flowView() === 'grid'} onClick={() => switchView('grid')}>grid</button>

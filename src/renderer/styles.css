@@ -213,10 +213,10 @@ input, select { font: inherit; color: var(--bright); }
 .st-big.go:hover, .st-big.go:focus-visible { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 .st-cont { margin-top: 8px; font: 300 14px var(--ui); color: var(--link); padding: 6px 2px; }
 .st-cont:hover { text-decoration: underline; }
-.st-foot { margin-top: 22px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .05); font: 300 12px var(--ui); color: var(--faint); display: flex; gap: 18px; }
+.st-foot { margin-top: 22px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .05); font: 300 12px var(--ui); color: var(--faint); display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .st-foot b { font-weight: 400; color: var(--dim); }
 .st-foot .r { margin-left: auto; }
-@media (max-width: 760px) { .st-cols { grid-template-columns: 1fr; } .st-foot .r { display: none; } }
+@media (max-width: 760px) { .st-cols { grid-template-columns: 1fr; } }
 .shiftbar .pnav { display: flex; height: 26px; border: 1px solid #343834; }
 .shiftbar .pnav:hover { border-color: #4a504a; }
 .shiftbar .pnav button { padding: 0 13px; color: #7b8279; }
@@ -636,7 +636,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .scode { flex: 1; min-height: 0; overflow: auto; margin: 0 12px; background: #1b1c1b; }
 .scode .cm-editor { height: 100%; }
 .scode .snext { background: rgba(173, 155, 111, .14); box-shadow: inset 3px 0 #ad9b6f; }
-.lanes { display: flex; gap: 10px; margin-right: 12px; }
+.lanes { display: flex; gap: 10px; margin-right: 12px; min-width: 0; max-width: 40vw; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .seqv.still .seqin, .seqv.still .srow, .seqv.still .sframe, .seqv.still .sbar, .seqv.still .sarw, .seqv.still .sband { transition: none; animation: none; }
 
 .callbox { outline: .5px solid color-mix(in srgb, var(--c) 85%, transparent); outline-offset: 1px; border-radius: 0; cursor: pointer; transition: outline-color .15s, background .15s; }

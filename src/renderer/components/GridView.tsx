@@ -169,6 +169,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
     }
     return out;
   });
+  const entryUses = createMemo(() => { const s = S(); if (!s || !s.items.length) return null; const R0 = s.run.rows, l = s.uses.get(s.items[0]) ?? []; return l.length ? { name: short(R0[s.items[0]].name), names: l.map((i) => `${short(R0[i].name)}${R0[i].at ? ` (line ${R0[i].at!.line + 1})` : ''}`).join(', ') } : null; });
   const cellAt = (c: string, r: string) => model()?.cells.get(`${c}>${r}`);
   const pickCell = createMemo(() => { const p = pick(); return p ? cellAt(p.c, p.r) ?? [] : []; });
 
@@ -582,6 +583,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <Show when={header()} fallback={<span>{status()}</span>}><span class="ghd" title={header()}><i class="selmk" />{header()}</span></Show>
           <Show when={analysisNote()}>{(a) => <span class="seqchg warn" title={a().full}>{a().text}</span>}</Show>
+          <Show when={entryUses()}>{(u) => <span class="seqchg" title={`${u().name} uses ${u().names}: short helpers, folded into its step`}>{u().name} uses {u().names}</span>}</Show>
           <span class="grow" />
           <Show when={runStatus()}><span class="sub">{runStatus()}</span></Show>
           <PlayControls playing={playing()} speed={speed()} setSpeed={setSpeed} toggle={() => play()} restart={() => { stop(); report(stepMove('home')); }} step={() => { stop(); report(stepMove('next')); }} />
@@ -629,6 +631,7 @@ export default function GridView(props: { switcher: JSX.Element }) {
           </div>
           <div class="gscroll" style={{ 'padding-bottom': `${skyH()}px` }} ref={scroller} onScroll={() => { setSl(scroller.scrollLeft); setSt(scroller.scrollTop); }} onMouseLeave={() => setHover(null)}>
             <Show when={model()} fallback={<div class="empty">{waitingText()}</div>}>
+              <Show when={!model()!.cells.size}><div class="empty">{S() ? `${short(S()!.run.rows[S()!.items[0]].name)} calls no other project function as a step of its own${entryUses() ? ` · it uses ${entryUses()!.names}, short helpers folded into its step` : ''}` : ''}</div></Show>
                 <div class="gsz" style={{ width: `${side() + geo().x.size + tot() + 12}px`, height: `${head() + geo().y.size + foot() + 8}px` }}>
                   <div class="gstrip top" style={{ left: '0px', top: `${st()}px`, width: `${side() + geo().x.size + 8}px`, height: `${head() - EDGE}px` }} />
                   <div class="gstrip side" style={{ left: `${sl()}px`, top: '0px', width: `${side() - EDGE}px`, height: `${head() + geo().y.size + EDGE}px` }} />

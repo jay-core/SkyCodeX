@@ -139,7 +139,7 @@ export interface DetailCard {
   calls: CardCall[];
   caller: { name: string; fn: number; file: string; line: number; makes: { name: string; steps: number[] }[]; inside: string } | null;
   passesIn: string; getsBack: string;
-  itsCalls: { name: string; steps: number[] }[]; library: string[]; loops: number;
+  itsCalls: { name: string; steps: number[] }[]; uses: string[]; library: string[]; loops: number;
   waysOut: { text: string; line: number; early: boolean }[];
   effects: { changes: string; outside: string; pure: string; thread: string };
   comment: string; findings: string[]; across: string;
@@ -211,7 +211,7 @@ export function detailCard(s: Seq, at: number, cell: number[] | null, cur: numbe
     timesCalled: all.length, callers: [...byCaller].map(([name, count]) => ({ name, count })),
     calls: shown, caller,
     passesIn: r.args?.length ? r.args.join(', ') : '', getsBack: m.result,
-    itsCalls: [...itsCalls].map(([name, steps]) => ({ name, steps })), library: libraryCalls(s, fnRowIdx, lines),
+    itsCalls: [...itsCalls].map(([name, steps]) => ({ name, steps })), uses: (s.uses.get(fnRowIdx) ?? []).map((i) => `${short(R[i].name)}${R[i].at ? ` (line ${R[i].at!.line + 1})` : ''}`), library: libraryCalls(s, fnRowIdx, lines),
     loops: (body.replace(/\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '').match(/\b(for|while)\s*\(|\bdo\s*\{/g) ?? []).length,
     waysOut: (s.run.exits?.[key] ?? []).map((x) => ({ text: x.text, line: x.line + 1, early: x.early })),
     effects: {

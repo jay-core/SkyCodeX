@@ -97,6 +97,8 @@ export async function rebuild(): Promise<void> {
   void checkpoint();
 }
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const runTexts = new WeakMap<Run, string>();
+const runText = (run: Run | null | undefined) => { if (!run) return JSON.stringify(run ?? null); let t = runTexts.get(run); if (t == null) { t = JSON.stringify(run); runTexts.set(run, t); } return t; };
 const sameGraph = (a: FlowGraph | null, b: FlowGraph | null) => !!a && !!b && sameJson({ ...a, ms: 0 }, { ...b, ms: 0 });
 function statusOf(g: FlowGraph): string {
   const files = g.boxes.filter((b) => !b.dead).length, stop = g.truncated ? ` · stopped at ${g.limit} functions` : '';
@@ -194,7 +196,7 @@ api.setting.onDone((r: { ok: boolean; run?: Run; errors?: { file: string; line: 
   const stop = (r.errors ?? []).find((x) => /^#error\b|^"?#error/.test(x.message) || /\berror directive\b/i.test(x.message));
   if (stop) { setSettingRaw({ ...s, state: 'failed', note: `doesn't build with ${s.label}: ${stop.message} · ${stop.file.replace(/^.*[\\/]/, '')}:${stop.line + 1}` }); return; }
   const n = (r.errors ?? []).length;
-  setSettingRaw({ ...s, state: 'ready', run: r.run, base: JSON.stringify(live?.run ?? null), note: n ? `${n} error${n > 1 ? 's' : ''} in these files with ${s.label} (clang read past them)` : '' });
+  setSettingRaw({ ...s, state: 'ready', run: r.run, base: runText(live?.run), note: n ? `${n} error${n > 1 ? 's' : ''} in these files with ${s.label} (clang read past them)` : '' });
   if (live?.run) showRun(live.run);
 });
 export async function chooseSetting(c: { label: string; flags: string[]; folder?: string } | null) {
@@ -241,7 +243,7 @@ async function readWork(run: Run) {
     for (const f of new Set(run.rows.filter((r) => r.kind === 'step').map((r) => r.file))) text.set(f, (await api.fs.read(f).catch(() => '')) as string);
     const c = comparing();
     if (!c || c.state !== 'ready') return;
-    setComparingRaw({ ...c, work: { base: JSON.stringify(run), texts: functionTexts(run, (f) => text.get(f) ?? null) } });
+    setComparingRaw({ ...c, work: { base: runText(run), texts: functionTexts(run, (f) => text.get(f) ?? null) } });
   } finally { workReading = false; }
   if (live?.run) showRun(live.run);
 }
@@ -252,7 +254,7 @@ function comparedRun(run: Run): Run {
   let newer: Side;
   if (c.newer === 'work') {
     if (unsaved()) return run;
-    if (c.work?.base !== JSON.stringify(run)) { void readWork(run); return run; }
+    if (c.work?.base !== runText(run)) { void readWork(run); return run; }
     newer = { run, root: root(), texts: c.work.texts };
   } else if (c.new) newer = c.new; else return run;
   const m = alignChange(newer, c.old, c.olderLabel);
@@ -274,7 +276,7 @@ function linedUp(run: Run): Run {
   if (comparing()) return comparedRun(run);
   const s = setting();
   if (!s || s.state !== 'ready' || !s.run) return run;
-  if (settingFor !== `${root()}|${entryStart()}` || s.base !== JSON.stringify(run) || unsaved()) {
+  if (settingFor !== `${root()}|${entryStart()}` || s.base !== runText(run) || unsaved()) {
     setSettingRaw({ ...s, state: 'failed', run: undefined, note: 'the code changed since this setting was read · choose it again' });
     return run;
   }

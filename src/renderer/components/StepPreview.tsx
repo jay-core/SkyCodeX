@@ -257,6 +257,7 @@ export default function StepPreview() {
                   <Show when={cd().passesIn}><span>passes in</span><span><code>{cd().passesIn}</code></span></Show>
                   <Show when={cd().getsBack}><span>gets back</span><span>{cd().getsBack}</span></Show>
                   <Show when={cd().itsCalls.length}><span>calls</span><span>{cd().itsCalls.map((m) => `${m.name} (${m.steps.join(', ')})`).join(', ')}</span></Show>
+                  <Show when={cd().uses.length}><span>uses</span><span>{cd().uses.join(', ')} · short helpers folded into this step</span></Show>
                   <Show when={cd().library.length}><span>library</span><span>{cd().library.join(', ')} (not followed)</span></Show>
                   <Show when={cd().loops}><span>loops</span><span>{cd().loops}</span></Show>
                   <Show when={cd().waysOut.length}><span>ways out</span><span>{cd().waysOut.map((w) => `${w.text} (line ${w.line}${w.early ? ', early' : ''})`).join(' · ')}</span></Show>

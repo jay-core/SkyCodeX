@@ -66,9 +66,14 @@ export function functionTexts(run: Run, read: (file: string) => string | null): 
   return out;
 }
 function linesChanged(a: string[], b: string[]): number {
-  const m = a.length, n = b.length, d: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
-  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) d[i][j] = a[i] === b[j] ? d[i + 1][j + 1] + 1 : Math.max(d[i + 1][j], d[i][j + 1]);
-  return m + n - 2 * d[0][0];
+  const m = a.length, n = b.length;
+  let next = new Array<number>(n + 1).fill(0), cur = new Array<number>(n + 1).fill(0);
+  for (let i = m - 1; i >= 0; i--) {
+    cur[n] = 0;
+    for (let j = n - 1; j >= 0; j--) cur[j] = a[i] === b[j] ? next[j + 1] + 1 : Math.max(next[j], cur[j + 1]);
+    [next, cur] = [cur, next];
+  }
+  return m + n - 2 * next[0];
 }
 function within(run: Run, i: number): string[] {
   const r = run.rows[i];
