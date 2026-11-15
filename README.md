@@ -63,7 +63,7 @@ Get the file for your system from [Releases](https://github.com/jay-core/SkyCode
 |---|---|
 | macOS 13+, Apple silicon | `SkyCodeX-1.2.0-mac-arm64.zip` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
 | Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.2.0-linux-x64.tar.gz` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
-| Windows 10/11, x64 | `SkyCodeX-1.1.0-win-x64.zip` from [1.1.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.1.0); 1.2.0 for Windows follows |
+| Windows 10/11, x64 | `SkyCodeX-1.2.0-win-x64.zip` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
 
 What changed in 1.2, and what is still open: [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
 

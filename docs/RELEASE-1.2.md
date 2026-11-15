@@ -1,3 +1,5 @@
+<img src="../assets/icon/skycodex-1024.png" width="112" alt="SkyCodeX icon">
+
 # SkyCodeX 1.2
 
 **The flow views made dependable: the metro and the grid at every size, nothing cut or hidden without a word, and a loading bar that ends only when the flow is ready.**
@@ -98,7 +100,9 @@ Each item gives what it does now, then every file to read in full before changin
 |---|---|
 | macOS 13+, Apple silicon | `SkyCodeX-1.2.0-mac-arm64.zip` |
 | Linux x64 (Ubuntu 22.04+) | `SkyCodeX-1.2.0-linux-x64.tar.gz` |
+| Windows 10/11, x64 | `SkyCodeX-1.2.0-win-x64.zip` |
 
-Each build has passed a start-up check on the sample project on its own system: the Linux build, with the unit tests, in the release workflow (`.github/workflows/release.yml`); the macOS build on an Apple silicon Mac. The Windows build follows in this release once four unit tests written for macOS and Linux also pass on Windows (three check Unix file modes, one runs a shell script). The builds are not signed with a paid certificate:
+Each build has passed a start-up check on the sample project on its own system: the Linux and Windows builds, with every unit test, in the release workflow (`.github/workflows/release.yml`); the macOS build on an Apple silicon Mac. The app code is the same in all three; the Windows build came a day later, once the tests written on macOS also held on Windows (file modes, path separators, macOS-only cases, the default compiler). The builds are not signed with a paid certificate:
 - **macOS:** *System Settings → Privacy & Security → Open Anyway*.
+- **Windows:** SmartScreen → *More info → Run anyway*.
 - **Linux:** see *Read me first.txt* in the folder.
