@@ -61,3 +61,10 @@ export function textWidthIn(el: Element): (text: string) => number {
   const g = ctx;
   return (text) => { if (!g) return 0; g.font = font; return Math.ceil(g.measureText(text).width); };
 }
+
+export function fitInWindow(el: HTMLElement, gap = 8): void {
+  requestAnimationFrame(() => {
+    const r = el.getBoundingClientRect(), dx = r.left < gap ? gap - r.left : r.right > window.innerWidth - gap ? Math.max(gap - r.left, window.innerWidth - gap - r.right) : 0;
+    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`;
+  });
+}

@@ -19,7 +19,7 @@ import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
 import { hwheel } from '../lib/hwheel';
-import { styleOf, textWidthIn } from '../lib/measure';
+import { styleOf, textWidthIn, fitInWindow } from '../lib/measure';
 import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
 
 type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
@@ -620,34 +620,25 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const chaps = createMemo(() => (S() ? chapters(S()!) : []));
   const [chapPop, setChapPop] = createSignal<number | null>(null), [chapH, setChapH] = createSignal(0);
   createEffect(on([geom, () => cur()?.at, height, chaps, changedItems, notesByItem], () => drawSpine()));
-  let spineBase: { s: NonNullable<ReturnType<typeof S>>; H: number; dpr: number; ch: ReturnType<typeof chaps>; chg: Set<number>; nb: Record<number, string>; c: HTMLCanvasElement } | null = null;
   function drawSpine() {
     const s = S(), c = cur(), el = spineEl;
     if (!el || !s) return;
-    const H = Math.max(1, height() - 16), dpr = window.devicePixelRatio || 1, ch = chaps(), chg = changedItems(), nb = notesByItem();
-    const n = s.items.length, yOf = (i: number) => Math.round((i / Math.max(1, n)) * (H - 6)) + 3;
-    if (!spineBase || spineBase.s !== s || spineBase.H !== H || spineBase.dpr !== dpr || spineBase.ch !== ch || spineBase.chg !== chg || spineBase.nb !== nb) {
-      const b = document.createElement('canvas');
-      b.width = 9 * dpr; b.height = H * dpr;
-      const x = b.getContext('2d')!;
-      x.scale(dpr, dpr);
-      x.clearRect(0, 0, 9, H);
-      ch.filter((q) => q.depth === 0).forEach((q, k) => {
-        x.fillStyle = k % 2 ? '#4f6a6a' : '#5a5442';
-        x.fillRect(0, yOf(q.from) + 1, 1, Math.max(1, yOf(q.to + 1) - yOf(q.from) - 3));
-      });
-      for (let i = 0; i < n; i++) {
-        x.fillStyle = chg.has(i) ? '#79c9ae' : loopsAt(s, i).length ? '#355a5a' : '#3a3f3a';
-        x.fillRect(4, yOf(i), 3, chg.has(i) ? 2 : 1);
-      }
-      x.fillStyle = '#ad9b6f';
-      for (const it of Object.keys(nb)) x.fillRect(1, yOf(Number(it)) - 1, 3, 3);
-      spineBase = { s, H, dpr, ch, chg, nb, c: b };
-    }
+    const H = Math.max(1, height() - 16), dpr = window.devicePixelRatio || 1;
     el.width = 9 * dpr; el.height = H * dpr;
     const x = el.getContext('2d')!;
-    x.drawImage(spineBase.c, 0, 0);
     x.scale(dpr, dpr);
+    x.clearRect(0, 0, 9, H);
+    const n = s.items.length, yOf = (i: number) => Math.round((i / Math.max(1, n)) * (H - 6)) + 3;
+    chaps().filter((ch) => ch.depth === 0).forEach((ch, k) => {
+      x.fillStyle = k % 2 ? '#4f6a6a' : '#5a5442';
+      x.fillRect(0, yOf(ch.from) + 1, 1, Math.max(1, yOf(ch.to + 1) - yOf(ch.from) - 3));
+    });
+    for (let i = 0; i < n; i++) {
+      x.fillStyle = changedItems().has(i) ? '#79c9ae' : loopsAt(s, i).length ? '#355a5a' : '#3a3f3a';
+      x.fillRect(4, yOf(i), 3, changedItems().has(i) ? 2 : 1);
+    }
+    x.fillStyle = '#ad9b6f';
+    for (const it of Object.keys(notesByItem())) x.fillRect(1, yOf(Number(it)) - 1, 3, 3);
     if (c) {
       x.fillStyle = '#ad9b6f';
       x.beginPath(); x.arc(5.5, yOf(Math.min(c.at, n)), 3.5, 0, Math.PI * 2); x.fill();
@@ -778,7 +769,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             <span class="sfnd">
               <button class="chip" classList={{ on: foundOpen() }} title="what the code shows without running it: results thrown away, state two threads touch without a lock, locks, memory and files left open at a way out" onClick={() => setFoundOpen(!foundOpen())}>{found().length} finding{found().length > 1 ? 's' : ''}</button>
               <Show when={foundOpen()}>
-                <div class="sfndl" ref={(el) => requestAnimationFrame(() => { const r = el.getBoundingClientRect(); if (r.left < 8) el.style.transform = `translateX(${Math.ceil(8 - r.left)}px)`; })}
+                <div class="sfndl" ref={(el) => fitInWindow(el)}
                   onKeyDown={(e) => { if (e.key === 'Escape') { setFoundOpen(false); canvas.focus(); } }}>
                   <For each={found()}>{(f) => (
                     <button classList={{ race: f.kind === 'race' || f.kind === 'pair' }} onClick={() => { setFoundOpen(false); const it = S()!.itemOf[f.rows[0]]; if (it >= 0) go({ jump: it }); canvas.focus(); }}>

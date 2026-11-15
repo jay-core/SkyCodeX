@@ -347,6 +347,19 @@ each move; it runs once per run. Rules on 23 programs and tinyhttp before → af
 other count unchanged; no errors. Still open: `flowcore.ts:9`, `:23` the loop labels' full text needs `flow.ts` and
 `preview.ts`, which show them, outside this task. 156 of 392 fixed; 31 kept by verdict; 205 open.
 
+**The metro's last 7 (2026-11-15):** fixed, 3: `styles.css:508` the setting and compare menus are as wide as their
+content, never wider than the window, and both are kept inside the window on either side (`lib/measure.ts`
+`fitInWindow`, also used by the findings list instead of its own copy); `:513` a setting's name and `:521` a commit row
+carry their full text on hover. Not a fault, 2: `flowcore.ts:9`, `:23` the loop labels are cut only in `FlowBox.loops`
+(`flow.ts:366`), which no view and no check reads, so no cut text is ever on screen. Correction to class V: the depth
+spine (`Sequence.tsx:610`) is open again. Its cached layer was compared with the old drawing and showed 0 different
+in 648 states in one run, but later runs of the same comparison showed 58 and 574, because a canvas copy is not exact
+between Chrome's GPU and software drawing; the spine draws as before class V. Still open, 3: `Sequence.tsx:610` and
+`:1107` the spine and the run bars draw every step on each redraw (a strip redrawn under a clip also differs, by up to
+40 of 255 in edge pixels, where bars are under a pixel wide); `flowseq.ts:445` changing the detail level walks every
+step. Rules on 23 programs and tinyhttp before → after: marks without a hover 3,138 → 3,067; every other count
+unchanged; no errors. 158 of 392 fixed; 33 kept by verdict or not a fault; 201 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the

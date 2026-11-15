@@ -3,6 +3,7 @@ import { seq, setting, chooseSetting } from '../lib/flowstore';
 import { root } from '../lib/store';
 import { api, basename } from '../lib/api';
 import { macrosTested } from '../../shared/flowalign';
+import { fitInWindow } from '../lib/measure';
 
 type Change = { kind: 'def' } | { kind: 'undef' } | { kind: 'value'; v: string };
 const flagOf = (k: string, c: Change) => (c.kind === 'def' ? `-D${k}` : c.kind === 'undef' ? `-U${k}` : `-D${k}=${c.v}`);
@@ -44,7 +45,7 @@ export default function SettingChip() {
       <button class="chip" classList={{ on: !!setting() }} title={setting()?.note || 'build settings: as built, or another — the code is read again by clang with it, and what differs shows in place'}
         onClick={() => { const o = !open(); setOpen(o); if (o) void load(); }}>{chipText()}</button>
       <Show when={open()}>
-        <div class="setm" ref={(el) => requestAnimationFrame(() => { const r = el.getBoundingClientRect(); if (r.left < 8) el.style.transform = `translateX(${Math.ceil(8 - r.left)}px)`; })}
+        <div class="setm" ref={(el) => fitInWindow(el)}
           onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
           <div class="mh">build settings</div>
           <button class="mi" classList={{ on: !setting() }} onClick={() => { setOpen(false); void chooseSetting(null); }}>as built</button>
@@ -55,7 +56,7 @@ export default function SettingChip() {
             <div class="mh">change a setting · tested by the code on this run</div>
             <For each={opts()?.macros ?? []}>{([k, vals]) => (
               <div class="mr">
-                <span class="k">{k}</span>
+                <span class="k" title={k}>{k}</span>
                 <span class="vs">
                   <button classList={{ on: isOn(k, { kind: 'def' }) }} onClick={() => toggle(k, { kind: 'def' })}>define</button>
                   <button classList={{ on: isOn(k, { kind: 'undef' }) }} onClick={() => toggle(k, { kind: 'undef' })}>undefine</button>

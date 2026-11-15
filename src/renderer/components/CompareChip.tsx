@@ -2,6 +2,7 @@ import { For, Show, createSignal } from 'solid-js';
 import { comparing, chooseCompare } from '../lib/flowstore';
 import { root } from '../lib/store';
 import { api } from '../lib/api';
+import { fitInWindow } from '../lib/measure';
 
 type Commit = { sha: string; short: string; subject: string; when: string };
 
@@ -25,7 +26,7 @@ export default function CompareChip() {
         onClick={() => { const o = !open(); setOpen(o); if (o) void load(); }}>{chipText()}</button>
       <Show when={comparing()?.state === 'ready' && comparing()?.summary}><span class="csum" title={comparing()!.summary}>{comparing()!.summary}</span></Show>
       <Show when={open()}>
-        <div class="setm" ref={(el) => requestAnimationFrame(() => { const r = el.getBoundingClientRect(); if (r.left < 8) el.style.transform = `translateX(${Math.ceil(8 - r.left)}px)`; })}
+        <div class="setm" ref={(el) => fitInWindow(el)}
           onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
           <button class="mi" classList={{ on: !comparing() }} onClick={() => { setOpen(false); void chooseCompare(null); }}>no comparison</button>
           <div class="mh">newer: {newer() ? `${newer()!.short} · ${newer()!.subject}` : 'the files on disk'}<Show when={newer()}> · <button class="lnk" onClick={() => setNewer(null)}>the files on disk</button></Show></div>
@@ -33,7 +34,7 @@ export default function CompareChip() {
           <Show when={list()?.message}><div class="nt">{list()!.message}</div></Show>
           <For each={list()?.commits ?? []}>{(c) => (
             <div class="mr">
-              <button class="mi" onClick={() => pick(c)}><span class="k">{c.short}</span> {c.subject} <span class="w">{c.when}</span></button>
+              <button class="mi" title={`${c.short} ${c.subject} · ${c.when}`} onClick={() => pick(c)}><span class="k">{c.short}</span> {c.subject} <span class="w">{c.when}</span></button>
               <span class="vs"><button classList={{ on: newer()?.sha === c.sha }} title="compare an older commit with this one instead of the files on disk" onClick={() => setNewer(newer()?.sha === c.sha ? null : c)}>as newer</button></span>
             </div>
           )}</For>
