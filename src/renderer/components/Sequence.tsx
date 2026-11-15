@@ -581,7 +581,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   })));
 
   const chaps = createMemo(() => (S() ? chapters(S()!) : []));
-  const [chapPop, setChapPop] = createSignal<number | null>(null);
+  const [chapPop, setChapPop] = createSignal<number | null>(null), [chapH, setChapH] = createSignal(0);
   createEffect(on([geom, () => cur()?.at, height, chaps, changedItems, notesByItem], () => drawSpine()));
   function drawSpine() {
     const s = S(), c = cur(), el = spineEl;
@@ -965,7 +965,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               onMouseMove={(e) => { const y = e.clientY - canvas.getBoundingClientRect().top; clearTimeout(chapTimer); chapTimer = setTimeout(() => setChapPop(y), 250); }}
               onMouseLeave={() => { clearTimeout(chapTimer); chapTimer = setTimeout(() => setChapPop(null), 400); }} />
             <Show when={chapPop() != null && chaps().length > 1}>
-              <div class="schap" style={{ top: `${Math.max(8, Math.min(chapPop()! - 20, height() - 40 - chaps().length * 24))}px`, right: `${SPINE + 10}px` }}
+              <div class="schap" ref={(el) => requestAnimationFrame(() => setChapH(el.offsetHeight))} style={{ top: `${Math.max(8, Math.min(chapPop()! - 20, height() - 8 - chapH()))}px`, right: `${SPINE + 10}px` }}
                 onMouseEnter={() => clearTimeout(chapTimer)} onMouseLeave={() => setChapPop(null)}>
                 <For each={chaps()}>{(ch) => (
                   <button classList={{ sub: ch.depth > 0, on: chapAt(cur()?.at ?? -1) === ch }} onClick={() => { setChapPop(null); go({ jump: ch.from }); canvas.focus(); }}>

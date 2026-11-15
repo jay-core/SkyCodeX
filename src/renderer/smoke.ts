@@ -1703,6 +1703,72 @@ async function rulesCheck(report: Record<string, unknown>, scenario: string) {
       if (fresh.length) { for (const k of fresh) shotKinds.add(k); await shot(`rules-fault-step-${it + 1}`); }
     }
     report.walked = walked;
+    setFlowView('metro');
+    await nextFrames(6);
+    await until(() => !!document.querySelector('.seqv .srow'), 20000);
+    const mnote = (kind: string, it: number, what: string) => note(`metro: ${kind}`, it, what);
+    const metroKey = (key: string) => (document.querySelector('.seqv') as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    const MTEXT = '.seqv .srow .nm, .seqv .srow .who, .seqv .srow .min, .seqv .srow .mres, .seqv .srow .mchip, .seqv .srow .nt, .seqv .srow .sx, .seqv .srow .sd, .seqv .srow .sw, .seqv .srow .snote, .seqv .srow .tag, .seqv .srow .loc, .seqv .sframe > span, .seqv .sjn .c, .seqv .sjn .w, .seqv .sline .tx, .seqv .mhead > span, .seqv .mfiles span, .pane .ph .seqk, .pane .ph .seqpath, .pane .ph .seqloop, .pane .ph .seqpth, .pane .ph .seqchg';
+    const MARKS = '.seqv .sarw, .seqv .sbar, .seqv svg.mtrack circle, .seqv svg.mtrack polygon, .seqv svg.mtrack path.jloop, .seqv svg.mtrack path.jfork';
+    let metroWalked = 0;
+    for (let it = Math.max(0, from - WARM); it < to; it++) {
+      if (Date.now() - T0 > BUDGET) { report.metroStoppedAtStep = it + 1; break; }
+      live = it >= from;
+      stepMove({ jump: it });
+      await nextFrames(3);
+      const inner = document.querySelector('.seqv .seqin') as HTMLElement | null, pane0 = document.querySelector('.seqv') as HTMLElement | null;
+      if (!inner || !pane0) { mnote('the metro is not drawn', it, status()); continue; }
+      for (let k = 0, last = getComputedStyle(inner).transform; k < 60; k++) { await nextFrames(1); const now = getComputedStyle(inner).transform; if (now === last) break; last = now; }
+      if (live) metroWalked++;
+      const pane = pane0.getBoundingClientRect();
+      const visible = (r: DOMRect) => r.width > 0 && r.bottom > pane.top && r.top < pane.bottom && r.right > pane.left && r.left < pane.right;
+      const chipOn = ([...document.querySelectorAll('.pane .ph .chip.on')] as HTMLElement[]).find((c) => /around/.test(c.textContent ?? ''));
+      if (chipOn) mnote('a different view at this size (rule 5)', it, `${s.items.length} steps`);
+      const rowEls = [...document.querySelectorAll('.seqv .srow')] as HTMLElement[];
+      const far = rowEls.filter((e) => { const r = e.getBoundingClientRect(); return r.bottom < pane.top - pane.height || r.top > pane.bottom + pane.height; }).length;
+      if (far) mnote('rows built beyond one screen around the view (rule 5)', it, `${far} of ${rowEls.length}`);
+      const rowBoxes = rowEls.filter((e) => !e.classList.contains('sfold') && !e.classList.contains('swhat') && !e.classList.contains('send')).map((e) => ({ e, r: e.getBoundingClientRect(), n: (e.querySelector('.n') as HTMLElement | null)?.getBoundingClientRect() ?? null }));
+      for (const a of [...document.querySelectorAll('.seqv .sarw')] as HTMLElement[]) {
+        const r = a.getBoundingClientRect();
+        if (!visible(r)) continue;
+        const tipX = r.right + 1, y = r.top, row = rowBoxes.find((b) => Math.abs(b.r.top + 11 - y) < 1.5);
+        if (!row?.n) { mnote('an arrow with no row at its end (rule 2)', it, `${Math.round(tipX)},${Math.round(y)}`); continue; }
+        const d = Math.hypot(Math.max(row.n.left - tipX, 0, tipX - row.n.right), Math.max(row.n.top - y, 0, y - row.n.bottom));
+        if (d > 1) mnote('an arrow ends away from its row (rule 2)', it, `${Math.round(d)} px before "${words(row.e).slice(0, 24)}"`);
+      }
+      for (const m of [...document.querySelectorAll(MARKS)] as Element[]) {
+        const r = m.getBoundingClientRect();
+        if (!visible(r) && !(r.width === 0 && r.height > 0 && r.bottom > pane.top && r.top < pane.bottom)) continue;
+        if (!m.querySelector('title') && !m.closest('[title]')) mnote('an arrow or mark without a hover (rule 8)', it, `${m.tagName.toLowerCase()}.${(m.getAttribute('class') ?? '').split(' ')[0]}`);
+      }
+      const blocks = ([...document.querySelectorAll('.seqv .srow, .seqv .sjn, .seqv .sline')] as HTMLElement[]).map((e) => ({ e, r: e.getBoundingClientRect() })).filter((x) => visible(x.r));
+      for (let a = 0; a < blocks.length; a++) for (let b = a + 1; b < blocks.length; b++) if (hit(blocks[a].r, blocks[b].r)) mnote('two rows overlap', it, `${words(blocks[a].e).slice(0, 20)} / ${words(blocks[b].e).slice(0, 20)}`);
+      for (const e of [...document.querySelectorAll(MTEXT)] as HTMLElement[]) {
+        const r = e.getBoundingClientRect();
+        if (!r.width || !words(e) || (e.closest('.seqv') && !visible(r))) continue;
+        if ((e.scrollWidth > e.clientWidth + 1 || e.scrollHeight > e.clientHeight + 1 || r.right > pane.right + 0.5) && !e.closest('[title]')) mnote('a cut text out of reach (rule 4)', it, words(e));
+      }
+      const bar = ([...document.querySelectorAll('.pane .ph > *')] as HTMLElement[]).filter((e) => e.closest('.body')?.querySelector('.seqv') && e.getBoundingClientRect().width > 0 && !e.classList.contains('grow'));
+      for (let a = 0; a < bar.length; a++) for (let b = a + 1; b < bar.length; b++) if (hit(bar[a].getBoundingClientRect(), bar[b].getBoundingClientRect())) mnote('text runs past its box into a neighbour (rule W)', it, `${words(bar[a])} / ${words(bar[b])}`);
+      if (it === 1) {
+        metroKey('d');
+        await nextFrames(3);
+        const had = !!document.querySelector('.seqv .scap, .body .scap');
+        if (!had) mnote('no caption to check for a timer (not checked)', it, 'D');
+        await new Promise((r) => setTimeout(r, 3200));
+        if (had && !document.querySelector('.seqv .scap, .body .scap')) mnote('a caption disappears on a timer (rule 7)', it, 'after 3 s with no action');
+        metroKey('d');
+        await nextFrames(2);
+        metroKey('d');
+        await nextFrames(3);
+        metroKey('Escape');
+        await nextFrames(3);
+      }
+      if (it === 0) await shot('rules-metro-step-1');
+      const fresh = Object.entries(tally).filter(([k, t]) => k.startsWith('metro: ') && t.steps.has(it + 1) && !shotKinds.has(k)).map(([k]) => k);
+      if (fresh.length) { for (const k of fresh) shotKinds.add(k); await shot(`rules-metro-fault-step-${it + 1}`); }
+    }
+    report.metroWalked = metroWalked;
   } catch (e) { errors.push(`rules: ${e}`); }
   applySettings(snapshot, problems());
   report.rules = Object.fromEntries(Object.entries(tally).map(([k, t]) => [k, { count: t.count, steps: t.steps.size, first: t.first }]));
