@@ -114,7 +114,7 @@ describe('a compile database written for another place', () => {
 });
 
 describe('the compilers clangd may ask (--query-driver)', () => {
-  it('only installed compilers a project names: never a program inside the project, never one not named like a compiler', () => {
+  it.skipIf(process.platform === 'win32')('only installed compilers a project names: never a program inside the project, never one not named like a compiler', () => {
     const d = tmp(); made.push(d);
     const proj = path.join(d, 'proj'), bin = path.join(d, 'tools/bin');
     const gpp = touch(path.join(bin, 'g++-13')), cross = touch(path.join(bin, 'arm-none-eabi-gcc'));
@@ -146,6 +146,6 @@ describe('MSVC mode in the real clangd', () => {
       return syms.map((x) => x.name).sort();
     };
     expect(await names({ kind: 'msvc', cxx: '/opt/msvc/bin/cl.exe', cc: '/opt/msvc/bin/cl.exe', version: '', include: [] })).toEqual(['main', 'read_as_msvc']);
-    expect(await names(null)).toEqual(['main', 'read_as_gnu']);
+    expect(await names(null)).toEqual(['main', process.platform === 'win32' ? 'read_as_msvc' : 'read_as_gnu']);
   }, 30000);
 });

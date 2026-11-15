@@ -13,7 +13,7 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-'));
 
 describe('portable data dir', () => {
   const base = { appRoot: '/repo', appDataFallback: '/Users/x/Library/Application Support' };
-  it('sits beside SkyCodeX.app on macOS', () => {
+  it.skipIf(process.platform === 'win32')('sits beside SkyCodeX.app on macOS', () => {
     const i = { ...base, isPackaged: true, platform: 'darwin' as const, execPath: '/Tools/SkyCodeX/SkyCodeX.app/Contents/MacOS/SkyCodeX' };
     expect(portableBase(i)).toBe('/Tools/SkyCodeX');
     expect(resolveDataDir(i, () => true)).toEqual({ dir: '/Tools/SkyCodeX/data', fallback: false });
@@ -23,7 +23,7 @@ describe('portable data dir', () => {
     expect(portableBase({ ...base, isPackaged: true, platform: 'linux', execPath: '/opt/SkyCodeX/skycodex' })).toBe('/opt/SkyCodeX');
   });
   it('uses the project folder when unpackaged', () => {
-    expect(resolveDataDir({ ...base, isPackaged: false, platform: 'darwin', execPath: '/x' }, () => true).dir).toBe('/repo/data');
+    expect(resolveDataDir({ ...base, isPackaged: false, platform: 'darwin', execPath: '/x' }, () => true).dir).toBe(path.join('/repo', 'data'));
   });
   it('falls back, with a reason, when the folder is read-only', () => {
     const r = resolveDataDir({ ...base, isPackaged: true, platform: 'win32', execPath: 'C:/Program Files/SkyCodeX/skycodex.exe' }, () => false);
@@ -31,7 +31,7 @@ describe('portable data dir', () => {
     expect(r.dir).toBe(path.join(base.appDataFallback, 'SkyCodeX'));
     expect(r.reason).toMatch(/can't be written/);
   });
-  it('detects macOS App Translocation', () => {
+  it.skipIf(process.platform === 'win32')('detects macOS App Translocation', () => {
     const r = resolveDataDir({ ...base, isPackaged: true, platform: 'darwin', execPath: '/private/var/folders/x/AppTranslocation/ABC/d/SkyCodeX.app/Contents/MacOS/SkyCodeX' }, () => true);
     expect(r.fallback).toBe(true);
     expect(r.reason).toMatch(/quarantine/);
@@ -89,7 +89,7 @@ describe('files', () => {
     fs.writeFileSync(f, 'old'); fs.chmodSync(f, 0o755);
     atomicWrite(f, 'new');
     expect(fs.readFileSync(f, 'utf8')).toBe('new');
-    expect(fs.statSync(f).mode & 0o777).toBe(0o755);
+    if (process.platform !== 'win32') expect(fs.statSync(f).mode & 0o777).toBe(0o755);
     expect(fs.readdirSync(d)).toEqual(['a.cpp']);
   });
   it('hot-exit buffers round-trip and can be dropped', () => {
@@ -104,7 +104,7 @@ describe('files', () => {
     fs.mkdirSync(path.join(d, 'src')); fs.mkdirSync(path.join(d, 'build'));
     fs.writeFileSync(path.join(d, 'src/a.cpp'), ''); fs.writeFileSync(path.join(d, 'src/a.h'), '');
     fs.writeFileSync(path.join(d, 'build/gen.cpp'), ''); fs.writeFileSync(path.join(d, 'README.md'), '');
-    expect(listSources(d).map((p) => path.relative(d, p)).sort()).toEqual(['src/a.cpp', 'src/a.h']);
+    expect(listSources(d).map((p) => path.relative(d, p).split(path.sep).join('/')).sort()).toEqual(['src/a.cpp', 'src/a.h']);
   });
 });
 

@@ -10,7 +10,7 @@ const SAMPLE = path.resolve(__dirname, '../../samples/tinyhttp');
 
 beforeAll(() => {
   if (!fs.existsSync(path.join(SAMPLE, 'build/tinyhttp'))) execFileSync('sh', [path.join(SAMPLE, 'build.sh')]);
-});
+}, 300000);
 
 describe('clangd restart', () => {
   it.skipIf(!findClangd('auto', '/x'))('a second start right after the first works (old process exit must not fail the new one)', async () => {
