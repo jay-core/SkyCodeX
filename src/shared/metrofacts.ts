@@ -3,7 +3,7 @@ import { leadingComment, findings } from './flowseq';
 import type { RunFrame } from './flowrun';
 
 export type Tone = '' | 'ok' | 'warn' | 'thread' | 'link' | 'comment';
-export interface Note { text: string; tone: Tone }
+export interface Note { text: string; tone: Tone; title?: string }
 export interface MetroRow {
   item: number; step: number; fn: number; call: number; again: boolean;
   kind: 'step' | 'ref' | 'indirect' | 'value';
@@ -26,7 +26,7 @@ export function callAt(line: string, at: number, name: string): string | null {
   if (line[j] !== '(') return null;
   let depth = 0, k = j;
   for (; k < line.length; k++) { if (line[k] === '(') depth++; else if (line[k] === ')' && --depth === 0) break; }
-  return depth === 0 && k < line.length ? line.slice(i, k + 1) : line.slice(i).trimEnd();
+  return depth === 0 && k < line.length ? line.slice(i, k + 1) : `${line.slice(i).trimEnd()} …`;
 }
 
 export function resultOf(before: string, after: string): { text: string; tone: Tone } | null {
@@ -84,7 +84,9 @@ export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: s
   const own = r.frames.map((f) => s.run.frames[f]).filter((f) => f.owner === r.caller && f.kind === 'loop');
   const fr: RunFrame | undefined = own[own.length - 1];
   if (fr) inside = fr.text;
-  if (r.kind === 'indirect') notes.push({ text: r.could?.length ? `through ${r.via ?? 'a pointer'} · could be ${r.could.slice(0, 2).join(', ')}` : `through ${r.via ?? 'a pointer'}`, tone: 'link' });
+  if (r.kind === 'indirect') notes.push(r.could?.length
+    ? { text: `through ${r.via ?? 'a pointer'} · could be ${r.could.slice(0, 2).join(', ')}${r.could.length > 2 ? ` +${r.could.length - 2}` : ''}`, tone: 'link', title: `through ${r.via ?? 'a pointer'} · could be ${r.could.join(', ')}` }
+    : { text: `through ${r.via ?? 'a pointer'}`, tone: 'link' });
   if (r.kind === 'value') notes.push({ text: 'named, not called', tone: '' });
   const fx = r.kind === 'step' || r.kind === 'ref' ? s.run.effects?.[fnRow.key] : undefined;
   const callerFx = caller ? s.run.effects?.[caller.key] : undefined;
@@ -93,6 +95,7 @@ export function metroRow(s: Seq, it: number, nums: StepNumber[], lines: (file: s
   }
   if (fx) {
     for (const g of fx.globalWrites.slice(0, 2)) notes.push({ text: `writes ${g}`, tone: 'warn' });
+    if (fx.globalWrites.length > 2) notes.push({ text: `+${fx.globalWrites.length - 2} more writes`, tone: 'warn', title: `writes ${fx.globalWrites.join(', ')}` });
     if (fx.locks.length) notes.push({ text: `locks ${fx.locks[0]}`, tone: '' });
     if (fx.throws.length) notes.push({ text: `may throw ${fx.throws[0]}`, tone: 'warn' });
     if (pureFrom(s, fnRow === r ? row : r.ref!, lines)) notes.push({ text: 'pure', tone: 'ok' });

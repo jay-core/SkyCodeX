@@ -19,12 +19,13 @@ import SettingChip from './SettingChip';
 import CompareChip from './CompareChip';
 import { junctionsOf, junctionWords, Junction } from '../../shared/junctions';
 import { hwheel } from '../lib/hwheel';
-import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
 import { styleOf, textWidthIn } from '../lib/measure';
+import { load, keep, runKey, notesByItem, changedItems, setNote } from '../lib/runmarks';
 
 type CodeBlockJ = { owner: number; lines: { n: number; depth: number; text: string; jn?: Junction }[] };
 
 const ROW = 23, SLOT = 15, TOP = 50, SPINE = 16;
+const plain = (h: string) => h.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const METRO = ['#a3a8a0', '#8fa98a', '#c9b27a', '#6fa0a0', '#a8929e', '#c08a74', '#7a90c4', '#b07fa4', '#9aa86f', '#6f8fb8'];
 const HINT = 'asdfjklghqwertyuiop';
 const AROUND_AT = 400;
@@ -242,9 +243,9 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   const num = (it: number) => { const r = rowOf(it); return r.kind === 'step' ? String(r.n) : r.kind === 'ref' ? `→${R()[r.ref!].n}` : r.kind === 'indirect' ? '⇢' : '·'; };
   const short = (n: string) => n.replace(/^.*::(?=[^:]+$)/, '');
   const nums = createMemo(() => (S() ? stepNumbers(S()!) : []));
-  const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
   const [fnoW, setFnoW] = createSignal(0);
   createEffect(on([nums, geom], ([ns]) => requestAnimationFrame(() => { const el = canvas?.querySelector('.srow .fno'); if (!el) return; const w = textWidthIn(el); let most = 0; for (const n of ns) if (n?.fn) most = Math.max(most, w(`${n.again ? '↻' : ''}ƒ${n.fn}`)); setFnoW(most); })));
+  const metroCache = createMemo(() => { S(); nums(); textTick(); return new Map<number, MetroRow>(); });
   const metro = (it: number): MetroRow => { const c = metroCache(); let m = c.get(it); if (!m) { m = metroRow(S()!, it, nums(), (f) => lines(f)); c.set(it, m); } return m; };
   const fileCol = createMemo(() => {
     const m = new Map<string, string>(), s = S();
@@ -474,7 +475,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
   async function copyLink() {
     setShare(false);
     const t = encodeWalk(entryKey(), trail(), 40, notesByItem());
-    try { await navigator.clipboard.writeText(t); flash('link to this walk copied · paste it into G (go to) to reopen it', 4000); }
+    const kept = trail().length > 40 ? ` · it keeps the last 40 of ${trail().length} steps walked` : '';
+    try { await navigator.clipboard.writeText(t); flash(`link to this walk copied · paste it into G (go to) to reopen it${kept}`, 4000); }
     catch { flash(`couldn't copy: ${t}`, 8000); }
   }
   async function saveWalkthrough() {
@@ -578,8 +580,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     ro.observe(canvas);
     onCleanup(() => { cancelAnimationFrame(f); ro.disconnect(); });
     createEffect(on([skyOn, S], () => requestAnimationFrame(() => { const sky = canvas?.querySelector('.ssky'); if (sky) ro.observe(sky); setSkyH(sky?.getBoundingClientRect().height ?? 0); })));
-  });
     canvas.focus();
+  });
   createEffect(on([() => cur()?.at, textTick, width], () => requestAnimationFrame(() => {
     if (!band) return;
     const h = (band.firstElementChild as HTMLElement | null)?.scrollHeight ?? 0;
@@ -638,15 +640,16 @@ export default function Sequence(props: { switcher: JSX.Element }) {
     const s = S(), c = cur();
     if (!s || !c) return null;
     const steps = s.run.rows.filter((r) => r.kind === 'step').length;
-    if (c.at >= s.items.length) return { k: `${steps} / ${steps} · end`, loop: '', chain: [] as { name: string; it: number }[] };
+    if (c.at >= s.items.length) return { k: `${steps} / ${steps} · end`, loop: '', loopFull: '', chain: [] as { name: string; it: number }[] };
     const r = s.run.rows[s.items[c.at]];
     const n = r.kind === 'step' ? r.n : r.kind === 'ref' ? s.run.rows[r.ref!].n : r.caller != null ? s.run.rows[r.caller].n : 0;
     const L = loopsAt(s, c.at), inner = L[L.length - 1];
     const f = inner != null ? s.run.frames[inner] : null;
-    const loop = f ? `pass ${c.passes[inner] ?? 1}${f.count != null ? ` of ${f.count}` : ''} · ${f.text.length > 34 ? f.text.slice(0, 33) + '…' : f.text}${L.length > 1 ? ` · in ${L.length - 1} more loop${L.length > 2 ? 's' : ''}` : ''}` : '';
+    const pass = f ? `pass ${c.passes[inner] ?? 1}${f.count != null ? ` of ${f.count}` : ''}` : '', more = L.length > 1 ? ` · in ${L.length - 1} more loop${L.length > 2 ? 's' : ''}` : '';
+    const loop = f ? `${pass} · ${f.text.length > 34 ? f.text.slice(0, 33) + '…' : f.text}${more}` : '', loopFull = f ? `${pass} · ${f.text}${more}` : '';
     const chain: { name: string; it: number }[] = [];
     for (let i: number | null = s.items[c.at]; i != null; i = s.run.rows[i].caller) chain.unshift({ name: r.kind === 'indirect' && i === s.items[c.at] ? r.text ?? '' : short(s.run.rows[i].name), it: s.itemOf[i] });
-    return { k: `${n} / ${steps}`, loop, chain };
+    return { k: `${n} / ${steps}`, loop, loopFull, chain };
   });
   const crumbs = createMemo(() => {
     const h = header();
@@ -720,7 +723,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
         <div class="ph wrap" style={{ padding: '0 22px' }}>
           <Show when={header()} fallback={<span>{runStatus() || status()}</span>}>
             <span class="seqk"><i class="selmk" />{junctionPick() ? `junction · ${basename(junctionPick()!.file)}:${junctionPick()!.line + 1}` : header()!.k}</span>
-            <Show when={header()!.loop}><span class="seqloop">{header()!.loop}</span></Show>
+            <Show when={header()!.loop}><span class="seqloop" title={header()!.loopFull}>{header()!.loop}</span></Show>
             <span class="seqpath">
               <For each={crumbs()}>{(c, i) => (
                 <><Show when={i() > 0}><span class="csep">›</span></Show>
@@ -728,7 +731,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     onClick={() => { if (c.it < 0) setCrumbsAll(true); else { go({ jump: c.it }); canvas.focus(); } }}>{c.name}</button></>
               )}</For>
             </span>
-            <Show when={path()}><span class="seqpth">path {path()!.index + 1} → {path()!.target}</span></Show>
+            <Show when={path()}><span class="seqpth" title={`path ${path()!.index + 1} → ${path()!.target}`}>path {path()!.index + 1} → {path()!.target}</span></Show>
             <Show when={rippleNote()}><span class="seqchg" title="functions whose unsaved code differs from the file on disk, and the calls that reach them">{rippleNote()}</span></Show>
           </Show>
           <span class="grow" />
@@ -761,8 +764,8 @@ export default function Sequence(props: { switcher: JSX.Element }) {
             <button class="chip" classList={{ on: share() }} title="copy a link to this walk, or save it as a walkthrough" onClick={() => setShare(!share())}>share</button>
             <Show when={share()}>
               <div class="smenu">
-                <button onClick={copyLink}>copy a link to this walk</button>
-                <button onClick={saveWalkthrough}>save a walkthrough (.md)</button>
+                <button title="copy a link to this walk" onClick={copyLink}>copy a link to this walk</button>
+                <button title="save a walkthrough (.md)" onClick={saveWalkthrough}>save a walkthrough (.md)</button>
               </div>
             </Show>
           </span>
@@ -776,7 +779,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 <div class="mkeys"><span><b>◆</b>decides</span><span><b class="x">⊣</b>way out</span><span><b class="l">↻</b>loop</span><span><b class="l">⑂</b>via pointer</span></div>
               </div>
               <div class="mhead" style={{ left: `${geom()!.x[0] ?? 0}px`, width: `${Math.max(60, width() - SPINE - (geom()!.x[0] ?? 0) - 10)}px` }}>
-                <span class="h1">step · ƒ</span><span class="h2">who → the call as written</span><span class="h3">result goes to</span><span class="h4">notes</span>
+                <span class="h1" title="step · ƒ">step · ƒ</span><span class="h2" title="who → the call as written">who → the call as written</span><span class="h3" title="result goes to">result goes to</span><span class="h4" title="notes">notes</span>
               </div>
             </div>
             <div class="seqin" style={{ transform: `translateY(${-scroll()}px)` }}>
@@ -785,7 +788,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 const sp = () => S()!.span.get(f)!;
                 return (
                   <div class="sframe" classList={{ hot: hotFrame(f) }} style={{ left: `${frameX(f)}px`, top: `${geom()!.y[sp()[0]] + 1}px`, height: `${geom()!.y[sp()[1]] + geom()!.h[sp()[1]] - geom()!.y[sp()[0]] - 2}px` }}>
-                    <span style={{ top: `${(geom()!.slotY.get(f) ?? 0) - geom()!.y[sp()[0]] - 1}px`, 'max-width': `${width() - SPINE - frameX(f) - 30}px` }}>
+                    <span title={`↻ ${fr().count != null ? `×${fr().count} · ` : ''}${fr().text}`} style={{ top: `${(geom()!.slotY.get(f) ?? 0) - geom()!.y[sp()[0]] - 1}px`, 'max-width': `${width() - SPINE - frameX(f) - 30}px` }}>
                       ↻ {fr().count != null ? `×${fr().count} · ` : ''}{fr().text}{hotFrame(f) ? ` · pass ${cur()!.passes[f] ?? 1}${fr().count != null ? ` of ${fr().count}` : ''}` : ''}
                       <Show when={fr().parent == null}><i class="msum">{chapterSum(f)}</i></Show>
                     </span>
@@ -866,16 +869,16 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <span class="n" title="step: its place in the run">{it + 1}</span>
                     <span class="fno" title={nums()[it]?.fn ? `function ${nums()[it].fn} · its ${ordinal(nums()[it].call)} call` : undefined}>{nums()[it]?.again ? <span class="rp">↻</span> : null}{nums()[it]?.fn ? `ƒ${nums()[it].fn}` : r().kind === 'indirect' ? '⇢' : '·'}</span>
                     <span class="mmain">
-                      <Show when={metro(it).who} fallback={<span class="nm">{r().kind === 'indirect' ? r().text : short(r().name)}</span>}>
-                        <span class="who">{metro(it).who}</span><span class="ar">→</span><span class="nm mcall" title={r().kind === 'indirect' && r().could?.length ? `could be: ${r().could!.join(', ')} — functions whose address the code takes` : undefined}>{metro(it).callText}</span>
+                      <Show when={metro(it).who} fallback={<span class="nm" title={r().kind === 'indirect' ? r().text : r().name}>{r().kind === 'indirect' ? r().text : short(r().name)}</span>}>
+                        <span class="who" title={metro(it).who ?? undefined}>{metro(it).who}</span><span class="ar">→</span><span class="nm mcall" title={r().kind === 'indirect' && r().could?.length ? `${metro(it).callText} · could be: ${r().could!.join(', ')} — functions whose address the code takes` : metro(it).callText}>{metro(it).callText}</span>
                       </Show>
-                      <Show when={metro(it).inside}><span class="min">in <code>{metro(it).inside}</code></span></Show>
+                      <Show when={metro(it).inside}><span class="min" title={`in ${metro(it).inside}`}>in <code>{metro(it).inside}</code></span></Show>
                       <Show when={sel() && (r().kind === 'step' || r().kind === 'ref')}><span class="loc">{basename(r().file)}:{r().line + 1}</span></Show>
                     </span>
-                    <span class="mres" classList={{ warn: metro(it).resultTone === 'warn' }}>{metro(it).result}</span>
+                    <span class="mres" classList={{ warn: metro(it).resultTone === 'warn' }} title={metro(it).result || undefined}>{metro(it).result}</span>
                     <span class="mnotes">
-                    <For each={metro(it).notes}>{(n) => <span class={`mchip t-${n.tone}`} title={n.text}>{n.text}</span>}</For>
-                    <Show when={notes(it)}><span class="nt" classList={{ ask: whatOptions(it).length > 0 }} title={whatOptions(it).length ? 'what if this went the other way?' : undefined}
+                    <For each={metro(it).notes}>{(n) => <span class={`mchip t-${n.tone}`} title={n.title ?? n.text}>{n.text}</span>}</For>
+                    <Show when={notes(it)}><span class="nt" classList={{ ask: whatOptions(it).length > 0 }} title={whatOptions(it).length ? `${notes(it)} · what if this went the other way?` : notes(it)}
                       onClick={(e) => { const o = whatOptions(it); if (!o.length) return; e.stopPropagation(); setWhatMenu(whatMenu()?.it === it ? null : { it, options: o }); }}>{notes(it)}</span></Show>
                     <Show when={waysOut() && exitsAt(it).length}>
                       <span class="sx" title={exitsAt(it).map((x) => `line ${x.line + 1}: ${[...x.when, x.kind === 'noreturn' ? `${x.text} (${x.callee} never returns)` : x.text].join(' → ')}`).join('\n')}>
@@ -883,10 +886,10 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                       </span>
                     </Show>
                     <Show when={deadAt(it)?.first}><span class="sd" title={`cannot happen in this call: ${deadAt(it)!.why}`}>not in this call · {deadAt(it)!.why}</span></Show>
-                    <Show when={followed() && hitsAt(it).length}><span class="sw">{hitsAt(it).map(hitWords).join(' · ')}</span></Show>
-                    <Show when={!sel() && uses(it)}><span class="u">uses {uses(it)}</span></Show>
-                    <For each={usesMarks(it)}>{(m) => <span class="nt sonly" classList={{ cadd: m.added }}>{m.text}</span>}</For>
-                    <Show when={tag()}><span class="tag">{tag()}</span></Show>
+                    <Show when={followed() && hitsAt(it).length}><span class="sw" title={hitsAt(it).map(hitWords).join(' · ')}>{hitsAt(it).map(hitWords).join(' · ')}</span></Show>
+                    <Show when={!sel() && uses(it)}><span class="u" title={`uses ${uses(it)}`}>uses {uses(it)}</span></Show>
+                    <For each={usesMarks(it)}>{(m) => <span class="nt sonly" classList={{ cadd: m.added }} title={m.text}>{m.text}</span>}</For>
+                    <Show when={tag()}><span class="tag" title={tag()}>{tag()}</span></Show>
                     <Show when={notesByItem()[it]}><span class="snote" title={notesByItem()[it]}>✎ {notesByItem()[it]}</span></Show>
                     </span>
                   </div>
@@ -913,7 +916,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               }}</Show>
               <Show when={whatMenu()}>{(m) => (
                 <div class="swmenu" style={{ left: `${geom()!.x[m().it] + 30}px`, top: `${geom()!.y[m().it] + ROW}px` }}>
-                  <For each={m().options}>{(o) => <button onClick={(e) => { e.stopPropagation(); askWhat(o); }}>{o.ask}</button>}</For>
+                  <For each={m().options}>{(o) => <button title={o.ask} onClick={(e) => { e.stopPropagation(); askWhat(o); }}>{o.ask}</button>}</For>
                 </div>
               )}</Show>
               <Show when={compare() ? what() : null}>{(wa) => {
@@ -940,7 +943,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                     <Show when={callCode()}>{(cc) => (
                       <div class="scall" style={{ '--ln-d': String(Math.max(1, ...cc().lines.map((l) => String(l.n).length))) }}>
                         <div class="from">{cc().from}</div>
-                        <For each={cc().lines}>{(l) => <div classList={{ hit: l.hit }}><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} /></div>}</For>
+                        <For each={cc().lines}>{(l) => <div classList={{ hit: l.hit }}><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} title={plain(l.html)} /></div>}</For>
                       </div>
                     )}</Show>
                     <div class="facts">
@@ -962,7 +965,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               <Show when={peek() && peekCode()}>
                 <div class="speek" classList={{ up: peek()!.up }} style={{ '--ln-d': String(Math.max(1, ...peekCode()!.lines.map((l) => String(l.n).length))), left: `${Math.min(geom()!.x[peek()!.it] + 220, width() - SPINE - parseFloat(styleOf('speek').maxWidth))}px`, top: `${peek()!.up ? geom()!.y[peek()!.it] - 4 : geom()!.y[peek()!.it] + ROW + 2}px` }}>
                   <div class="h">{peekCode()!.head}<i>{peekCode()!.loc}</i><span class="lk">peek</span></div>
-                  <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} /></div>}</For>
+                  <For each={peekCode()!.lines}>{(l) => <div class="l"><span class="ln">{l.n}</span><span innerHTML={l.html || ' '} title={plain(l.html)} /></div>}</For>
                   <Show when={peekCode()!.more}><div class="more">…</div></Show>
                 </div>
               </Show>
@@ -974,7 +977,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
               <div class="schap" ref={(el) => requestAnimationFrame(() => setChapH(el.offsetHeight))} style={{ top: `${Math.max(8, Math.min(chapPop()! - 20, height() - 8 - chapH()))}px`, right: `${SPINE + 10}px` }}
                 onMouseEnter={() => clearTimeout(chapTimer)} onMouseLeave={() => setChapPop(null)}>
                 <For each={chaps()}>{(ch) => (
-                  <button classList={{ sub: ch.depth > 0, on: chapAt(cur()?.at ?? -1) === ch }} onClick={() => { setChapPop(null); go({ jump: ch.from }); canvas.focus(); }}>
+                  <button classList={{ sub: ch.depth > 0, on: chapAt(cur()?.at ?? -1) === ch }} title={`${stepNo(ch.from)}${stepNo(ch.to) !== stepNo(ch.from) ? `–${stepNo(ch.to)}` : ''} ${ch.label}`} onClick={() => { setChapPop(null); go({ jump: ch.from }); canvas.focus(); }}>
                     <b>{stepNo(ch.from)}{stepNo(ch.to) !== stepNo(ch.from) ? `–${stepNo(ch.to)}` : ''}</b>{ch.label}
                   </button>
                 )}</For>
@@ -1029,7 +1032,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                 </Show>
               </div>
               <Show when={!f().fn}>
-                <For each={matches()}>{(m, i) => <button class="opt" classList={{ on: i() === f().sel }} onClick={() => pickFunction(m.key)}><span class="nm">{m.name}</span><span class="w">runs at {m.steps}</span></button>}</For>
+                <For each={matches()}>{(m, i) => <button class="opt" classList={{ on: i() === f().sel }} title={`${m.name} · runs at ${m.steps}`} onClick={() => pickFunction(m.key)}><span class="nm">{m.name}</span><span class="w">runs at {m.steps}</span></button>}</For>
                 <Show when={!matches().length}><div class="none">no function by that name runs from here</div></Show>
               </Show>
               <Show when={f().fn}>
@@ -1042,7 +1045,7 @@ export default function Sequence(props: { switcher: JSX.Element }) {
                   if (e.key === 'Escape') { setFind(null); canvas.focus(); }
                 }}>
                   <For each={f().routes}>{(r, i) => (
-                    <button class="opt" classList={{ on: i() === f().sel }} onClick={() => followPath(r, i(), f().fn!)}>
+                    <button class="opt" classList={{ on: i() === f().sel }} title={r.rows.map((q) => R()[q].name).join('  ›  ')} onClick={() => followPath(r, i(), f().fn!)}>
                       <b>{i() + 1}</b><span class="nm">{r.rows.map((q) => short(R()[q].name)).join('  ›  ')}</span>
                       <span class="w">{r.at.length > 1 ? `×${r.at.length}` : ''}</span>
                     </button>
@@ -1146,9 +1149,9 @@ export function Skyline(props: { at: number; changedItems: Set<number>; notes: R
       left: Math.max(tipW() / 2, Math.min(box.clientWidth - tipW() / 2, wrap.offsetLeft + (i + 0.5) * bw - wrap.scrollLeft)),
     };
   });
+  createEffect(on(() => { const t = tip(); return t ? `${t.what}|${t.kind}|${t.where}|${t.loop}|${t.note}|${t.pos}|${t.changed}` : ''; }, () => requestAnimationFrame(() => { if (tipEl?.isConnected) setTipW(tipEl.offsetWidth); })));
   return <div class="ssky" ref={box} aria-label="the run bars: the run as a profile of call depth · click or drag to go · K hides it">
     <div class="skyk" onWheel={hwheel}>
-  createEffect(on(() => { const t = tip(); return t ? `${t.what}|${t.kind}|${t.where}|${t.loop}|${t.note}|${t.pos}|${t.changed}` : ''; }, () => requestAnimationFrame(() => { if (tipEl?.isConnected) setTipW(tipEl.offsetWidth); })));
       <span><i style={{ background: SKY_COL.first }} />first call</span><span><i style={{ background: SKY_COL.again }} />called again</span><span><i style={{ background: SKY_COL.ptr }} />via a pointer</span>
       <span><i class="now" />now</span><span><i class="loop" />in a loop</span><span><i class="ed" />edited</span><span><i class="nt" />note</span><span>taller = deeper</span>
       <span class="grow" />

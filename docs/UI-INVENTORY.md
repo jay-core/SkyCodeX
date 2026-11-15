@@ -271,6 +271,36 @@ every count unchanged. Still open: `styles.css:508` the setting menu's 380 px. S
 grew to 1,584 px and ran 678 px past the window, so the change was undone; fitting a wider menu needs the menus' own
 placement (`SettingChip.tsx`, `CompareChip.tsx`), outside this task. 96 of 392 fixed; 5 kept by verdict; 291 open.
 
+**Kept as they are, by the user's verdict (2026-11-15, the metro, class E+):** 23 cuts whose full text or list is one
+step away, so they meet rule 4: `Sequence.tsx:416` findings top 9 (the rest in the findings menu), `:637` and `:971`
+the peek's 9 lines and "…" (click opens the function), `:660`, `:661` the path crumbs past 6 ("…" expands them),
+`:821` 3 fork lines (all in the title), `:906` 40 mini bars (unfold shows all), `:926`, `:930` the what-if's 8 rows,
+`:992` the pick list's 12 (typing narrows it), `:1045` routes 1–9 by key (the rest by click), `metrofacts.ts:96`, `:97`
+the first lock and exception on the row (the card lists all), `styles.css:466` the legend (scrolls), `:450`, `:451` the
+path and crumbs, `:491` chips, `:502` ways out, `:530` "not in this call", `:564`, `:568` junction rows, `:659` notes,
+`:664` changes (each with its full text in a title). `styles.css:477` (the step-and-function column) no longer cuts,
+fixed with class D. 97 of 392 fixed; 28 kept by verdict; 267 open.
+
+**Fixed (2026-11-15, the metro, classes E- and W):** E-, 20 faults on 21 lines, each cut now reachable on hover or
+counted: `Sequence.tsx:482` with `flowseq.ts:288` the copied link says when it keeps the last 40 of more steps walked;
+`:651` and `styles.css:449` the loop in the header shows its whole text on hover; `styles.css:455` the path being
+followed; `:460`, `:480`, `:481`, `:484`, `:485`, `:487` every part of a metro row (name, caller, the call as written,
+the loop it is in, where the result goes) carries its full text; `:472` the column heads; `:531` what a followed value
+does; `:582` the loop frame's label; `:612`, `:618` each code line of the step card and the peek; `:621` the chapter
+list; `:629` the find list's functions and routes (a route with every full name); `metrofacts.ts:87` a pointer call
+names how many more functions it could be ("+N") and lists all of them on hover; `:95` a function writing more than two
+globals says "+N more writes" and lists all of them on hover; `:29` a call written over several lines ends in "…".
+W, 5 faults: `styles.css:457` the share menu, `:635` the what-if menu, `:651` the run-bars tip, `:665` the reading note
+are bounded by their space and end in "…" (each item with its full text on hover); `:668` the caption was already
+bounded (its width and wrap came with the grid's phase 3, not recorded here then). Rules on 23 programs and tinyhttp
+before → after: a cut text out of reach 266 → 4; marks without a hover 3,108 → 3,110, all on tinyhttp (605 → 607),
+which gave 605 again on the same build, so the count moves with what is on screen at the moment it is read, not with the
+change; every other count unchanged. The 4 left are the path crumbs on names-120 and names-300, where the crumbs' row
+cuts a crumb: the row now has the whole chain as its title (run with the next batch). Still open in E-:
+`styles.css:513`, `:521` the setting menu's rows (`SettingChip.tsx`, `CompareChip.tsx`, outside this task);
+`flowcore.ts:9`, `:23` the loop label's 34 and 26 characters, for the user's decision. 122 of 392 fixed; 28 kept by
+verdict; 242 open.
+
 **Review with the user:** the grid's 84 faults (GridView.tsx 53, gridmodel.ts 2, gridlinks.ts 5, the grid's stylesheet
 rules 24) were accepted on 2026-11-14. Found later the same day on the new generated programs, in §3b G: recursion
 not marked (`gridmodel.ts:20`) and a call in a loop counted once (`gridmodel.ts:28`): 389 faults, the grid's 86; the
