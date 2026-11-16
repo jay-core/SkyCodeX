@@ -9,7 +9,7 @@ import { ensureCompileCommands, findCompileCommands, staleCompileCommands, LspCl
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'litho-cc-'));
 const touch = (p: string, text = '') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); return p; };
 const made: string[] = [];
-afterAll(() => { for (const d of made) fs.rmSync(d, { recursive: true, force: true }); });
+afterAll(() => { for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }); });
 
 const HOMEBREW = 'g++-14 (Homebrew GCC 14.2.0_1) 14.2.0\nCopyright (C) 2024 Free Software Foundation, Inc.\n';
 const UBUNTU = 'g++ (Ubuntu 13.2.0-23ubuntu4) 13.2.0\nCopyright (C) 2023 Free Software Foundation, Inc.\n';
