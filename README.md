@@ -61,11 +61,11 @@ Get the file for your system from [Releases](https://github.com/jay-core/SkyCode
 
 | System | File |
 |---|---|
-| macOS 13+, Apple silicon | `SkyCodeX-1.2.0-mac-arm64.zip` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
-| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.2.0-linux-x64.tar.gz` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
-| Windows 10/11, x64 | `SkyCodeX-1.2.0-win-x64.zip` from [1.2.0](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.0) |
+| macOS 13+, Apple silicon | `SkyCodeX-1.2.1-mac-arm64.zip` from [1.2.1](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.1) |
+| Linux x64 (Ubuntu 22.04 or newer) | `SkyCodeX-1.2.1-linux-x64.tar.gz` from [1.2.1](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.1) |
+| Windows 10/11, x64 | `SkyCodeX-1.2.1-win-x64.zip` from [1.2.1](https://github.com/jay-core/SkyCodeX/releases/tag/v1.2.1) |
 
-What changed in 1.2, and what is still open: [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
+What changed in 1.2.1: [docs/RELEASE-1.2.1.md](docs/RELEASE-1.2.1.md). In 1.2, and what is still open: [docs/RELEASE-1.2.md](docs/RELEASE-1.2.md).
 
 Unpack it and put the folder anywhere: a projects folder or a USB drive.
 
