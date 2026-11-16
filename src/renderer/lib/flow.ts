@@ -274,7 +274,7 @@ async function crawl(root: string, starts: CallItem[], onProgress?: (n: number) 
   return { nodes, truncated };
 }
 
-const SPAWN_RE = /\b(?:std::)?(?:system|_?popen|_?exec(?:l|lp|le|v|vp|vpe|ve)|posix_spawnp?|CreateProcess[AW]?|ShellExecute(?:Ex)?[AW]?|_?spawn(?:l|lp|v|vp)e?|QProcess::(?:start|execute|startDetached)|\.start|boost::process::\w+)\s*\(/g;
+const SPAWN_RE = /\b(?:std::)?(?:system|_?popen|_?exec(?:l|lp|le|v|vp|vpe|ve)|posix_spawnp?|CreateProcess[AW]?|ShellExecute(?:Ex)?[AW]?|_?spawn(?:l|lp|v|vp)e?|QProcess::(?:start|execute|startDetached)|boost::process::\w+)\s*\(/g;
 
 function programName(file: string, targets: { name: string; sources: string[] }[]) {
   const t = targets.find((x) => x.sources.includes(file));

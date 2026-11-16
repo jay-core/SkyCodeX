@@ -116,7 +116,7 @@ function pureRow(s: Seq, i: number, lines: (file: string) => string[] | null): b
   if (!e || e.writes.length || e.globalWrites.length || e.globalReads.length || e.locks.length || e.allocates.length || e.throws.length) return false;
   const L = lines(fn.file);
   if (!L || !fn.lines) return false;
-  const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
+  const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
   const at = r.kind === 'ref' && r.ref != null ? r.ref : i, known = new Set<string>();
   for (let j = at + 1; j <= R[at].last; j++) known.add(short(R[j].kind === 'ref' && R[j].ref != null ? R[R[j].ref!].name : R[j].name));
   for (const m of body.matchAll(/([A-Za-z_]\w*)\s*\(/g)) if (!NOT_CALLS.has(m[1]) && !known.has(m[1])) return false;
@@ -148,7 +148,7 @@ export interface DetailCard {
 const libraryCalls = (s: Seq, row: number, lines: (file: string) => string[] | null): string[] => {
   const R = s.run.rows, fn = R[row], L = lines(fn.file);
   if (!L || !fn.lines) return [];
-  const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
+  const whole = L.slice(fn.line, fn.start + fn.lines).join('\n'), body = whole.slice(whole.indexOf('{') + 1).replace(/\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*$/gm, '');
   const known = new Set<string>();
   for (let j = row + 1; j <= fn.last; j++) known.add(short(R[j].kind === 'ref' && R[j].ref != null ? R[R[j].ref!].name : R[j].name));
   const out: string[] = [];

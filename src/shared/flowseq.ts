@@ -308,7 +308,10 @@ export function encodeWalk(entry: string, trail: StepState[], keep = 40, notes: 
   return `skycodex:walk?entry=${encodeURIComponent(entry)}&at=${states.join(',')}${ns ? `&notes=${encodeURIComponent(ns)}` : ''}`;
 }
 export function decodeWalk(s: Seq, text: string): { entry: string; trail: StepState[]; notes: Record<number, string> } | null {
-  const m = /^skycodex:walk\?entry=([^&]*)&at=([\d.,-]+)(?:&notes=([^&]*))?$/.exec(text.trim());
+  try { return decodeWalkText(s, text); } catch { return null; }
+}
+function decodeWalkText(s: Seq, text: string): { entry: string; trail: StepState[]; notes: Record<number, string> } | null {
+  const m =/^skycodex:walk\?entry=([^&]*)&at=([\d.,-]+)(?:&notes=([^&]*))?$/.exec(text.trim());
   if (!m) return null;
   const trail: StepState[] = [];
   for (const part of m[2].split(',')) {

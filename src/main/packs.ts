@@ -35,7 +35,7 @@ export function listPacks(dir: string): PackManifest[] {
   unreadablePacks.length = 0;
   for (const d of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
     if (d.startsWith('.')) continue;
-    const file = [MANIFEST, 'lithograph-pack.json'].map((m) => path.join(dir, d, m)).find((f) => fs.existsSync(f));
+    const file = [path.join(dir, d, MANIFEST)].find((f) => fs.existsSync(f));
     try {
       const m = file ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
       if (m && typeof m.id === 'string' && typeof m.kind === 'string' && typeof m.version === 'string' && typeof m.name === 'string') out.push({ bin: 'bin', ...m });
@@ -183,7 +183,7 @@ export async function installRelease(rel: Release, dir: string, onProgress: (p: 
 
 export function removePack(dir: string, id: string) {
   const p = path.join(dir, id);
-  if (!insideDir(dir, p) || ![MANIFEST, 'lithograph-pack.json'].some((m) => fs.existsSync(path.join(p, m)))) throw new Error(`${id} is not an installed pack`);
+  if (!insideDir(dir, p) || !fs.existsSync(path.join(p, MANIFEST))) throw new Error(`${id} is not an installed pack`);
   makeWritable(p);
   fs.rmSync(p, { recursive: true, force: true });
 }

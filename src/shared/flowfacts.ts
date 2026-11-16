@@ -79,7 +79,8 @@ export function effects(fn: AstNode, text: string): Effects {
     if (n.kind === 'Call' || n.kind === 'CXXMemberCall') {
       const callee = calleeName(n);
       if (callee && (LOCK_CALL.test(callee) || extraNames.lock.has(callee))) add(out.locks, firstArg(n, src) || callee);
-      if (callee === 'lock' && n.kind === 'CXXMemberCall') add(out.locks, src(kids(kids(n)[0] ?? ({} as AstNode))[0]?.range) || 'a lock');
+      const lockObj = callee === 'lock' && n.kind === 'CXXMemberCall' ? kids(kids(n)[0] ?? ({} as AstNode))[0] : undefined;
+      if (lockObj && /mutex/i.test(typeOf(lockObj))) add(out.locks, src(lockObj.range) || 'a lock');
       if (callee && (ALLOC_CALL.test(callee) || extraNames.alloc.has(callee))) add(out.allocates, callee);
       let s: AstNode = n, p = parent.get(n);
       while (p && (p.kind === 'ExprWithCleanups' || p.kind === 'CXXBindTemporary' || p.kind === 'MaterializeTemporary')) { s = p; p = parent.get(p); }

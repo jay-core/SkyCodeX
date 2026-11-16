@@ -97,13 +97,12 @@ fs.watch(path.dirname(SETTINGS_FILE), (_e, name) => {
   watchTimer = setTimeout(() => {
     try { reloadSettings(); send('settings:changed', { settings, problems }); } catch (e) { log(`settings reload: ${e}`); }
   }, 120);
-});
+}).on('error', (e) => log(`settings watch: ${e}`));
 ipcMain.handle('settings:get', () => ({ settings, problems, path: SETTINGS_FILE }));
 function writeSetting(key: string, value: unknown) {
   atomicWrite(SETTINGS_FILE, setSetting(fs.readFileSync(SETTINGS_FILE, 'utf8'), key, value));
   reloadSettings();
 }
-for (const k of ['font.family', 'font.ui.family']) if (settings[k] === 'ARX F1') writeSetting(k, 'ArX F1');
 ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
   writeSetting(key, value);
   send('settings:changed', { settings, problems });
@@ -242,6 +241,7 @@ ipcMain.handle('change:history', async (_e, root: string) => {
   }
 });
 const CHANGES = path.join(STATE, 'changes');
+const isCommitId = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{7,40}$/i.test(s);
 async function exportCommit(root: string, sha: string): Promise<string> {
   const top = (await gitOut(root, ['rev-parse', '--show-toplevel'])).trim();
   const rel = path.relative(fs.realpathSync(top), fs.realpathSync(root));
@@ -291,6 +291,7 @@ async function versionRun(root: string, rev: string, entry: { rel: string; name:
 }
 ipcMain.handle('change:start', async (_e, j: { root: string; entryRel: string; entryName: string; older: string; newer: string; olderLabel: string; newerLabel: string }) => {
   if (j.root !== lspRoot || !lspClangd || !lsp.ccDir) return { ok: false, message: 'clangd is not reading this folder yet' };
+  if (!isCommitId(j.older) || (j.newer !== 'work' && !isCommitId(j.newer))) return { ok: false, message: 'that is not a commit id' };
   void (async () => {
     try {
       const older = await versionRun(j.root, j.older, { rel: j.entryRel, name: j.entryName }, j.olderLabel);
@@ -567,14 +568,16 @@ ipcMain.handle('compiler:info', async () => {
     })(),
   };
 });
-let installing: { ctrl: AbortController; rel: Release } | null = null;
+let installing: { ctrl: AbortController; rel: Release } | null = null, installLooking = false;
 ipcMain.handle('packs:available', async (_e, kind: PackKind) => {
   try { return { ok: true, list: await releasesFor(kind) }; } catch (e) { return { ok: false, message: (e as Error).message ?? String(e) }; }
 });
 ipcMain.handle('packs:install', async (_e, kind: PackKind, version: string, replaces?: string) => {
   if (installing) return { ok: false, message: `${installing.rel.id} is still installing` };
+  if (installLooking) return { ok: false, message: 'another install is starting' };
   let rel: Release | undefined;
-  try { rel = (await releasesFor(kind)).find((r) => r.version === version); } catch (e) { return { ok: false, message: (e as Error).message }; }
+  installLooking = true;
+  try { rel = (await releasesFor(kind)).find((r) => r.version === version); } catch (e) { return { ok: false, message: (e as Error).message }; } finally { installLooking = false; }
   if (!rel) return { ok: false, message: `${kind} ${version} isn't available for this machine` };
   return runInstall(rel, replaces);
 });
@@ -613,7 +616,8 @@ ipcMain.handle('win:maximize', () => (win?.isMaximized() ? win.unmaximize() : wi
 ipcMain.handle('win:close', () => win?.close());
 
 ipcMain.handle('smoke:capture', async (_e, name: string) => {
-  const img = await win!.webContents.capturePage();
+  if (!smoke || !win || typeof name !== 'string' || /[\\/]|\.\./.test(name)) return null;
+  const img = await win.webContents.capturePage();
   const out = path.join(OUT, `smoke-${name}.png`);
   fs.writeFileSync(out, img.toPNG());
   return out;
@@ -635,7 +639,8 @@ ipcMain.handle('smoke:profile', async (_e, name: string | null) => {
   return out;
 });
 ipcMain.handle('smoke:done', (_e, report: unknown) => {
-  if (smoke) fs.rmSync(path.join(smoke, 'smoke_new.cpp'), { force: true });
+  if (!smoke) return;
+  fs.rmSync(path.join(smoke, 'smoke_new.cpp'), { force: true });
   fs.writeFileSync(path.join(OUT, 'smoke-report.json'), JSON.stringify(report, null, 1));
   setTimeout(() => app.quit(), 100);
 });

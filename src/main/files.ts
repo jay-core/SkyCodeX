@@ -3,7 +3,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { SKIPPED_DIRS } from '../shared/search';
 
-export function atomicWrite(file: string, text: string | Buffer): void {
+export function atomicWrite(given: string, text: string | Buffer): void {
+  let file = given;
+  try { if (fs.lstatSync(given).isSymbolicLink()) file = fs.realpathSync(given); } catch {  }
   const dir = path.dirname(file);
   const tmp = path.join(dir, `.${path.basename(file)}.skycodex-${process.pid}-${Date.now()}.tmp`);
   let mode: number | undefined;
@@ -34,14 +36,19 @@ export interface DirEntry {
   name: string;
   path: string;
   dir: boolean;
+  link?: true;
 }
+const linkedDir = (p: string) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
 
 const HIDDEN = new Set(['.git', 'node_modules', '.cache', '.DS_Store', '.idea', '.vscode']);
 
 function shapeDir(dir: string, entries: fs.Dirent[]): DirEntry[] {
   return entries
     .filter((e) => !HIDDEN.has(e.name) && !e.name.endsWith('.skycodex.tmp') && !/\.skycodex-\d+-\d+\.tmp$/.test(e.name))
-    .map((e) => ({ name: e.name, path: slashPath(path.join(dir, e.name)), dir: e.isDirectory() }))
+    .map((e): DirEntry => {
+      const p = path.join(dir, e.name), link = e.isSymbolicLink();
+      return { name: e.name, path: slashPath(p), dir: e.isDirectory() || (link && linkedDir(p)), ...(link ? { link: true as const } : {}) };
+    })
     .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
 }
 
@@ -65,7 +72,7 @@ export function listFiles(root: string, cap = 50000, keep: (p: string) => boolea
   const walk = (d: string) => {
     if (out.length >= cap) return;
     for (const e of listDir(d)) {
-      if (e.dir) { if (!SKIP_DIRS.test(e.name) && !e.name.startsWith('.')) walk(e.path); }
+      if (e.dir) { if (!e.link && !SKIP_DIRS.test(e.name) && !e.name.startsWith('.')) walk(e.path); }
       else if (keep(e.path) && out.length < cap) out.push(e.path);
     }
   };
@@ -80,7 +87,7 @@ export async function listSourcesAsync(root: string, cap = 20000): Promise<strin
     let entries: fs.Dirent[];
     try { entries = await fs.promises.readdir(d, { withFileTypes: true }); } catch { return; }
     for (const e of shapeDir(d, entries)) {
-      if (e.dir) { if (!SKIP_DIRS.test(e.name) && !e.name.startsWith('.')) await walk(e.path); }
+      if (e.dir) { if (!e.link && !SKIP_DIRS.test(e.name) && !e.name.startsWith('.')) await walk(e.path); }
       else if (isSource(e.path) && out.length < cap) out.push(e.path);
     }
   };

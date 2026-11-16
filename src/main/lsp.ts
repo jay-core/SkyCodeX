@@ -39,7 +39,7 @@ export function systemClangd(): string | null {
 export function findCompileCommands(root: string): string | null {
   if (fs.existsSync(path.join(root, 'compile_commands.json')) && !staleCompileCommands(root)) return root;
   for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
-    if (e.isDirectory() && /^(build|out|cmake-build-)/i.test(e.name) && fs.existsSync(path.join(root, e.name, 'compile_commands.json')) && !staleCompileCommands(path.join(root, e.name)))
+    if (e.isDirectory() && BUILD_DIR.test(e.name) && fs.existsSync(path.join(root, e.name, 'compile_commands.json')) && !staleCompileCommands(path.join(root, e.name)))
       return path.join(root, e.name);
   }
   return null;
@@ -137,7 +137,7 @@ export function otherCompileDbs(root: string, inUse: string | null): string[] {
   const out: string[] = [];
   for (const e of fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }) : []) {
     const d = path.join(root, e.name);
-    if (e.isDirectory() && /^(build|out|cmake-build-)/i.test(e.name) && d !== inUse && fs.existsSync(path.join(d, 'compile_commands.json')) && !staleCompileCommands(d)) out.push(d);
+    if (e.isDirectory() && BUILD_DIR.test(e.name) && d !== inUse && fs.existsSync(path.join(d, 'compile_commands.json')) && !staleCompileCommands(d)) out.push(d);
   }
   return out.sort();
 }
@@ -318,7 +318,9 @@ export class LspClient {
   }
 }
 
-const CLANG_KNOWS = /\.(c|cc|cp|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|m|mm|cu|cuh|cppm|ccm|cxxm|c\+\+m|ixx|i|ii)$/i;
+export const BUILD_DIR = /^(?:build|out)(?:[-_.].*)?$|^cmake-build-/i;
+const inside = (d: string, root: string) => d.startsWith(root) && (d.length === root.length || /[\\/]$/.test(root) || /[\\/]/.test(d[root.length]));
+const CLANG_KNOWS =/\.(c|cc|cp|cpp|cxx|c\+\+|h|hh|hpp|hxx|h\+\+|m|mm|cu|cuh|cppm|ccm|cxxm|c\+\+m|ixx|i|ii)$/i;
 const STDLIB = /[\\/]c\+\+[\\/](v\d+|\d+(\.\d+)*)[\\/]/;
 const FRAGMENT = /\.(def|inc)$/i;
 
@@ -379,7 +381,7 @@ export function headerCommand(file: string, root: string, ccDirInUse?: string | 
     } catch {  }
   }
   if (!flags.length && root) {
-    for (let d = path.dirname(file); d.startsWith(root); d = path.dirname(d)) {
+    for (let d = path.dirname(file); inside(d, root); d = path.dirname(d)) {
       const f = path.join(d, 'compile_flags.txt');
       if (fs.existsSync(f)) { flags = fs.readFileSync(f, 'utf8').split(/\r?\n/).map((s) => s.trim()).filter(Boolean); dir = d; break; }
       if (d === path.dirname(d)) break;

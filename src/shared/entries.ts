@@ -1,6 +1,6 @@
 const TEST = /^(tests?|testing|unit_?tests?|regression|ctest|gtest|fuzz(ing)?|bench(marks?)?)$/i;
 const TOOL = /^(utilit(y|ies)|tools?|scripts?|cmake|build|third_party|3rdparty|vendor|external|deps|extern)$/i;
-const PORT = /^(ports?(_\w+)?|arch|platforms?|boards?|bsp|example_build)$/i;
+const PORT = /^(ports?(_\w+)?|arch|platforms?|boards?|bsp)$/i;
 const MAIN = /^(samples?|demos?|examples?|apps?|src|source|programs?|cmd|bin)$/i;
 
 export function entryScore(rel: string): number {

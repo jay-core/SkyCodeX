@@ -13,7 +13,6 @@ import { invalidateText } from './lib/preview';
 import { invalidateFlowText } from './lib/flow';
 import { invalidateSeqText } from './lib/seqtext';
 import { forgetDefinitionsIn } from './lib/lsp';
-import { runSmoke } from './smoke';
 import Palette from './components/Palette';
 import { palette, quickOpen, commandPalette, goToSymbol, rename, quickFix, findReferences, newFile, openFileDialog, saveAs, closeActive } from './lib/actions';
 import AppMenu from './components/AppMenu';
@@ -47,7 +46,7 @@ export default function App() {
     if (s.problems.length) flash(`settings.toml: ${s.problems[0].message}${s.problems.length > 1 ? ` (+${s.problems.length - 1} more)` : ''}`, 8000);
     if ((i as any).fallbackReason) flash((i as any).fallbackReason, 12000);
     if ((i as any).smoke && (i as any).scenario === 'start') { setStartOpen(true); return; }
-    if ((i as any).smoke) { await openFolder((i as any).smoke); runSmoke(); return; }
+    if ((i as any).smoke) { await openFolder((i as any).smoke); void import('./smoke').then((m) => m.runSmoke()); return; }
     await restoreSession();
     if (!root()) setStartOpen(true);
   });
@@ -71,6 +70,17 @@ export default function App() {
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); api.settings.set('preview.enabled', !previewOn()); }
   };
   onMount(() => window.addEventListener('keydown', onKey));
+  onMount(() => {
+    const idle = new WeakMap<Element, number>();
+    const onScroll = (e: Event) => {
+      const el = e.target instanceof Element ? e.target : document.documentElement;
+      el.setAttribute('data-scrolling', '');
+      clearTimeout(idle.get(el));
+      idle.set(el, window.setTimeout(() => el.removeAttribute('data-scrolling'), 1200));
+    };
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    onCleanup(() => document.removeEventListener('scroll', onScroll, { capture: true }));
+  });
   onMount(() => { for (const ev of ['keydown', 'pointerdown'] as const) window.addEventListener(ev, settleToasts, true); });
   onMount(() => {
     const bar = document.querySelector('.appbar');

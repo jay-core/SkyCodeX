@@ -536,7 +536,7 @@ html.calm *, html.calm *::before, html.calm *::after { animation-duration: .001m
 .sjn:hover { background-color: rgba(227, 214, 173, .055); }
 .sjn.on { background: #e3d6ad; } .sjn.on, .sjn.on .d, .sjn.on .c, .sjn.on code, .sjn.on .w { color: #171817; }
 .mlegend .mkeys { flex: none; display: flex; gap: 12px; }
-.mlegend .mfiles::-webkit-scrollbar, .gtop::-webkit-scrollbar, .gkey::-webkit-scrollbar, .skyk::-webkit-scrollbar, .sfrom code::-webkit-scrollbar { height: 3px; }
+.mlegend .mfiles::-webkit-scrollbar, .gtop::-webkit-scrollbar, .gkey::-webkit-scrollbar, .skyk::-webkit-scrollbar, .sfrom code::-webkit-scrollbar { display: none; }
 .mlegend .mfiles::-webkit-scrollbar-thumb, .gtop::-webkit-scrollbar-thumb, .gkey::-webkit-scrollbar-thumb, .skyk::-webkit-scrollbar-thumb, .sfrom code::-webkit-scrollbar-thumb { background: #3a3f3a; }
 .schap { max-height: calc(100% - 16px); overflow-y: auto; }
 .sfind .paths { max-height: 50vh; overflow-y: auto; }
@@ -868,3 +868,7 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #e
 .ibx .cl code { grid-column: 1 / 4; font: 400 11px var(--mono); color: #c9cec6; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .ibx .kv { display: grid; grid-template-columns: 70px 1fr; gap: 3px 10px; font: 300 12px/1.45 var(--ui); color: var(--fg); }
 .ibx .kv > span:nth-child(odd) { color: var(--dim); } .ibx .kv code { font: 400 11px var(--mono); color: #c9cec6; word-break: break-word; }
+* { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+::-webkit-scrollbar:horizontal { display: none !important; }
+::-webkit-scrollbar-thumb:vertical { background: transparent !important; }
+[data-scrolling]::-webkit-scrollbar-thumb:vertical { background: #3a3f3a !important; }
