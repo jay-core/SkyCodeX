@@ -26,7 +26,7 @@
 
 ## Checked
 
-The same unit tests on all three systems (281, including 8 new ones in `src/tests/sweepfixes.test.ts`) and a start-up check of each packaged build on the sample project. Symlink saving, commit comparison, pack installs and malformed walks are covered by unit tests or code reading, not by an app run. The scroll-bar fade was checked at rest, not in motion.
+Every unit test file on each system (281 tests on macOS, including 8 new ones in `src/tests/sweepfixes.test.ts`; on Windows the macOS-only and file-mode cases are skipped) and a start-up check of each packaged build on the sample project. The Windows build came from commit 1f0512f, which differs from the tag only in a test's cleanup, made to retry while Windows still holds a folder clangd used. Symlink saving, commit comparison, pack installs and malformed walks are covered by unit tests or code reading, not by an app run. The scroll-bar fade was checked at rest, not in motion.
 
 ## Downloads
 
